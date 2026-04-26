@@ -1,0 +1,2756 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+    <title>Therapy Call | Сообщество психологов</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        /* ------------------- БАЗОВЫЕ ПЕРЕМЕННЫЕ ------------------- */
+        :root {
+            --green: #8bca8b;
+            --green-dark: #5a9e5a;
+            --green-dim: rgba(139, 202, 139, 0.15);
+            --green-border: rgba(139, 202, 139, 0.25);
+            --glass: rgba(20, 26, 22, 0.65);
+            --glass-hover: rgba(28, 36, 30, 0.82);
+            --border: rgba(255, 255, 255, 0.07);
+            --border-hover: rgba(139, 202, 139, 0.28);
+            --text-muted: rgba(255,255,255,0.45);
+            --radius-lg: 22px;
+            --radius-md: 16px;
+            --radius-sm: 10px;
+            --nav-h: 62px;
+            --bottom-h: 68px;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        body {
+            font-family: 'Inter', sans-serif;
+            background: #050a06;
+            color: #fff;
+            overflow-x: hidden;
+            padding-bottom: calc(var(--bottom-h) + env(safe-area-inset-bottom));
+            min-height: 100vh;
+        }
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            z-index: -2;
+            background: radial-gradient(circle at 20% 30%, #0a1f0a, #020804);
+        }
+        .navbar {
+            position: fixed; top: 0; left: 0; right: 0; height: var(--nav-h);
+            background: rgba(4,10,5,0.78); backdrop-filter: blur(28px) saturate(1.6);
+            z-index: 1000; padding: 0 20px;
+            border-bottom: 1px solid var(--border);
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        .logo { display: flex; align-items: center; gap: 9px; font-size: 17px; font-weight: 700; letter-spacing: -0.3px; }
+        .logo-icon { font-size: 22px; filter: drop-shadow(0 0 8px rgba(139,202,139,0.5)); }
+        .auth-buttons { display: flex; gap: 8px; }
+        .btn-login {
+            padding: 7px 18px; border-radius: 30px; font-weight: 500; font-size: 13px;
+            cursor: pointer; background: transparent; border: 1px solid var(--green-border); color: white;
+            transition: all 0.22s;
+        }
+        .btn-login:hover { background: var(--green-dim); }
+        .btn-register {
+            padding: 7px 18px; border-radius: 30px; font-weight: 600; font-size: 13px;
+            cursor: pointer; background: linear-gradient(135deg, var(--green), var(--green-dark));
+            border: none; color: #0d2010;
+        }
+        .btn-register:hover { opacity: 0.88; transform: scale(1.02); }
+        .btn-logout {
+            padding: 7px 16px; border-radius: 30px; font-weight: 600; font-size: 13px;
+            cursor: pointer; background: rgba(220,38,38,0.18); border: 1px solid rgba(220,38,38,0.35);
+            color: #ff6b6b;
+        }
+        .btn-logout:hover { background: rgba(220,38,38,0.32); }
+        .search-btn {
+            background: rgba(255,255,255,0.08); backdrop-filter: blur(10px);
+            border: 1px solid var(--border); width: 36px; height: 36px;
+            border-radius: 50%; color: rgba(255,255,255,0.75); font-size: 15px;
+            cursor: pointer; margin-right: 8px;
+        }
+        .search-btn:hover { background: var(--green-dim); color: var(--green); }
+        #navUser { display: flex; align-items: center; gap: 2px; }
+        .main-content { padding-top: calc(var(--nav-h) + 12px); min-height: 100vh; }
+        .container { max-width: 680px; margin: 0 auto; padding: 0 16px; }
+        .bottom-nav {
+            position: fixed; bottom: 0; left: 0; right: 0; height: var(--bottom-h);
+            background: rgba(4,10,5,0.9); backdrop-filter: blur(28px);
+            display: flex; justify-content: space-around; align-items: center;
+            padding: 8px 8px calc(8px + env(safe-area-inset-bottom));
+            border-top: 1px solid var(--border); z-index: 1000;
+        }
+        .nav-item {
+            display: flex; flex-direction: column; align-items: center; gap: 3px;
+            color: var(--text-muted); cursor: pointer; transition: all 0.22s;
+            padding: 6px 14px; border-radius: 16px; min-width: 50px;
+        }
+        .nav-item i { font-size: 21px; transition: transform 0.2s; }
+        .nav-item span { font-size: 9.5px; font-weight: 500; }
+        .nav-item.active { color: var(--green); background: var(--green-dim); }
+        .nav-item.active i { transform: scale(1.1); }
+        .glass-card {
+            background: var(--glass); backdrop-filter: blur(22px) saturate(1.4);
+            border: 1px solid var(--border); border-radius: var(--radius-lg);
+            transition: all 0.28s;
+        }
+        .glass-card:hover { background: var(--glass-hover); border-color: var(--border-hover); }
+        .btn-sm {
+            padding: 8px 18px; font-size: 13px; border-radius: 30px;
+            background: linear-gradient(135deg, var(--green), var(--green-dark));
+            border: none; color: #0d2010; cursor: pointer; font-weight: 600;
+            transition: all 0.22s; white-space: nowrap;
+        }
+        .btn-sm:hover { opacity: 0.88; transform: scale(1.02); }
+        .btn-outline {
+            background: transparent !important;
+            border: 1px solid var(--green-border) !important;
+            color: rgba(255,255,255,0.85) !important;
+        }
+        .btn-outline:hover { background: var(--green-dim) !important; color: var(--green) !important; }
+        .btn-danger { background: rgba(220,38,38,0.2) !important; border: 1px solid rgba(220,38,38,0.35) !important; color: #ff6b6b !important; }
+        .btn-danger:hover { background: rgba(220,38,38,0.35) !important; }
+        .posts-grid { display: flex; flex-direction: column; gap: 14px; }
+        .post-card { padding: 18px; }
+        .post-header { display: flex; gap: 12px; align-items: center; margin-bottom: 14px; }
+        .post-avatar {
+            width: 44px; height: 44px; border-radius: 50%; object-fit: cover;
+            cursor: pointer; border: 2px solid var(--green-border);
+        }
+        .post-author { font-weight: 600; font-size: 14.5px; cursor: pointer; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+        .post-time { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+        .post-text { margin-bottom: 12px; line-height: 1.6; font-size: 14px; color: rgba(255,255,255,0.88); }
+        .post-image { max-width: 100%; border-radius: var(--radius-md); margin-bottom: 12px; cursor: pointer; display: block; }
+        .post-video { max-width: 100%; border-radius: var(--radius-md); margin-bottom: 12px; cursor: pointer; background: #000; }
+        .post-stats {
+            display: flex; gap: 18px; padding: 10px 0;
+            border-top: 1px solid var(--border);
+        }
+        .post-stats button {
+            background: none; border: none; color: var(--text-muted); cursor: pointer;
+            display: flex; gap: 6px; align-items: center; font-size: 13px;
+            padding: 2px 6px; border-radius: 8px;
+        }
+        .post-stats button:hover { color: rgba(255,255,255,0.75); background: rgba(255,255,255,0.05); }
+        .post-stats button.liked { color: var(--green); }
+        .post-actions { display: flex; gap: 8px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
+        .post-actions button {
+            background: none; border: none; color: var(--text-muted); cursor: pointer;
+            font-size: 12px; padding: 4px 10px; border-radius: 8px;
+        }
+        .post-actions button:hover { background: rgba(255,255,255,0.07); color: white; }
+        .rating-stars { color: #f5c518; font-size: 11px; letter-spacing: -1px; display: inline-flex; gap: 1px; }
+        .comments-section { margin-top: 10px; border-top: 1px solid var(--border); padding-top: 10px; }
+        .comment { display: flex; gap: 10px; margin-bottom: 10px; }
+        .comment-avatar { width: 32px; height: 32px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
+        .comment-content { background: rgba(255,255,255,0.05); border-radius: var(--radius-sm); padding: 8px 12px; flex: 1; }
+        .comment-author { font-weight: 600; font-size: 12px; margin-bottom: 2px; color: var(--green); }
+        .comment-text { font-size: 13px; color: rgba(255,255,255,0.82); line-height: 1.4; }
+        .comment-time { font-size: 10px; color: var(--text-muted); margin-top: 4px; }
+        .new-comment { display: flex; gap: 8px; margin-top: 10px; }
+        .new-comment input {
+            flex: 1; padding: 9px 14px; border-radius: 30px;
+            border: 1px solid var(--border); background: rgba(255,255,255,0.05);
+            color: white; font-size: 13px; outline: none;
+        }
+        .new-comment input:focus { border-color: var(--green-border); }
+        .profile-header { text-align: center; padding: 20px 0 16px; }
+        .profile-avatar-wrap { position: relative; display: inline-block; }
+        .profile-avatar-lg {
+            width: 92px; height: 92px; border-radius: 50%; object-fit: cover;
+            border: 3px solid var(--green); cursor: pointer;
+            box-shadow: 0 0 0 6px rgba(139,202,139,0.12);
+        }
+        .profile-avatar-lg:hover { opacity: 0.82; }
+        .avatar-edit-btn {
+            position: absolute; bottom: 2px; right: 2px;
+            width: 26px; height: 26px; border-radius: 50%;
+            background: var(--green); border: 2px solid #050a06;
+            color: #0d2010; font-size: 11px; cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .profile-name { font-size: 22px; font-weight: 700; margin-top: 12px; letter-spacing: -0.3px; }
+        .profile-role-badge {
+            display: inline-block; margin-top: 5px; padding: 3px 12px;
+            background: var(--green-dim); border: 1px solid var(--green-border);
+            border-radius: 20px; font-size: 11px; color: var(--green); font-weight: 500;
+        }
+        .profile-bio { color: var(--text-muted); margin-top: 8px; font-size: 13.5px; line-height: 1.5; max-width: 400px; margin-left: auto; margin-right: auto; }
+        .profile-stats {
+            display: flex; justify-content: center; gap: 0; margin: 18px 0 14px;
+            background: var(--glass); border: 1px solid var(--border); border-radius: var(--radius-md);
+            overflow: hidden;
+        }
+        .profile-stat {
+            flex: 1; text-align: center; padding: 14px 8px;
+            border-right: 1px solid var(--border);
+        }
+        .profile-stat:last-child { border-right: none; }
+        .profile-stat .number { font-size: 20px; font-weight: 700; }
+        .profile-stat .label { font-size: 10.5px; color: var(--text-muted); margin-top: 2px; font-weight: 500; }
+        .profile-actions {
+            display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin: 14px 0 6px;
+        }
+        .profile-sections { display: flex; flex-direction: column; gap: 10px; margin-top: 16px; }
+        .collapsible-section {
+            background: var(--glass); border: 1px solid var(--border);
+            border-radius: var(--radius-lg); overflow: hidden; transition: border-color 0.22s;
+        }
+        .collapsible-section.open { border-color: var(--green-border); }
+        .collapsible-header {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 16px 18px; cursor: pointer; user-select: none;
+        }
+        .collapsible-header:hover { background: rgba(255,255,255,0.03); }
+        .collapsible-header-left { display: flex; align-items: center; gap: 10px; }
+        .collapsible-icon {
+            width: 36px; height: 36px; border-radius: 10px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 17px; background: var(--green-dim); flex-shrink: 0;
+        }
+        .collapsible-title { font-weight: 600; font-size: 15px; }
+        .collapsible-subtitle { font-size: 11.5px; color: var(--text-muted); margin-top: 1px; }
+        .collapsible-chevron {
+            color: var(--text-muted); font-size: 13px;
+            transition: transform 0.28s; flex-shrink: 0;
+        }
+        .collapsible-section.open .collapsible-chevron { transform: rotate(180deg); color: var(--green); }
+        .collapsible-body {
+            max-height: 0; overflow: hidden;
+            transition: max-height 0.38s cubic-bezier(0.4, 0, 0.2, 1), padding 0.28s;
+            padding: 0 18px;
+        }
+        .collapsible-section.open .collapsible-body { max-height: 2000px; padding: 0 18px 18px; }
+        .task-item {
+            display: flex; align-items: flex-start; gap: 12px; padding: 12px 14px;
+            background: rgba(255,255,255,0.04); border-radius: var(--radius-md);
+            margin-bottom: 8px; border: 1px solid var(--border);
+        }
+        .task-checkbox { width: 18px; height: 18px; accent-color: var(--green); cursor: pointer; flex-shrink: 0; margin-top: 1px; }
+        .task-text { flex: 1; font-size: 13.5px; line-height: 1.4; }
+        .task-due { font-size: 11px; color: var(--text-muted); margin-top: 3px; }
+        .task-completed { opacity: 0.45; text-decoration: line-through; }
+        .task-delete { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 14px; padding: 2px; }
+        .task-delete:hover { color: #ff6b6b; }
+        .section-add-btn {
+            width: 100%; padding: 10px; border-radius: var(--radius-sm);
+            background: var(--green-dim); border: 1px dashed var(--green-border);
+            color: var(--green); cursor: pointer; font-size: 13px; font-weight: 500;
+            transition: all 0.2s; margin-top: 4px;
+        }
+        .section-add-btn:hover { background: rgba(139,202,139,0.22); }
+        .apple-calendar {
+            background: rgba(20, 26, 22, 0.5);
+            border-radius: 20px;
+            padding: 12px;
+            backdrop-filter: blur(12px);
+        }
+        .apple-calendar-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+            padding: 0 4px;
+        }
+        .apple-calendar-header h3 {
+            font-size: 17px;
+            font-weight: 600;
+            letter-spacing: -0.2px;
+            color: var(--green);
+        }
+        .apple-calendar-nav-btn {
+            background: rgba(255,255,255,0.1);
+            border: none;
+            width: 32px;
+            height: 32px;
+            border-radius: 30px;
+            color: white;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .apple-calendar-nav-btn:hover {
+            background: var(--green-dim);
+            color: var(--green);
+        }
+        .apple-weekdays {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            text-align: center;
+            font-size: 12px;
+            font-weight: 500;
+            color: rgba(255,255,255,0.5);
+            margin-bottom: 12px;
+        }
+        .apple-days {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 6px;
+        }
+        .apple-day {
+            aspect-ratio: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            font-weight: 500;
+            border-radius: 30px;
+            cursor: pointer;
+            transition: all 0.2s;
+            background: rgba(255,255,255,0.02);
+            position: relative;
+        }
+        .apple-day:hover {
+            background: rgba(139,202,139,0.2);
+            transform: scale(1.02);
+        }
+        .apple-day.today {
+            background: var(--green);
+            color: #0d2010;
+            font-weight: 700;
+            box-shadow: 0 2px 8px rgba(139,202,139,0.3);
+        }
+        .apple-day.has-event {
+            background: var(--green-dim);
+            border: 1px solid var(--green-border);
+            font-weight: 600;
+            color: #8bca8b;
+        }
+        .apple-day.other-month {
+            opacity: 0.3;
+        }
+        .event-dot-apple {
+            width: 5px;
+            height: 5px;
+            background: var(--green);
+            border-radius: 50%;
+            position: absolute;
+            bottom: 2px;
+            left: 50%;
+            transform: translateX(-50%);
+        }
+        .appointment-item {
+            display: flex; align-items: center; justify-content: space-between;
+            gap: 12px; padding: 12px 14px; background: rgba(255,255,255,0.04);
+            border-radius: var(--radius-md); margin-bottom: 8px; border: 1px solid var(--border);
+            flex-wrap: wrap;
+        }
+        .appt-info { flex: 1; min-width: 120px; }
+        .appt-name { font-weight: 600; font-size: 14px; }
+        .appt-time { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+        .appt-status { font-size: 11px; margin-top: 3px; }
+        .status-pending { color: #f59e0b; }
+        .status-confirmed { color: var(--green); }
+        .status-completed { color: #9ca3af; text-decoration: line-through; }
+        .appt-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+        .notes-grid { display: flex; flex-direction: column; gap: 8px; }
+        .note-card {
+            padding: 12px 14px; background: rgba(255,255,255,0.04);
+            border-radius: var(--radius-md); cursor: pointer; border: 1px solid var(--border);
+        }
+        .note-card:hover { background: rgba(255,255,255,0.07); border-color: var(--green-border); }
+        .note-title { font-weight: 600; font-size: 13.5px; margin-bottom: 4px; }
+        .note-preview { font-size: 12px; color: var(--text-muted); line-height: 1.4; }
+        .certificates-grid { display: flex; gap: 10px; flex-wrap: wrap; }
+        .certificate-card {
+            background: rgba(255,255,255,0.05); border-radius: var(--radius-md);
+            padding: 10px; text-align: center; width: 96px;
+            border: 1px solid var(--border); position: relative;
+        }
+        .certificate-card:hover { border-color: var(--green-border); }
+        .certificate-card img { width: 100%; height: 72px; object-fit: cover; border-radius: var(--radius-sm); margin-bottom: 6px; }
+        .certificate-title { font-size: 10.5px; font-weight: 500; word-break: break-word; color: rgba(255,255,255,0.8); }
+        .delete-cert-btn {
+            position: absolute; top: -7px; right: -7px;
+            background: rgba(220,38,38,0.9); border: none; color: white;
+            width: 22px; height: 22px; border-radius: 50%; cursor: pointer; font-size: 11px;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .delete-cert-btn:hover { background: #dc2626; }
+        .add-cert-card {
+            cursor: pointer; display: flex; flex-direction: column; align-items: center;
+            justify-content: center; gap: 6px; height: 108px;
+            background: var(--green-dim) !important;
+            border: 1px dashed var(--green-border) !important;
+            color: var(--green); font-size: 12px; font-weight: 500;
+        }
+        .add-cert-card i { font-size: 22px; }
+        .add-cert-card:hover { background: rgba(139,202,139,0.22) !important; }
+        .psychologists-list { display: flex; flex-direction: column; gap: 10px; }
+        .psychologist-item {
+            display: flex; align-items: center; gap: 14px; padding: 14px 16px;
+            cursor: pointer; transition: all 0.22s; border-radius: var(--radius-lg);
+        }
+        .psychologist-item:hover { background: var(--glass-hover); border-color: var(--border-hover); transform: translateX(3px); }
+        .psychologist-avatar-list {
+            width: 54px; height: 54px; border-radius: 50%; object-fit: cover;
+            border: 2px solid var(--green-border); flex-shrink: 0;
+        }
+        .psychologist-info { flex: 1; min-width: 0; }
+        .psychologist-name { font-weight: 600; font-size: 15.5px; }
+        .psychologist-spec { font-size: 12px; color: var(--text-muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .psychologist-price { font-size: 12.5px; color: var(--green); margin-top: 4px; font-weight: 500; }
+        .psychologist-chevron { color: var(--text-muted); font-size: 12px; flex-shrink: 0; }
+        .chat-list { display: flex; flex-direction: column; gap: 8px; }
+        .chat-contact {
+            display: flex; align-items: center; gap: 14px; padding: 13px 16px;
+            cursor: pointer; border-radius: var(--radius-lg); transition: all 0.22s;
+            position: relative;
+        }
+        .chat-contact:hover { background: var(--glass-hover); border-color: var(--border-hover); }
+        .chat-contact-avatar { width: 50px; height: 50px; border-radius: 50%; object-fit: cover; border: 2px solid var(--green-border); flex-shrink: 0; }
+        .chat-contact-info { flex: 1; min-width: 0; }
+        .chat-contact-name { font-weight: 600; font-size: 15px; }
+        .chat-contact-last { font-size: 12px; color: var(--text-muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .unread-badge {
+            background: var(--green); color: #0d2010; border-radius: 20px;
+            padding: 3px 10px; font-size: 11px; font-weight: 700; flex-shrink: 0;
+            min-width: 28px; text-align: center;
+        }
+        .chat-page {
+            display: flex;
+            flex-direction: column;
+            height: calc(100vh - var(--nav-h) - var(--bottom-h));
+            padding: 0 8px;
+        }
+        .chat-page .chat-messages-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            background: var(--glass);
+            backdrop-filter: blur(22px);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg);
+        }
+        .chat-page .chat-messages-header {
+            display: flex; align-items: center; gap: 12px; padding: 12px 16px;
+            border-bottom: 1px solid var(--border); flex-shrink: 0;
+        }
+        .chat-page .chat-messages-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 14px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            scroll-behavior: smooth;
+        }
+        .chat-messages-list::-webkit-scrollbar { width: 4px; }
+        .chat-messages-list::-webkit-scrollbar-track { background: transparent; }
+        .chat-messages-list::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 2px; }
+        .message {
+            max-width: 72%; padding: 10px 14px; border-radius: 20px;
+            word-wrap: break-word; animation: msgIn 0.2s ease;
+        }
+        @keyframes msgIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+        .message.outgoing {
+            align-self: flex-end; background: linear-gradient(135deg, var(--green), var(--green-dark));
+            color: #0d2010; border-bottom-right-radius: 5px;
+        }
+        .message.incoming {
+            align-self: flex-start; background: rgba(255,255,255,0.1);
+            border-bottom-left-radius: 5px;
+        }
+        .message-text { font-size: 14px; line-height: 1.45; }
+        .message-time { font-size: 10px; opacity: 0.55; margin-top: 4px; text-align: right; }
+        .message.incoming .message-time { text-align: left; }
+        .chat-image {
+            max-width: 180px;
+            max-height: 140px;
+            border-radius: var(--radius-sm);
+            margin-top: 4px;
+            cursor: pointer;
+            transition: transform 0.1s;
+            object-fit: cover;
+        }
+        .chat-image:hover { transform: scale(1.02); }
+        .voice-message {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+            background: rgba(0,0,0,0.3);
+            border-radius: 30px;
+            padding: 4px 12px;
+            margin-top: 4px;
+        }
+        .voice-message audio {
+            height: 36px;
+            border-radius: 30px;
+        }
+        .speed-btn {
+            background: rgba(139,202,139,0.2);
+            border: none;
+            color: var(--green);
+            font-size: 11px;
+            font-weight: 600;
+            padding: 4px 10px;
+            border-radius: 20px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .speed-btn:hover {
+            background: var(--green);
+            color: #0d2010;
+        }
+        .chat-input-area {
+            display: flex; gap: 8px; padding: 10px 14px;
+            border-top: 1px solid var(--border); background: rgba(0,0,0,0.25); flex-shrink: 0;
+        }
+        .chat-input-area input {
+            flex: 1; padding: 10px 16px; border-radius: 30px;
+            border: 1px solid var(--border); background: rgba(255,255,255,0.06);
+            color: white; font-size: 14px; outline: none;
+        }
+        .chat-input-area input:focus { border-color: var(--green-border); }
+        .chat-controls { display: flex; gap: 6px; }
+        .chat-controls button {
+            background: rgba(255,255,255,0.08); border: 1px solid var(--border);
+            width: 40px; height: 40px; border-radius: 50%; cursor: pointer; color: rgba(255,255,255,0.7);
+            font-size: 16px;
+        }
+        .chat-controls button:hover { background: var(--green-dim); color: var(--green); }
+        .send-btn-chat {
+            width: 40px; height: 40px; border-radius: 50%; border: none;
+            background: linear-gradient(135deg, var(--green), var(--green-dark));
+            color: #0d2010; cursor: pointer; font-size: 16px; flex-shrink: 0;
+        }
+        .send-btn-chat:hover { opacity: 0.85; transform: scale(1.05); }
+        .recording-active { background: rgba(220,38,38,0.8) !important; border-color: #dc2626 !important; color: white !important; animation: pulse 1s infinite; }
+        @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.55; } }
+        .notifications-list { display: flex; flex-direction: column; gap: 10px; }
+        .notification-item { padding: 16px 18px; }
+        .notif-title { font-weight: 600; font-size: 14px; margin-bottom: 4px; }
+        .notif-msg { font-size: 13px; color: rgba(255,255,255,0.75); line-height: 1.4; }
+        .notif-time { font-size: 11px; color: var(--text-muted); margin-top: 5px; }
+        .modal {
+            position: fixed; inset: 0;
+            background: rgba(0,0,0,0.85); backdrop-filter: blur(28px);
+            display: flex; align-items: flex-end; justify-content: center;
+            z-index: 2000; opacity: 0; visibility: hidden; transition: all 0.28s;
+        }
+        .modal.active { opacity: 1; visibility: visible; }
+        .modal-content {
+            width: 100%; max-width: 560px;
+            padding: 26px 24px 32px;
+            background: rgba(14,22,15,0.97);
+            backdrop-filter: blur(40px);
+            border-radius: 28px 28px 0 0;
+            border: 1px solid var(--border);
+            border-bottom: none;
+            max-height: 88vh;
+            overflow-y: auto;
+            transform: translateY(40px);
+            transition: transform 0.32s cubic-bezier(0.32, 0.72, 0, 1);
+        }
+        .modal.active .modal-content { transform: translateY(0); }
+        .modal-handle {
+            width: 36px; height: 4px; background: rgba(255,255,255,0.18);
+            border-radius: 2px; margin: 0 auto 20px;
+        }
+        .modal-content h3 { font-size: 20px; font-weight: 700; margin-bottom: 20px; }
+        .modal-content input, .modal-content textarea, .modal-content select {
+            width: 100%; padding: 12px 14px; border-radius: var(--radius-md);
+            border: 1px solid var(--border); background: rgba(255,255,255,0.06);
+            color: white; font-size: 14px; margin-bottom: 12px; outline: none;
+            font-family: inherit;
+        }
+        .modal-content input:focus, .modal-content textarea:focus, .modal-content select:focus { border-color: var(--green-border); }
+        .modal-content textarea { resize: vertical; min-height: 90px; }
+        .modal-buttons { display: flex; gap: 10px; margin-top: 18px; }
+        .modal-buttons button { flex: 1; padding: 13px; border-radius: 40px; font-weight: 600; font-size: 14px; cursor: pointer; }
+        .btn-primary { background: linear-gradient(135deg, var(--green), var(--green-dark)); border: none; color: #0d2010; }
+        .btn-primary:hover { opacity: 0.88; }
+        .btn-secondary { background: transparent; border: 1px solid var(--border); color: rgba(255,255,255,0.75); }
+        .btn-secondary:hover { background: rgba(255,255,255,0.07); }
+        .toast {
+            position: fixed; bottom: calc(var(--bottom-h) + 18px); left: 50%;
+            transform: translateX(-50%);
+            background: rgba(14,22,15,0.96); backdrop-filter: blur(20px);
+            border: 1px solid var(--green-border); border-radius: 40px;
+            padding: 10px 20px; color: var(--green); font-size: 13px; font-weight: 500;
+            z-index: 3000; animation: toastIn 0.3s ease; white-space: nowrap;
+            max-width: calc(100vw - 32px); text-align: center;
+        }
+        .toast.error { border-color: rgba(220,38,38,0.4); color: #ff6b6b; }
+        @keyframes toastIn {
+            from { opacity: 0; transform: translateX(-50%) translateY(16px); }
+            to { opacity: 1; transform: translateX(-50%) translateY(0); }
+        }
+        .floating-notif {
+            position: fixed;
+            top: calc(var(--nav-h) + 8px);
+            right: 16px;
+            max-width: 280px;
+            background: rgba(14,22,15,0.96);
+            backdrop-filter: blur(20px);
+            border-left: 4px solid var(--green);
+            border-radius: 14px;
+            padding: 12px 16px;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.3);
+            z-index: 4000;
+            transform: translateX(120%);
+            transition: transform 0.3s ease;
+            font-size: 13px;
+        }
+        .floating-notif.show { transform: translateX(0); }
+        .floating-notif .fn-title { font-weight: 700; color: var(--green); margin-bottom: 4px; }
+        .floating-notif.error { border-left-color: #ff6b6b; }
+        .floating-notif.warning { border-left-color: #f5c518; }
+        .back-btn {
+            background: rgba(255,255,255,0.08); border: 1px solid var(--border);
+            color: white; font-size: 16px; cursor: pointer;
+            width: 36px; height: 36px; border-radius: 50%;
+            display: inline-flex; align-items: center; justify-content: center;
+        }
+        .back-btn:hover { background: var(--green-dim); color: var(--green); }
+        .time-slot {
+            background: var(--green-dim); border: 1px solid var(--green-border);
+            padding: 6px 14px; border-radius: 20px; margin: 4px; cursor: pointer;
+            color: rgba(255,255,255,0.85); font-size: 13px;
+        }
+        .time-slot:hover { background: rgba(139,202,139,0.28); }
+        .time-slot.selected { background: var(--green); color: #0d2010; border-color: var(--green); font-weight: 600; }
+        .schedule-modal-list {
+            max-height: 240px;
+            overflow-y: auto;
+            margin-bottom: 16px;
+        }
+        .schedule-modal-form {
+            background: rgba(255,255,255,0.04);
+            border-radius: var(--radius-md);
+            padding: 12px;
+            margin-bottom: 16px;
+        }
+        .client-item {
+            display: flex; align-items: center; justify-content: space-between;
+            gap: 12px; padding: 12px 14px; background: rgba(255,255,255,0.04);
+            border-radius: var(--radius-md); margin-bottom: 8px; border: 1px solid var(--border);
+        }
+        .client-name { font-weight: 600; font-size: 14px; }
+        .client-time { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+        .section-header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+        .section-header-row h3 { font-size: 16px; font-weight: 600; }
+        .page-title { font-size: 22px; font-weight: 700; margin-bottom: 18px; letter-spacing: -0.3px; }
+        .empty-state {
+            text-align: center; padding: 32px 20px;
+            color: var(--text-muted); font-size: 14px;
+        }
+        .empty-state i { font-size: 36px; margin-bottom: 10px; display: block; opacity: 0.4; }
+        .psych-page-header {
+            display: flex; align-items: center; gap: 10px; margin-bottom: 16px;
+        }
+        .psych-actions-row {
+            display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin: 14px 0;
+        }
+        .info-row {
+            display: flex; align-items: center; gap: 8px;
+            padding: 10px 14px; background: rgba(255,255,255,0.04);
+            border-radius: var(--radius-sm); border: 1px solid var(--border);
+            font-size: 13px; margin-bottom: 8px;
+        }
+        .info-row i { color: var(--green); width: 16px; text-align: center; }
+        .review-card { padding: 14px; margin-bottom: 10px; }
+        .review-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+        .review-name { font-weight: 600; font-size: 13.5px; }
+        .review-text { font-size: 13px; color: rgba(255,255,255,0.78); line-height: 1.5; }
+        .review-time { font-size: 11px; color: var(--text-muted); margin-top: 5px; }
+        .upload-progress {
+            margin-top: 12px;
+            background: rgba(139,202,139,0.2);
+            border-radius: 20px;
+            overflow: hidden;
+            height: 6px;
+            width: 100%;
+        }
+        .upload-progress-bar {
+            width: 0%;
+            height: 100%;
+            background: var(--green);
+            transition: width 0.2s;
+        }
+        .spinner-small {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-top-color: var(--green);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 8px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @media (max-width: 768px) {
+            .modal-content { padding: 20px 16px 24px; }
+            .btn-sm, .btn-login, .btn-register, .btn-logout { padding: 6px 14px; font-size: 12px; }
+            .floating-notif { top: auto; bottom: calc(var(--bottom-h) + 10px); left: 16px; right: 16px; max-width: none; transform: translateY(120%); }
+            .floating-notif.show { transform: translateY(0); }
+            .chat-page { height: calc(100vh - var(--nav-h) - var(--bottom-h)); }
+            .message { max-width: 82%; }
+            .apple-day { font-size: 12px; }
+            .time-slot { padding: 4px 10px; font-size: 12px; }
+            .post-video { max-height: 240px; }
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="logo"><span class="logo-icon">🌿</span><span>Therapy Call</span></div>
+        <div id="navAuth" class="auth-buttons">
+            <button class="btn-login" onclick="openLoginModal()">Войти</button>
+            <button class="btn-register" onclick="openRegisterModal()">Регистрация</button>
+        </div>
+        <div id="navUser" style="display:none">
+            <button id="searchNavBtn" class="search-btn"><i class="fas fa-search"></i></button>
+            <button class="btn-logout" onclick="logout()">Выйти</button>
+        </div>
+    </nav>
+
+    <main class="main-content" id="mainContent"></main>
+
+    <div id="bottomNav" class="bottom-nav" style="display:none;">
+        <div class="nav-item" data-tab="feed"><i class="fas fa-home"></i><span>Лента</span></div>
+        <div class="nav-item" data-tab="psychologists"><i class="fas fa-users"></i><span>Психологи</span></div>
+        <div class="nav-item" data-tab="chats"><i class="fas fa-comment-dots"></i><span>Чаты</span></div>
+        <div class="nav-item" data-tab="notifications"><i class="fas fa-bell"></i><span>Уведомления</span></div>
+        <div class="nav-item" data-tab="profile"><i class="fas fa-user"></i><span>Профиль</span></div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        // ======================= ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ =======================
+        let currentUser = null;
+        let currentTab = 'feed';
+        let socket = null;
+        let allPsychologists = [];
+        let currentChatPartner = null;
+        let currentCalendarDate = new Date();
+        let isLoading = false;
+        let audioAllowed = false;
+        let isPosting = false;
+        let videoObserver = null;
+
+        // ======================= ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ =======================
+        function showToast(msg, isErr = false) {
+            document.querySelectorAll('.toast').forEach(t => t.remove());
+            const t = document.createElement('div');
+            t.className = `toast${isErr ? ' error' : ''}`;
+            t.textContent = msg;
+            document.body.appendChild(t);
+            setTimeout(() => t.remove(), 3200);
+        }
+
+        async function fetchJSON(url, opt = {}) {
+            try {
+                const r = await fetch(url, opt);
+                return await r.json();
+            } catch(e) { showToast('Ошибка соединения', true); return { success: false }; }
+        }
+
+        function escapeHtml(s) {
+            if (!s) return '';
+            return String(s).replace(/[&<>'"]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[m]));
+        }
+
+        function renderStars(r) {
+            let s = '';
+            const full = Math.floor(r);
+            for (let i = 0; i < full; i++) s += '<i class="fas fa-star"></i>';
+            for (let i = full; i < 5; i++) s += '<i class="far fa-star"></i>';
+            return `<span class="rating-stars">${s}</span>`;
+        }
+
+        function toggleSection(el) {
+            const section = el.closest('.collapsible-section');
+            if (section) section.classList.toggle('open');
+        }
+
+        function playBeep() {
+            if (!audioAllowed) return;
+            try {
+                const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.frequency.value = 880;
+                gain.gain.value = 0.3;
+                osc.start();
+                gain.gain.exponentialRampToValueAtTime(0.00001, audioCtx.currentTime + 0.5);
+                osc.stop(audioCtx.currentTime + 0.5);
+                setTimeout(() => audioCtx.close(), 600);
+            } catch(e) {}
+        }
+
+        document.body.addEventListener('click', () => { audioAllowed = true; }, { once: true });
+
+        function showFloatingNotification(title, message, type = 'info') {
+            const existing = document.querySelector('.floating-notif');
+            if (existing) existing.remove();
+            const notif = document.createElement('div');
+            notif.className = `floating-notif ${type}`;
+            notif.innerHTML = `<div class="fn-title">${escapeHtml(title)}</div><div class="fn-message">${escapeHtml(message)}</div>`;
+            document.body.appendChild(notif);
+            setTimeout(() => notif.classList.add('show'), 10);
+            setTimeout(() => {
+                notif.classList.remove('show');
+                setTimeout(() => notif.remove(), 300);
+            }, 5000);
+            playBeep();
+        }
+
+        async function compressImage(file, maxSize = 1024, quality = 0.8) {
+            return new Promise((resolve, reject) => {
+                const img = new Image();
+                img.onload = () => {
+                    let width = img.width, height = img.height;
+                    if (width > maxSize || height > maxSize) {
+                        if (width > height) {
+                            height = Math.round(height * (maxSize / width));
+                            width = maxSize;
+                        } else {
+                            width = Math.round(width * (maxSize / height));
+                            height = maxSize;
+                        }
+                    }
+                    const canvas = document.createElement('canvas');
+                    canvas.width = width;
+                    canvas.height = height;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, width, height);
+                    canvas.toBlob(blob => resolve(blob), 'image/jpeg', quality);
+                };
+                img.onerror = reject;
+                img.src = URL.createObjectURL(file);
+            });
+        }
+
+        function scrollToBottom() {
+            const container = document.getElementById('chatMessagesList');
+            if (container) {
+                container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
+            }
+        }
+
+        function openImageModal(imgUrl) {
+            const html = `
+                <div class="modal" id="imageModal">
+                    <div class="modal-content" style="max-width: 90vw; background: rgba(0,0,0,0.9); padding: 10px; border-radius: 16px;">
+                        <div class="modal-handle"></div>
+                        <img src="${escapeHtml(imgUrl)}" style="width: 100%; height: auto; border-radius: 12px;">
+                        <div class="modal-buttons" style="margin-top: 10px;">
+                            <button class="btn-secondary" onclick="closeModal('imageModal')">Закрыть</button>
+                        </div>
+                    </div>
+                </div>`;
+            document.body.insertAdjacentHTML('beforeend', html);
+            setTimeout(() => document.getElementById('imageModal').classList.add('active'), 10);
+        }
+
+        // ======================= ОБНОВЛЕНИЕ ДАННЫХ ПОЛЬЗОВАТЕЛЯ =======================
+        window.refreshUser = async function() {
+            if (!currentUser) return;
+            const r = await fetch(`/api/user/${currentUser.id}`);
+            const d = await r.json();
+            if (d.success) {
+                currentUser = d.user;
+                if (!currentUser.unreadCounts) currentUser.unreadCounts = {};
+            }
+        };
+
+        // ======================= ИНИЦИАЛИЗАЦИЯ СОКЕТА =======================
+        function initSocket() {
+            if (socket) {
+                socket.disconnect();
+                socket = null;
+            }
+            socket = io({
+                transports: ['websocket', 'polling']
+            });
+            socket.on('connect', () => {
+                console.log('Socket connected');
+                if (currentUser) socket.emit('register_user', currentUser.id);
+            });
+            socket.on('connect_error', (err) => {
+                console.error('Socket connect error:', err.message);
+                showToast('Ошибка соединения с сервером', true);
+            });
+            socket.on('new_message', async (msg) => {
+                await window.refreshUser();
+                
+                let preview = '';
+                if (msg.text) preview = msg.text.substring(0,50);
+                else if (msg.image) preview = '📷 Фото';
+                else if (msg.voice) preview = '🎤 Голосовое';
+                else preview = 'Вложение';
+                
+                const userRes = await fetch(`/api/user/${msg.from}`);
+                const userData = await userRes.json();
+                const senderName = userData.success ? userData.user.fullName : 'Кто-то';
+                
+                showFloatingNotification('Новое сообщение', `${senderName}: ${preview}`);
+                
+                if (currentChatPartner && msg.from === currentChatPartner.id) {
+                    await fetch('/api/messages/read', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ userId: currentUser.id, fromUserId: msg.from }) });
+                    await loadChatMessages();
+                    scrollToBottom();
+                    if (currentUser.unreadCounts && currentUser.unreadCounts[msg.from]) {
+                        delete currentUser.unreadCounts[msg.from];
+                    }
+                    if (currentTab === 'chats') renderChats();
+                } else {
+                    if (currentUser && currentUser.unreadCounts) {
+                        currentUser.unreadCounts[msg.from] = (currentUser.unreadCounts[msg.from] || 0) + 1;
+                    }
+                    if (currentTab === 'chats') {
+                        renderChats();
+                    }
+                }
+            });
+            socket.on('notification', (notif) => {
+                showFloatingNotification(notif.title, notif.message);
+                if (currentUser) window.refreshUser();
+                if (currentTab === 'notifications') renderNotifications();
+            });
+            socket.on('unread_update', (data) => {
+                if (currentUser && data.from && data.count !== undefined) {
+                    if (!currentUser.unreadCounts) currentUser.unreadCounts = {};
+                    currentUser.unreadCounts[data.from] = data.count;
+                    if (currentTab === 'chats') renderChats();
+                }
+            });
+        }
+
+        // ======================= ЛЕНТА =======================
+        async function renderFeed() {
+            document.getElementById('mainContent').innerHTML = `<div class="container"><div class="empty-state"><i class="fas fa-circle-notch fa-spin"></i></div></div>`;
+            const data = await fetchJSON(`/api/posts?userId=${currentUser?.id || ''}`);
+            if (!data.success) return;
+            const posts = data.posts;
+            let html = `<div class="container"><div class="posts-grid">`;
+            for (const post of posts) {
+                html += `
+                    <div class="post-card glass-card" data-post-id="${post.id}">
+                        <div class="post-header">
+                            <img class="post-avatar" src="${escapeHtml(post.author.avatar)}" onclick="viewPsychologistPage('${post.author.id}')">
+                            <div>
+                                <div class="post-author" onclick="viewPsychologistPage('${post.author.id}')">
+                                    ${escapeHtml(post.author.fullName)}
+                                    ${renderStars(post.author.rating || 0)}
+                                </div>
+                                <div class="post-time">${new Date(post.createdAt).toLocaleString()}</div>
+                            </div>
+                        </div>
+                        <div class="post-text">${escapeHtml(post.text)}</div>
+                        ${post.image ? `<img class="post-image" src="${escapeHtml(post.image)}" onclick="openImageModal('${escapeHtml(post.image)}')">` : ''}
+                        ${post.video ? `<video class="post-video" controls preload="metadata"><source src="${escapeHtml(post.video)}" type="video/mp4"></video>` : ''}
+                        <div class="post-stats">
+                            <button class="like-btn${post.userLiked ? ' liked' : ''}" data-id="${post.id}">
+                                <i class="fa-${post.userLiked ? 'solid' : 'regular'} fa-heart"></i>
+                                <span>${post.likesCount || 0}</span>
+                            </button>
+                            <button class="comment-toggle" data-id="${post.id}">
+                                <i class="fa-regular fa-comment"></i>
+                                <span>${post.commentsCount || 0}</span>
+                            </button>
+                        </div>
+                        <div class="comments-section" id="comments-${post.id}" style="display:none">
+                            <div class="comments-list">
+                                ${(post.comments || []).map(c => `
+                                    <div class="comment">
+                                        <img class="comment-avatar" src="${escapeHtml(c.author.avatar)}" onerror="this.src='https://ui-avatars.com/api/?name=U&background=8bca8b&color=fff'">
+                                        <div class="comment-content">
+                                            <div class="comment-author">${escapeHtml(c.author.fullName)}</div>
+                                            <div class="comment-text">${escapeHtml(c.text)}</div>
+                                            <div class="comment-time">${new Date(c.createdAt).toLocaleString()}</div>
+                                        </div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                            ${currentUser ? `
+                            <div class="new-comment">
+                                <input type="text" placeholder="Написать комментарий..." id="comment-input-${post.id}" onkeypress="if(event.key==='Enter')addComment('${post.id}')">
+                                <button class="btn-sm" onclick="addComment('${post.id}')"><i class="fas fa-paper-plane"></i></button>
+                            </div>` : ''}
+                        </div>
+                        ${currentUser && post.author.id === currentUser.id ? `
+                        <div class="post-actions">
+                            <button class="edit-post-btn" data-id="${post.id}"><i class="fas fa-pen"></i> Редактировать</button>
+                            <button class="delete-post-btn" data-id="${post.id}"><i class="fas fa-trash-alt"></i> Удалить</button>
+                        </div>` : ''}
+                    </div>
+                `;
+            }
+            if (posts.length === 0) html += '<div class="empty-state glass-card"><i class="fas fa-newspaper"></i><div>Пока нет постов</div></div>';
+            html += `</div></div>`;
+            document.getElementById('mainContent').innerHTML = html;
+            initVideoObservers();
+            attachFeedEvents();
+        }
+
+        function attachFeedEvents() {
+            document.querySelectorAll('.like-btn').forEach(btn => {
+                btn.onclick = async () => {
+                    if (isLoading || !currentUser) { showToast('Войдите в аккаунт', true); return; }
+                    isLoading = true;
+                    const postId = btn.dataset.id;
+                    const res = await fetch(`/api/posts/${postId}/like`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ userId: currentUser.id }) });
+                    const data = await res.json();
+                    if (data.success) {
+                        btn.querySelector('span').textContent = data.likesCount;
+                        btn.classList.toggle('liked', data.liked);
+                        btn.querySelector('i').className = data.liked ? 'fa-solid fa-heart' : 'fa-regular fa-heart';
+                    }
+                    isLoading = false;
+                };
+            });
+            document.querySelectorAll('.comment-toggle').forEach(btn => {
+                btn.onclick = () => {
+                    const id = btn.dataset.id;
+                    const div = document.getElementById(`comments-${id}`);
+                    const isHidden = div.style.display === 'none';
+                    div.style.display = isHidden ? 'block' : 'none';
+                    btn.querySelector('i').className = isHidden ? 'fa-solid fa-comment' : 'fa-regular fa-comment';
+                };
+            });
+            document.querySelectorAll('.edit-post-btn').forEach(btn => {
+                btn.onclick = () => {
+                    const postCard = btn.closest('.post-card');
+                    const currentText = postCard.querySelector('.post-text').innerText;
+                    openEditPostModal(btn.dataset.id, currentText);
+                };
+            });
+            document.querySelectorAll('.delete-post-btn').forEach(btn => {
+                btn.onclick = () => openConfirmModal('Удалить пост?', 'Это действие нельзя отменить.', async () => {
+                    await fetch(`/api/posts/${btn.dataset.id}`, { method: 'DELETE', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ authorId: currentUser.id }) });
+                    renderFeed();
+                });
+            });
+        }
+
+        function openEditPostModal(postId, currentText) {
+            const html = `
+                <div class="modal" id="editPostModal">
+                    <div class="modal-content">
+                        <div class="modal-handle"></div>
+                        <h3>✏️ Редактировать пост</h3>
+                        <textarea id="editPostText" rows="5">${escapeHtml(currentText)}</textarea>
+                        <div class="modal-buttons">
+                            <button class="btn-secondary" onclick="closeModal('editPostModal')">Отмена</button>
+                            <button class="btn-primary" onclick="saveEditPost('${postId}')">Сохранить</button>
+                        </div>
+                    </div>
+                </div>`;
+            document.body.insertAdjacentHTML('beforeend', html);
+            setTimeout(() => document.getElementById('editPostModal').classList.add('active'), 10);
+        }
+
+        async function saveEditPost(postId) {
+            const newText = document.getElementById('editPostText').value;
+            if (!newText.trim()) { showToast('Текст не может быть пустым', true); return; }
+            const fd = new FormData();
+            fd.append('authorId', currentUser.id);
+            fd.append('text', newText);
+            await fetch(`/api/posts/${postId}`, { method: 'PUT', body: fd });
+            closeModal('editPostModal');
+            renderFeed();
+        }
+
+        async function addComment(postId) {
+            if (!currentUser) { showToast('Войдите в аккаунт', true); return; }
+            const input = document.getElementById(`comment-input-${postId}`);
+            if (!input || !input.value.trim()) return;
+            await fetch(`/api/posts/${postId}/comment`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ userId: currentUser.id, text: input.value.trim() }) });
+            input.value = '';
+            renderFeed();
+        }
+
+        // ======================= ПСИХОЛОГИ =======================
+        async function renderPsychologistsList() {
+            document.getElementById('mainContent').innerHTML = `<div class="container"><div class="empty-state"><i class="fas fa-circle-notch fa-spin"></i></div></div>`;
+            const data = await fetchJSON('/api/psychologists');
+            allPsychologists = data.psychologists || [];
+            let html = `<div class="container"><div class="page-title">Психологи</div><div class="psychologists-list">`;
+            for (const p of allPsychologists) {
+                html += `
+                    <div class="psychologist-item glass-card" onclick="viewPsychologistPage('${p.id}')">
+                        <img class="psychologist-avatar-list" src="${escapeHtml(p.avatar)}" onerror="this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(p.full_name)}&background=8bca8b&color=fff'">
+                        <div class="psychologist-info">
+                            <div class="psychologist-name">${escapeHtml(p.full_name)}</div>
+                            <div class="psychologist-spec">${escapeHtml(p.specialization || 'Психолог')}</div>
+                            <div style="display:flex;align-items:center;gap:8px;margin-top:5px;">
+                                ${renderStars(p.rating || 0)}
+                                <span class="psychologist-price">💰 ${p.price || 0} ₸/час</span>
+                            </div>
+                        </div>
+                        <i class="fas fa-chevron-right psychologist-chevron"></i>
+                    </div>
+                `;
+            }
+            if (allPsychologists.length === 0) html += '<div class="empty-state glass-card"><i class="fas fa-users"></i><div>Пока нет психологов</div></div>';
+            html += `</div></div>`;
+            document.getElementById('mainContent').innerHTML = html;
+            initVideoObservers();
+        }
+
+        // ======================= ПРОФИЛЬ (ПОЛНАЯ ВЕРСИЯ) =======================
+        async function renderProfile() {
+            if (!currentUser) { showToast('Войдите в аккаунт', true); return; }
+            const isPsych = currentUser.role === 'psychologist';
+            document.getElementById('mainContent').innerHTML = `<div class="container"><div class="empty-state"><i class="fas fa-circle-notch fa-spin"></i></div></div>`;
+
+            const [postsRes, tasksRes, notesRes, subsRes] = await Promise.all([
+                fetchJSON(`/api/posts?userId=${currentUser.id}`),
+                isPsych ? fetchJSON(`/api/tasks/${currentUser.id}`) : Promise.resolve({ tasks: [] }),
+                isPsych ? fetchJSON(`/api/notes/${currentUser.id}`) : Promise.resolve({ notes: [] }),
+                fetchJSON(`/api/subscriptions/${currentUser.id}`)
+            ]);
+
+            const myPosts = (postsRes.posts || []).filter(p => p.author.id === currentUser.id);
+            const tasks = tasksRes.tasks || [];
+            const notes = notesRes.notes || [];
+            const followersCount = subsRes.followers?.length || 0;
+
+            let appointmentsHtml = '';
+            if (!isPsych && currentUser.appointments) {
+                const appointments = currentUser.appointments.filter(a => a.status === 'confirmed' || a.status === 'completed');
+                appointmentsHtml = `<div class="profile-sections">
+                    <div class="collapsible-section open">
+                        <div class="collapsible-header" onclick="toggleSection(this)">
+                            <div class="collapsible-header-left">
+                                <div class="collapsible-icon">📅</div>
+                                <div>
+                                    <div class="collapsible-title">Мои записи</div>
+                                    <div class="collapsible-subtitle">${appointments.length} сеансов</div>
+                                </div>
+                            </div>
+                            <i class="fas fa-chevron-down collapsible-chevron"></i>
+                        </div>
+                        <div class="collapsible-body">
+                            ${appointments.map(apt => {
+                                const aptDateTime = new Date(`${apt.date}T${apt.time}`);
+                                const isCompleted = apt.status === 'completed' || aptDateTime < new Date();
+                                const statusText = isCompleted ? '✅ Завершён' : (apt.status === 'confirmed' ? '✅ Подтверждён' : '⏳ Ожидает');
+                                return `
+                                <div class="appointment-item">
+                                    <div class="appt-info">
+                                        <div class="appt-name">${escapeHtml(apt.psychologistName)}</div>
+                                        <div class="appt-time">📅 ${apt.date} в ${apt.time}</div>
+                                        <div class="appt-status ${isCompleted ? 'status-completed' : (apt.status === 'confirmed' ? 'status-confirmed' : 'status-pending')}">${statusText}</div>
+                                    </div>
+                                    <div class="appt-actions">
+                                        ${!isCompleted && apt.status === 'confirmed' ? `<button class="btn-sm" onclick="startCall('${apt.roomId}', 'client')"><i class="fas fa-video"></i> Войти</button>` : ''}
+                                        ${isCompleted ? '<i class="fas fa-check-circle" style="color:var(--green); font-size:20px;"></i>' : ''}
+                                    </div>
+                                </div>`;
+                            }).join('')}
+                            ${appointments.length === 0 ? '<div class="empty-state" style="padding:16px;"><i class="fas fa-calendar-times"></i><div>Нет записей</div></div>' : ''}
+                        </div>
+                    </div>
+                </div>`;
+            }
+
+            let psychSections = '';
+            if (isPsych) {
+                const pendingCount = (currentUser.clients || []).filter(a => a.status === 'pending').length;
+                const confirmedCount = (currentUser.clients || []).filter(a => a.status === 'confirmed').length;
+                const undoneTasks = tasks.filter(t => !t.completed).length;
+                const certificates = currentUser.certificates || [];
+
+                psychSections = `
+                <div class="profile-sections">
+                    <div class="collapsible-section" id="sec-tasks">
+                        <div class="collapsible-header" onclick="toggleSection(this)">
+                            <div class="collapsible-header-left">
+                                <div class="collapsible-icon">📋</div>
+                                <div>
+                                    <div class="collapsible-title">Задачи</div>
+                                    <div class="collapsible-subtitle">${undoneTasks > 0 ? `${undoneTasks} не выполнено` : 'Все выполнены'}</div>
+                                </div>
+                            </div>
+                            <i class="fas fa-chevron-down collapsible-chevron"></i>
+                        </div>
+                        <div class="collapsible-body">
+                            ${tasks.map(t => `
+                                <div class="task-item">
+                                    <input type="checkbox" class="task-checkbox task-cb" data-id="${t.id}" ${t.completed ? 'checked' : ''}>
+                                    <div style="flex:1">
+                                        <div class="task-text ${t.completed ? 'task-completed' : ''}">${escapeHtml(t.text)}</div>
+                                        ${t.dueDate ? `<div class="task-due">📅 ${t.dueDate}</div>` : ''}
+                                    </div>
+                                    <button class="task-delete" onclick="deleteTask('${t.id}')"><i class="fas fa-times"></i></button>
+                                </div>
+                            `).join('')}
+                            ${tasks.length === 0 ? '<div class="empty-state" style="padding:16px;"><i class="fas fa-check-circle"></i><div>Нет задач</div></div>' : ''}
+                            <button class="section-add-btn" onclick="addTaskWithDate()"><i class="fas fa-plus"></i> Добавить задачу</button>
+                        </div>
+                    </div>
+
+                    <div class="collapsible-section" id="sec-calendar">
+                        <div class="collapsible-header" onclick="toggleSection(this)">
+                            <div class="collapsible-header-left">
+                                <div class="collapsible-icon">📅</div>
+                                <div>
+                                    <div class="collapsible-title">Календарь</div>
+                                    <div class="collapsible-subtitle">События</div>
+                                </div>
+                            </div>
+                            <i class="fas fa-chevron-down collapsible-chevron"></i>
+                        </div>
+                        <div class="collapsible-body">
+                            <div id="profileCalendar"></div>
+                        </div>
+                    </div>
+
+                    <div class="collapsible-section" id="sec-appointments">
+                        <div class="collapsible-header" onclick="toggleSection(this)">
+                            <div class="collapsible-header-left">
+                                <div class="collapsible-icon">📞</div>
+                                <div>
+                                    <div class="collapsible-title">Записи клиентов</div>
+                                    <div class="collapsible-subtitle">${pendingCount > 0 ? `${pendingCount} ожидает подтверждения` : confirmedCount > 0 ? `${confirmedCount} подтверждено` : 'Нет записей'}</div>
+                                </div>
+                            </div>
+                            <i class="fas fa-chevron-down collapsible-chevron"></i>
+                        </div>
+                        <div class="collapsible-body">
+                            ${(currentUser.clients || []).map(apt => {
+                                const aptDateTime = new Date(`${apt.date}T${apt.time}`);
+                                const isCompleted = apt.status === 'completed' || aptDateTime < new Date();
+                                return `
+                                <div class="appointment-item">
+                                    <div class="appt-info">
+                                        <div class="appt-name">${escapeHtml(apt.clientName)}</div>
+                                        <div class="appt-time">📅 ${apt.date} в ${apt.time}</div>
+                                        <div class="appt-status ${apt.status === 'confirmed' ? 'status-confirmed' : 'status-pending'}">
+                                            ${apt.status === 'confirmed' ? (isCompleted ? '✅ Завершён' : '✅ Подтверждено') : '⏳ Ожидает'}
+                                        </div>
+                                    </div>
+                                    <div class="appt-actions">
+                                        ${apt.status === 'pending' ? `<button class="btn-sm" onclick="confirmAppointment('${apt.appointmentId}','${apt.clientId}')">Подтвердить</button>` : ''}
+                                        ${apt.status === 'confirmed' && !isCompleted ? `<button class="btn-sm" onclick="startCall('${apt.roomId}', 'psychologist')"><i class="fas fa-video"></i> Начать</button>` : ''}
+                                        ${isCompleted ? '<i class="fas fa-check-circle" style="color:var(--green); font-size:20px;"></i>' : ''}
+                                    </div>
+                                </div>`;
+                            }).join('')}
+                            ${(currentUser.clients || []).length === 0 ? '<div class="empty-state" style="padding:16px;"><i class="fas fa-calendar-times"></i><div>Нет записей</div></div>' : ''}
+                        </div>
+                    </div>
+
+                    <div class="collapsible-section" id="sec-clients">
+                        <div class="collapsible-header" onclick="toggleSection(this)">
+                            <div class="collapsible-header-left">
+                                <div class="collapsible-icon">👥</div>
+                                <div>
+                                    <div class="collapsible-title">Клиенты</div>
+                                    <div class="collapsible-subtitle">${confirmedCount} завершённых звонков</div>
+                                </div>
+                            </div>
+                            <i class="fas fa-chevron-down collapsible-chevron"></i>
+                        </div>
+                        <div class="collapsible-body">
+                            ${(currentUser.clients || []).filter(a => a.status === 'confirmed').map(apt => `
+                                <div class="client-item">
+                                    <div>
+                                        <div class="client-name">${escapeHtml(apt.clientName)}</div>
+                                        <div class="client-time">${apt.date} в ${apt.time}</div>
+                                    </div>
+                                    <button class="btn-sm" onclick="startChatWith('${apt.clientId}','${escapeHtml(apt.clientName)}')">
+                                        <i class="fas fa-comment-dots"></i> Написать
+                                    </button>
+                                </div>
+                            `).join('')}
+                            ${(currentUser.clients || []).filter(a => a.status === 'confirmed').length === 0 ? '<div class="empty-state" style="padding:16px;"><i class="fas fa-users-slash"></i><div>Нет завершённых звонков</div></div>' : ''}
+                        </div>
+                    </div>
+
+                    <div class="collapsible-section" id="sec-notes">
+                        <div class="collapsible-header" onclick="toggleSection(this)">
+                            <div class="collapsible-header-left">
+                                <div class="collapsible-icon">📝</div>
+                                <div>
+                                    <div class="collapsible-title">Заметки</div>
+                                    <div class="collapsible-subtitle">${notes.length} заметок</div>
+                                </div>
+                            </div>
+                            <i class="fas fa-chevron-down collapsible-chevron"></i>
+                        </div>
+                        <div class="collapsible-body">
+                            <div class="notes-grid">
+                                ${notes.map(n => `
+                                    <div class="note-card" onclick="openNoteModal('${n.id}','${escapeHtml(n.title)}','${escapeHtml(n.content)}','${n.attachment || ''}')">
+                                        <div class="note-title">${escapeHtml(n.title)}</div>
+                                        <div class="note-preview">${escapeHtml((n.content || '').substring(0, 70))}${(n.content || '').length > 70 ? '…' : ''}</div>
+                                    </div>
+                                `).join('')}
+                                ${notes.length === 0 ? '<div class="empty-state" style="padding:16px;"><i class="fas fa-sticky-note"></i><div>Нет заметок</div></div>' : ''}
+                            </div>
+                            <button class="section-add-btn" onclick="openAddNoteModal()"><i class="fas fa-plus"></i> Добавить заметку</button>
+                        </div>
+                    </div>
+
+                    <div class="collapsible-section" id="sec-certs">
+                        <div class="collapsible-header" onclick="toggleSection(this)">
+                            <div class="collapsible-header-left">
+                                <div class="collapsible-icon">📜</div>
+                                <div>
+                                    <div class="collapsible-title">Сертификаты и дипломы</div>
+                                    <div class="collapsible-subtitle">${certificates.length} документов</div>
+                                </div>
+                            </div>
+                            <i class="fas fa-chevron-down collapsible-chevron"></i>
+                        </div>
+                        <div class="collapsible-body">
+                            <div class="certificates-grid" id="certsGridProfile">
+                                ${certificates.map(c => `
+                                    <div class="certificate-card">
+                                        <img src="${escapeHtml(c.image)}" onerror="this.src='https://placehold.co/100x80/1a2e1a/8bca8b?text=📜'">
+                                        <div class="certificate-title">${escapeHtml(c.title)}</div>
+                                        <button class="delete-cert-btn" onclick="deleteCertificateProfile('${c.id}')"><i class="fas fa-times"></i></button>
+                                    </div>
+                                `).join('')}
+                                <div class="certificate-card add-cert-card" onclick="addCertificateProfile()">
+                                    <i class="fas fa-plus"></i>
+                                    <span>Добавить</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>`;
+            }
+
+            const html = `
+                <div class="container">
+                    <div class="profile-header">
+                        <div class="profile-avatar-wrap">
+                            <img class="profile-avatar-lg" src="${escapeHtml(currentUser.avatar)}" id="profileAvatar" onerror="this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser.fullName)}&background=8bca8b&color=fff'">
+                            <button class="avatar-edit-btn" onclick="changeAvatar()"><i class="fas fa-pen"></i></button>
+                        </div>
+                        <div class="profile-name">${escapeHtml(currentUser.fullName)}</div>
+                        <div class="profile-role-badge">${isPsych ? '🧠 Психолог' : '👤 Клиент'}</div>
+                        ${currentUser.about ? `<div class="profile-bio">${escapeHtml(currentUser.about)}</div>` : ''}
+                        ${isPsych ? renderStars(currentUser.rating || 0) : ''}
+                        <div class="profile-stats">
+                            <div class="profile-stat"><div class="number">${myPosts.length}</div><div class="label">постов</div></div>
+                            <div class="profile-stat"><div class="number">${followersCount}</div><div class="label">подписчиков</div></div>
+                            ${isPsych ? `<div class="profile-stat"><div class="number">${(currentUser.rating || 0).toFixed(1)}</div><div class="label">рейтинг</div></div>` : ''}
+                        </div>
+                        <div class="profile-actions">
+                            <button class="btn-sm btn-outline" onclick="editProfileModal()"><i class="fas fa-pen"></i> Редактировать</button>
+                            ${isPsych ? `
+                                <button class="btn-sm btn-outline" onclick="showScheduleEditor()"><i class="fas fa-clock"></i> Расписание</button>
+                                <button class="btn-sm" onclick="createPostModal()"><i class="fas fa-plus"></i> Пост</button>
+                            ` : ''}
+                        </div>
+                    </div>
+
+                    ${!isPsych ? appointmentsHtml : ''}
+
+                    ${isPsych ? `
+                    <div style="margin-bottom: 16px;">
+                        <div class="section-header-row">
+                            <h3>Мои посты</h3>
+                            <button class="btn-sm" onclick="createPostModal()"><i class="fas fa-plus"></i> Новый</button>
+                        </div>
+                        <div class="posts-grid">
+                            ${myPosts.map(p => `
+                                <div class="post-card glass-card">
+                                    <div class="post-text">${escapeHtml(p.text)}</div>
+                                    ${p.image ? `<img class="post-image" src="${escapeHtml(p.image)}" onclick="openImageModal('${escapeHtml(p.image)}')">` : ''}
+                                    ${p.video ? `<video class="post-video" controls preload="metadata"><source src="${escapeHtml(p.video)}" type="video/mp4"></video>` : ''}
+                                    <div class="post-stats">
+                                        <span style="color:var(--text-muted);font-size:13px;display:flex;gap:6px;align-items:center;"><i class="fa-regular fa-heart"></i> ${p.likesCount||0}</span>
+                                        <span style="color:var(--text-muted);font-size:13px;display:flex;gap:6px;align-items:center;"><i class="fa-regular fa-comment"></i> ${p.commentsCount||0}</span>
+                                    </div>
+                                    <div class="post-actions">
+                                        <button class="profile-edit-post" data-id="${p.id}" data-text="${escapeHtml(p.text)}"><i class="fas fa-pen"></i> Ред.</button>
+                                        <button class="profile-delete-post" data-id="${p.id}"><i class="fas fa-trash-alt"></i> Удалить</button>
+                                    </div>
+                                </div>
+                            `).join('')}
+                            ${myPosts.length === 0 ? '<div class="empty-state glass-card" style="padding:24px;"><i class="fas fa-newspaper"></i><div>Нет постов</div></div>' : ''}
+                        </div>
+                    </div>
+                    ` : ''}
+
+                    ${psychSections}
+                </div>
+            `;
+            document.getElementById('mainContent').innerHTML = html;
+
+            if (isPsych) {
+                document.querySelectorAll('.profile-edit-post').forEach(b => {
+                    b.onclick = () => openEditPostModal(b.dataset.id, b.dataset.text);
+                });
+                document.querySelectorAll('.profile-delete-post').forEach(b => {
+                    b.onclick = () => openConfirmModal('Удалить пост?', 'Это действие нельзя отменить.', async () => {
+                        await fetch(`/api/posts/${b.dataset.id}`, { method:'DELETE', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ authorId: currentUser.id }) });
+                        renderProfile();
+                    });
+                });
+                document.querySelectorAll('.task-cb').forEach(cb => {
+                    cb.onchange = async () => {
+                        await fetch(`/api/tasks/${cb.dataset.id}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ completed: cb.checked }) });
+                        const label = cb.closest('.task-item').querySelector('.task-text');
+                        if (label) label.classList.toggle('task-completed', cb.checked);
+                    };
+                });
+                const calSection = document.getElementById('sec-calendar');
+                if (calSection) {
+                    const header = calSection.querySelector('.collapsible-header');
+                    if (header) {
+                        header.onclick = function() {
+                            toggleSection(this);
+                            if (calSection.classList.contains('open') && !document.getElementById('profileCalendar').innerHTML.trim()) {
+                                renderProfileCalendar();
+                            }
+                        };
+                    }
+                }
+            }
+            checkUpcomingEvents();
+        }
+
+        async function renderProfileCalendar() {
+            const container = document.getElementById('profileCalendar');
+            if (!container) return;
+            const year = currentCalendarDate.getFullYear(), month = currentCalendarDate.getMonth();
+            const firstDay = new Date(year, month, 1);
+            let startDay = firstDay.getDay();
+            startDay = startDay === 0 ? 6 : startDay - 1;
+            const daysInMonth = new Date(year, month + 1, 0).getDate();
+            const prevDays = new Date(year, month, 0).getDate();
+
+            const [tasksRes] = await Promise.all([ fetchJSON(`/api/tasks/${currentUser.id}`) ]);
+            const tasks = tasksRes.tasks || [];
+            const appointments = currentUser.clients || [];
+            const events = [];
+            tasks.forEach(t => { if (t.dueDate) events.push({ date: t.dueDate, title: t.text, type: 'task', roomId: null }); });
+            appointments.filter(a => a.status === 'confirmed').forEach(a => { events.push({ date: a.date, title: `Запись с ${a.clientName} в ${a.time}`, type: 'appointment', roomId: a.roomId }); });
+
+            let daysHtml = '';
+            for (let i = 0; i < startDay; i++) {
+                daysHtml += `<div class="apple-day other-month">${prevDays - startDay + i + 1}</div>`;
+            }
+            for (let d = 1; d <= daysInMonth; d++) {
+                const dateStr = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+                const dayEvents = events.filter(e => e.date === dateStr);
+                const isToday = dateStr === new Date().toISOString().split('T')[0];
+                daysHtml += `<div class="apple-day${dayEvents.length ? ' has-event' : ''}${isToday ? ' today' : ''}" data-date="${dateStr}" data-events='${JSON.stringify(dayEvents).replace(/'/g, "&#39;")}'>
+                    ${d}${dayEvents.length && !isToday ? '<div class="event-dot-apple"></div>' : ''}
+                </div>`;
+            }
+            const monthNames = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
+            container.innerHTML = `
+                <div class="apple-calendar">
+                    <div class="apple-calendar-header">
+                        <button class="apple-calendar-nav-btn" onclick="changeProfileMonth(-1)"><i class="fas fa-chevron-left"></i></button>
+                        <h3>${monthNames[month]} ${year}</h3>
+                        <button class="apple-calendar-nav-btn" onclick="changeProfileMonth(1)"><i class="fas fa-chevron-right"></i></button>
+                    </div>
+                    <div class="apple-weekdays"><span>Пн</span><span>Вт</span><span>Ср</span><span>Чт</span><span>Пт</span><span>Сб</span><span>Вс</span></div>
+                    <div class="apple-days" id="appleDaysContainer">${daysHtml}</div>
+                </div>
+            `;
+            document.querySelectorAll('.apple-day').forEach(day => {
+                day.onclick = () => {
+                    const evs = JSON.parse(day.getAttribute('data-events') || '[]');
+                    if (evs.length) showDayEventsApple(day.getAttribute('data-date'), evs);
+                    else showToast('Нет событий на эту дату');
+                };
+            });
+        }
+
+        function showDayEventsApple(date, events) {
+            let content = `<div style="margin-bottom: 16px;"><i class="fas fa-calendar-day"></i> <strong>${date}</strong></div>`;
+            events.forEach(ev => {
+                if (ev.type === 'appointment') {
+                    content += `
+                        <div style="background: var(--green-dim); border-radius: 16px; padding: 14px; margin-bottom: 12px;">
+                            <div><i class="fas fa-phone-alt"></i> ${escapeHtml(ev.title)}</div>
+                            <button class="btn-sm" style="margin-top: 12px;" onclick="startCall('${ev.roomId}', 'psychologist'); closeModal('dayEventsModal')">
+                                <i class="fas fa-video"></i> Войти в звонок
+                            </button>
+                        </div>`;
+                } else {
+                    content += `<div style="background: rgba(255,255,255,0.05); border-radius: 16px; padding: 14px; margin-bottom: 12px;"><i class="fas fa-tasks"></i> ${escapeHtml(ev.title)}</div>`;
+                }
+            });
+            const html = `
+                <div class="modal" id="dayEventsModal">
+                    <div class="modal-content">
+                        <div class="modal-handle"></div>
+                        <h3>События на ${date}</h3>
+                        ${content}
+                        <div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('dayEventsModal')">Закрыть</button></div>
+                    </div>
+                </div>`;
+            document.body.insertAdjacentHTML('beforeend', html);
+            setTimeout(() => document.getElementById('dayEventsModal').classList.add('active'), 10);
+        }
+
+        window.changeProfileMonth = (delta) => {
+            currentCalendarDate.setMonth(currentCalendarDate.getMonth() + delta);
+            renderProfileCalendar();
+        };
+
+        // ======================= СЕРТИФИКАТЫ =======================
+        async function addCertificateProfile() {
+            const title = await openPromptModal('Название сертификата или диплома:', 'Добавить');
+            if (!title) return;
+            const input = document.createElement('input');
+            input.type = 'file'; input.accept = 'image/*';
+            input.onchange = async () => {
+                const file = input.files[0];
+                if (!file) return;
+                const fd = new FormData();
+                fd.append('userId', currentUser.id);
+                fd.append('title', title);
+                fd.append('certificate', file);
+                showToast('Загружаем...');
+                const res = await fetch('/api/certificates', { method:'POST', body: fd });
+                const data = await res.json();
+                if (data.success) {
+                    if (data.user) currentUser = data.user;
+                    else await window.refreshUser();
+                    showToast('Сертификат добавлен');
+                    renderProfile();
+                    setTimeout(() => {
+                        const sec = document.getElementById('sec-certs');
+                        if (sec && !sec.classList.contains('open')) sec.classList.add('open');
+                    }, 100);
+                } else {
+                    showToast(data.error || 'Ошибка загрузки', true);
+                }
+            };
+            input.click();
+        }
+
+        async function deleteCertificateProfile(certId) {
+            openConfirmModal('Удалить сертификат?', 'Это действие нельзя отменить.', async () => {
+                const res = await fetch(`/api/certificates/${currentUser.id}/${certId}`, { method:'DELETE' });
+                const data = await res.json();
+                if (data.success) {
+                    if (data.user) currentUser = data.user;
+                    else await window.refreshUser();
+                    showToast('Сертификат удалён');
+                    renderProfile();
+                } else {
+                    showToast('Ошибка удаления', true);
+                }
+            });
+        }
+
+        function openConfirmModal(title, text, onConfirm) {
+            const html = `
+                <div class="modal" id="confirmModal">
+                    <div class="modal-content">
+                        <div class="modal-handle"></div>
+                        <h3>${escapeHtml(title)}</h3>
+                        <p style="color:rgba(255,255,255,0.65);font-size:14px;margin-bottom:4px;">${escapeHtml(text)}</p>
+                        <div class="modal-buttons">
+                            <button class="btn-secondary" onclick="closeModal('confirmModal')">Отмена</button>
+                            <button class="btn-danger" style="background:rgba(220,38,38,0.25)!important;border:1px solid rgba(220,38,38,0.4)!important;color:#ff6b6b!important;" onclick="closeModal('confirmModal');window._confirmCb()">Удалить</button>
+                        </div>
+                    </div>
+                </div>`;
+            window._confirmCb = onConfirm;
+            document.body.insertAdjacentHTML('beforeend', html);
+            setTimeout(() => document.getElementById('confirmModal').classList.add('active'), 10);
+        }
+
+        // ======================= РЕДАКТИРОВАНИЕ ПРОФИЛЯ =======================
+        function editProfileModal() {
+            const isPsych = currentUser.role === 'psychologist';
+            const html = `
+                <div class="modal" id="editProfileModal">
+                    <div class="modal-content">
+                        <div class="modal-handle"></div>
+                        <h3>Редактировать профиль</h3>
+                        <input type="text" id="editName" value="${escapeHtml(currentUser.fullName)}" placeholder="ФИО">
+                        <input type="tel" id="editPhone" value="${escapeHtml(currentUser.phone || '')}" placeholder="Телефон">
+                        <textarea id="editBio" rows="3" placeholder="О себе">${escapeHtml(currentUser.about || '')}</textarea>
+                        ${isPsych ? `
+                            <input type="text" id="editSpec" value="${escapeHtml(currentUser.specialization || '')}" placeholder="Специализация">
+                            <input type="text" id="editExp" value="${escapeHtml(currentUser.experience || '')}" placeholder="Опыт работы">
+                            <input type="number" id="editPrice" value="${currentUser.price || 0}" placeholder="Стоимость часа (₸)">
+                        ` : ''}
+                        <div class="modal-buttons">
+                            <button class="btn-secondary" onclick="closeModal('editProfileModal')">Отмена</button>
+                            <button class="btn-primary" onclick="saveProfileEdit()">Сохранить</button>
+                        </div>
+                    </div>
+                </div>`;
+            document.body.insertAdjacentHTML('beforeend', html);
+            setTimeout(() => document.getElementById('editProfileModal').classList.add('active'), 10);
+        }
+
+        async function saveProfileEdit() {
+            const fd = new FormData();
+            fd.append('userId', currentUser.id);
+            fd.append('fullName', document.getElementById('editName').value);
+            fd.append('phone', document.getElementById('editPhone').value);
+            fd.append('about', document.getElementById('editBio').value);
+            if (currentUser.role === 'psychologist') {
+                fd.append('specialization', document.getElementById('editSpec').value);
+                fd.append('experience', document.getElementById('editExp').value);
+                fd.append('price', document.getElementById('editPrice').value);
+            }
+            const res = await fetch('/api/user/profile', { method:'PUT', body: fd });
+            const data = await res.json();
+            if (data.success) {
+                currentUser = data.user;
+                showToast('Профиль обновлён');
+                closeModal('editProfileModal');
+                renderProfile();
+            } else showToast('Ошибка', true);
+        }
+
+        async function changeAvatar() {
+            const input = document.createElement('input');
+            input.type = 'file'; input.accept = 'image/*';
+            input.onchange = async () => {
+                const file = input.files[0];
+                if (!file) return;
+                const fd = new FormData();
+                fd.append('avatar', file);
+                const uploadRes = await fetch('/api/upload-avatar', { method:'POST', body: fd });
+                const uploadData = await uploadRes.json();
+                if (uploadData.success) {
+                    const updateRes = await fetch('/api/user/profile', { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ userId: currentUser.id, avatar: uploadData.avatarUrl }) });
+                    const updateData = await updateRes.json();
+                    if (updateData.success) {
+                        currentUser = updateData.user;
+                        showToast('Аватар обновлён');
+                        renderProfile();
+                    }
+                }
+            };
+            input.click();
+        }
+
+        // ======================= РАСПИСАНИЕ =======================
+        function showScheduleEditor() {
+            const schedule = currentUser.schedule || {};
+            const renderSlots = () => {
+                const sched = currentUser.schedule || {};
+                const ds = Object.keys(sched).sort();
+                return ds.length ? ds.map(d => `
+                    <div style="margin-bottom:12px;">
+                        <div style="font-size:12px;color:var(--text-muted);margin-bottom:6px;">${d}</div>
+                        <div style="display:flex;flex-wrap:wrap;gap:6px;">
+                            ${sched[d].map(t => `
+                                <span style="display:inline-flex;align-items:center;gap:6px;background:var(--green-dim);border:1px solid var(--green-border);padding:4px 12px;border-radius:20px;font-size:13px;">
+                                    ${t}
+                                    <button onclick="removeSlot('${d}','${t}')" style="background:none;border:none;color:rgba(255,100,100,0.8);cursor:pointer;font-size:12px;padding:0;line-height:1;">✕</button>
+                                </span>
+                            `).join('')}
+                        </div>
+                    </div>
+                `).join('') : '<div class="empty-state" style="padding:20px;"><i class="fas fa-calendar-times"></i><div>Нет добавленного времени</div></div>';
+            };
+
+            const html = `
+                <div class="modal" id="scheduleModal">
+                    <div class="modal-content" style="max-height:85vh;display:flex;flex-direction:column;">
+                        <div class="modal-handle"></div>
+                        <h3>📅 Свободное время</h3>
+                        <div class="schedule-modal-form">
+                            <div style="display:flex;gap:8px;align-items:flex-end;">
+                                <div style="flex:1;">
+                                    <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px;">Дата</label>
+                                    <input type="date" id="slotDate" style="margin-bottom:0;width:100%;">
+                                </div>
+                                <div style="flex:1;">
+                                    <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px;">Время</label>
+                                    <input type="time" id="slotTime" style="margin-bottom:0;width:100%;">
+                                </div>
+                                <button class="btn-sm" style="height:44px;margin-bottom:0;" onclick="addSlot()"><i class="fas fa-plus"></i> Добавить</button>
+                            </div>
+                        </div>
+                        <div class="schedule-modal-list">
+                            ${renderSlots()}
+                        </div>
+                        <div class="modal-buttons" style="margin-top:0;">
+                            <button class="btn-secondary" onclick="closeModal('scheduleModal')">Закрыть</button>
+                        </div>
+                    </div>
+                </div>`;
+            document.body.insertAdjacentHTML('beforeend', html);
+            setTimeout(() => document.getElementById('scheduleModal').classList.add('active'), 10);
+
+            window.addSlot = async () => {
+                const date = document.getElementById('slotDate').value;
+                const time = document.getElementById('slotTime').value;
+                if (!date || !time) { showToast('Выберите дату и время', true); return; }
+                const sched = currentUser.schedule || {};
+                if (!sched[date]) sched[date] = [];
+                if (sched[date].includes(time)) { showToast('Такое время уже есть', true); return; }
+                sched[date].push(time); sched[date].sort();
+                const res = await fetch('/api/schedule', { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ userId: currentUser.id, schedule: sched }) });
+                if (res.ok) {
+                    currentUser.schedule = sched;
+                    document.getElementById('scheduleModal').querySelector('.schedule-modal-list').innerHTML = renderSlots();
+                    showToast('Время добавлено');
+                }
+            };
+
+            window.removeSlot = async (date, time) => {
+                const sched = currentUser.schedule || {};
+                if (sched[date]) {
+                    sched[date] = sched[date].filter(t => t !== time);
+                    if (!sched[date].length) delete sched[date];
+                    await fetch('/api/schedule', { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ userId: currentUser.id, schedule: sched }) });
+                    currentUser.schedule = sched;
+                    document.getElementById('scheduleModal').querySelector('.schedule-modal-list').innerHTML = renderSlots();
+                }
+            };
+        }
+
+        // ======================= ЗАДАЧИ =======================
+        async function addTaskWithDate() {
+            return new Promise((resolve) => {
+                const modalId = 'addTaskModal_' + Date.now();
+                const html = `
+                    <div class="modal" id="${modalId}">
+                        <div class="modal-content">
+                            <div class="modal-handle"></div>
+                            <h3>Новая задача</h3>
+                            <label style="font-size:12px; color:var(--text-muted); display:block; margin-bottom:6px;">Дата выполнения (необязательно)</label>
+                            <input type="date" id="taskDueDate_${modalId}" style="margin-bottom:16px; width:100%;">
+                            <input type="text" id="taskText_${modalId}" placeholder="Введите задачу..." style="margin-bottom:20px;">
+                            <div class="modal-buttons">
+                                <button class="btn-secondary" id="cancelTaskBtn_${modalId}">Отмена</button>
+                                <button class="btn-primary" id="saveTaskBtn_${modalId}">Сохранить</button>
+                            </div>
+                        </div>
+                    </div>`;
+                document.body.insertAdjacentHTML('beforeend', html);
+                const modal = document.getElementById(modalId);
+                const textInput = document.getElementById(`taskText_${modalId}`);
+                const dueDateInput = document.getElementById(`taskDueDate_${modalId}`);
+                const cancelBtn = document.getElementById(`cancelTaskBtn_${modalId}`);
+                const saveBtn = document.getElementById(`saveTaskBtn_${modalId}`);
+
+                const cleanup = () => {
+                    modal.classList.remove('active');
+                    setTimeout(() => modal.remove(), 300);
+                };
+
+                saveBtn.onclick = async () => {
+                    const text = textInput.value.trim();
+                    if (!text) {
+                        showToast('Введите текст задачи', true);
+                        return;
+                    }
+                    const dueDate = dueDateInput.value || null;
+                    await fetch('/api/tasks', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ psychologistId: currentUser.id, text: text, dueDate: dueDate })
+                    });
+                    showToast('Задача добавлена');
+                    cleanup();
+                    renderProfile();
+                    resolve();
+                };
+                cancelBtn.onclick = () => {
+                    cleanup();
+                    resolve();
+                };
+                setTimeout(() => modal.classList.add('active'), 10);
+                textInput.focus();
+            });
+        }
+
+        async function deleteTask(taskId) {
+            openConfirmModal('Удалить задачу?', '', async () => {
+                await fetch(`/api/tasks/${taskId}`, { method:'DELETE' });
+                renderProfile();
+            });
+        }
+
+        async function confirmAppointment(appointmentId, clientId) {
+            const res = await fetch('/api/appointment/confirm', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ appointmentId, psychologistId: currentUser.id, clientId }) });
+            const data = await res.json();
+            if (data.success) {
+                showToast('Запись подтверждена');
+                await window.refreshUser();
+                renderProfile();
+            } else {
+                showToast('Ошибка подтверждения', true);
+            }
+        }
+
+        // ======================= ЗАМЕТКИ =======================
+        function openAddNoteModal() {
+            const html = `
+                <div class="modal" id="noteModal">
+                    <div class="modal-content">
+                        <div class="modal-handle"></div>
+                        <h3>Новая заметка</h3>
+                        <input type="text" id="noteTitle" placeholder="Заголовок">
+                        <textarea id="noteContent" rows="4" placeholder="Текст заметки..."></textarea>
+                        <input type="file" id="noteFile" style="font-size:12px;">
+                        <div class="modal-buttons">
+                            <button class="btn-secondary" onclick="closeModal('noteModal')">Отмена</button>
+                            <button class="btn-primary" onclick="saveNote()">Сохранить</button>
+                        </div>
+                    </div>
+                </div>`;
+            document.body.insertAdjacentHTML('beforeend', html);
+            setTimeout(() => document.getElementById('noteModal').classList.add('active'), 10);
+        }
+
+        async function saveNote() {
+            const title = document.getElementById('noteTitle').value;
+            const content = document.getElementById('noteContent').value;
+            if (!title || !content) { showToast('Заполните все поля', true); return; }
+            const file = document.getElementById('noteFile')?.files[0];
+            let att = null, attT = null;
+            if (file) {
+                const fd = new FormData(); fd.append('file', file);
+                const r = await fetch('/api/upload', { method:'POST', body: fd });
+                const d = await r.json();
+                if (d.success) { att = d.fileUrl; attT = file.type.startsWith('image/') ? 'image' : 'file'; }
+            }
+            await fetch('/api/notes', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ psychologistId: currentUser.id, title, content, attachment: att, attachmentType: attT }) });
+            closeModal('noteModal');
+            showToast('Заметка сохранена');
+            renderProfile();
+        }
+
+        async function openNoteModal(id, title, content, att) {
+            const html = `
+                <div class="modal" id="editNoteModal">
+                    <div class="modal-content">
+                        <div class="modal-handle"></div>
+                        <h3>Заметка</h3>
+                        <input type="text" id="editNoteTitle" value="${title}">
+                        <textarea id="editNoteContent" rows="6">${content}</textarea>
+                        ${att ? `<div style="margin-bottom:12px;"><a href="${att}" target="_blank" style="color:var(--green);font-size:13px;"><i class="fas fa-paperclip"></i> Вложение</a></div>` : ''}
+                        <div class="modal-buttons">
+                            <button class="btn-secondary" onclick="closeModal('editNoteModal')">Закрыть</button>
+                            <button class="btn-danger" style="background:rgba(220,38,38,0.2)!important;border:1px solid rgba(220,38,38,0.35)!important;color:#ff6b6b!important;" onclick="deleteNote('${id}')">Удалить</button>
+                            <button class="btn-primary" onclick="updateNote('${id}')">Сохранить</button>
+                        </div>
+                    </div>
+                </div>`;
+            document.body.insertAdjacentHTML('beforeend', html);
+            setTimeout(() => document.getElementById('editNoteModal').classList.add('active'), 10);
+        }
+
+        async function updateNote(id) {
+            const title = document.getElementById('editNoteTitle').value;
+            const content = document.getElementById('editNoteContent').value;
+            await fetch(`/api/notes/${id}`, { method:'DELETE' });
+            await fetch('/api/notes', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ psychologistId: currentUser.id, title, content, attachment: null, attachmentType: null }) });
+            closeModal('editNoteModal');
+            showToast('Заметка обновлена');
+            renderProfile();
+        }
+
+        async function deleteNote(id) {
+            openConfirmModal('Удалить заметку?', '', async () => {
+                await fetch(`/api/notes/${id}`, { method:'DELETE' });
+                closeModal('editNoteModal');
+                showToast('Заметка удалена');
+                renderProfile();
+            });
+        }
+
+        // ======================= СТРАНИЦА ПСИХОЛОГА =======================
+        async function viewPsychologistPage(psychologistId) {
+            document.getElementById('mainContent').innerHTML = `<div class="container"><div class="empty-state"><i class="fas fa-circle-notch fa-spin"></i></div></div>`;
+            const [userData, postsData, reviewsData] = await Promise.all([
+                fetchJSON(`/api/user/${psychologistId}`),
+                fetchJSON(`/api/posts?userId=${currentUser?.id || ''}`),
+                fetchJSON(`/api/reviews/${psychologistId}`)
+            ]);
+            if (!userData.success) return;
+            const p = userData.user;
+            const psychPosts = (postsData.posts || []).filter(post => post.author.id === psychologistId);
+            const reviews = reviewsData.reviews || [];
+            const isOwn = currentUser && currentUser.id === psychologistId;
+            const certificates = p.certificates || [];
+
+            const html = `
+                <div class="container">
+                    <div class="psych-page-header">
+                        <button class="back-btn" onclick="switchTab('psychologists')"><i class="fas fa-arrow-left"></i></button>
+                        <span style="font-size:14px;color:var(--text-muted);">Профиль</span>
+                    </div>
+                    <div class="profile-header">
+                        <img class="profile-avatar-lg" src="${escapeHtml(p.avatar)}" onerror="this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(p.fullName)}&background=8bca8b&color=fff'">
+                        <div class="profile-name">${escapeHtml(p.fullName)}</div>
+                        <div class="profile-role-badge">🧠 Психолог</div>
+                        ${p.about ? `<div class="profile-bio">${escapeHtml(p.about)}</div>` : ''}
+                        ${renderStars(p.rating || 0)}
+                        <div class="psych-actions-row">
+                            ${!isOwn && currentUser ? `
+                                <button class="btn-sm btn-outline" onclick="startChatWith('${psychologistId}','${escapeHtml(p.fullName)}')"><i class="fas fa-comment-dots"></i> Написать</button>
+                                <button class="btn-sm" onclick="bookPsychologist('${psychologistId}','${escapeHtml(p.fullName)}')"><i class="fas fa-calendar-plus"></i> Записаться</button>
+                                <button class="btn-sm btn-outline" onclick="openReviewModal('${psychologistId}','${escapeHtml(p.fullName)}')"><i class="fas fa-star"></i> Оценить</button>
+                            ` : ''}
+                            ${isOwn ? `<button class="btn-sm btn-outline" onclick="switchTab('profile')"><i class="fas fa-pen"></i> Редактировать</button>` : ''}
+                        </div>
+                    </div>
+
+                    ${p.specialization || p.experience || p.price ? `
+                    <div style="margin-bottom:16px;">
+                        ${p.specialization ? `<div class="info-row"><i class="fas fa-brain"></i> ${escapeHtml(p.specialization)}</div>` : ''}
+                        ${p.experience ? `<div class="info-row"><i class="fas fa-briefcase"></i> Опыт: ${escapeHtml(p.experience)}</div>` : ''}
+                        ${p.price ? `<div class="info-row"><i class="fas fa-tag"></i> ${p.price} ₸ / час</div>` : ''}
+                    </div>` : ''}
+
+                    ${certificates.length > 0 ? `
+                    <div style="margin-bottom:20px;">
+                        <div class="section-header-row"><h3>📜 Сертификаты</h3></div>
+                        <div class="certificates-grid">
+                            ${certificates.map(c => `
+                                <div class="certificate-card">
+                                    <img src="${escapeHtml(c.image)}" onerror="this.src='https://placehold.co/100x80/1a2e1a/8bca8b?text=📜'">
+                                    <div class="certificate-title">${escapeHtml(c.title)}</div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>` : ''}
+
+                    <div style="margin-bottom:20px;">
+                        <div class="section-header-row"><h3>📝 Посты</h3></div>
+                        <div class="posts-grid">
+                            ${psychPosts.map(pst => `
+                                <div class="post-card glass-card">
+                                    <div class="post-text">${escapeHtml(pst.text)}</div>
+                                    ${pst.image ? `<img class="post-image" src="${escapeHtml(pst.image)}" onclick="openImageModal('${escapeHtml(pst.image)}')">` : ''}
+                                    ${pst.video ? `<video class="post-video" controls preload="metadata"><source src="${escapeHtml(pst.video)}" type="video/mp4"></video>` : ''}
+                                    <div class="post-stats">
+                                        <span style="color:var(--text-muted);font-size:13px;display:flex;gap:6px;align-items:center;"><i class="fa-regular fa-heart"></i> ${pst.likesCount||0}</span>
+                                        <span style="color:var(--text-muted);font-size:13px;display:flex;gap:6px;align-items:center;"><i class="fa-regular fa-comment"></i> ${pst.commentsCount||0}</span>
+                                    </div>
+                                </div>
+                            `).join('')}
+                            ${psychPosts.length === 0 ? '<div class="empty-state glass-card" style="padding:20px;"><i class="fas fa-newspaper"></i><div>Нет постов</div></div>' : ''}
+                        </div>
+                    </div>
+
+                    <div>
+                        <div class="section-header-row"><h3>⭐ Отзывы (${reviews.length})</h3></div>
+                        ${reviews.map(r => `
+                            <div class="review-card glass-card">
+                                <div class="review-header">
+                                    <span class="review-name">${escapeHtml(r.clientName)}</span>
+                                    ${renderStars(r.rating)}
+                                </div>
+                                <div class="review-text">${escapeHtml(r.text)}</div>
+                                <div class="review-time">${new Date(r.createdAt).toLocaleString()}</div>
+                            </div>
+                        `).join('')}
+                        ${reviews.length === 0 ? '<div class="empty-state glass-card" style="padding:20px;"><i class="fas fa-star"></i><div>Нет отзывов</div></div>' : ''}
+                    </div>
+                </div>
+            `;
+            document.getElementById('mainContent').innerHTML = html;
+        }
+
+        // ======================= ЧАТЫ =======================
+        async function renderChats() {
+            if (!currentUser) { showToast('Войдите в аккаунт', true); return; }
+            await window.refreshUser();
+            document.getElementById('mainContent').innerHTML = `<div class="container"><div class="empty-state"><i class="fas fa-circle-notch fa-spin"></i></div></div>`;
+
+            const messagesRes = await fetchJSON(`/api/messages/${currentUser.id}`);
+            const messages = messagesRes.messages || [];
+            const contactsMap = new Map();
+            const unreadCountsFromServer = currentUser.unreadCounts || {};
+
+            messages.forEach(msg => {
+                const contactId = msg.from_user === currentUser.id ? msg.to_user : msg.from_user;
+                if (!contactsMap.has(contactId)) {
+                    contactsMap.set(contactId, {
+                        lastMessage: msg.text || (msg.image ? '📷 Фото' : (msg.voice ? '🎤 Голосовое' : 'Вложение')),
+                        lastTime: msg.created_at,
+                    });
+                } else {
+                    const existing = contactsMap.get(contactId);
+                    if (new Date(msg.created_at) > new Date(existing.lastTime)) {
+                        existing.lastMessage = msg.text || (msg.image ? '📷 Фото' : (msg.voice ? '🎤 Голосовое' : 'Вложение'));
+                        existing.lastTime = msg.created_at;
+                    }
+                }
+            });
+
+            const contacts = await Promise.all(Array.from(contactsMap.keys()).map(async id => {
+                const r = await fetch(`/api/user/${id}`);
+                const d = await r.json();
+                if (d.success) {
+                    const unread = unreadCountsFromServer[id] || 0;
+                    return { ...d.user, ...contactsMap.get(id), unread };
+                }
+                return null;
+            }));
+
+            const validContacts = contacts.filter(Boolean).sort((a,b) => new Date(b.lastTime) - new Date(a.lastTime));
+
+            let html = `<div class="container"><div class="page-title">Сообщения</div><div class="chat-list">`;
+            for (const c of validContacts) {
+                html += `
+                    <div class="chat-contact glass-card" data-contact-id="${c.id}" onclick="openChat('${c.id}','${escapeHtml(c.fullName)}')">
+                        <img class="chat-contact-avatar" src="${escapeHtml(c.avatar)}" onerror="this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(c.fullName)}&background=8bca8b&color=fff'">
+                        <div class="chat-contact-info">
+                            <div class="chat-contact-name">${escapeHtml(c.fullName)}</div>
+                            <div class="chat-contact-last">${escapeHtml((c.lastMessage || '').substring(0, 40))}</div>
+                        </div>
+                        ${c.unread > 0 ? `<div class="unread-badge">${c.unread}</div>` : ''}
+                    </div>
+                `;
+            }
+            if (validContacts.length === 0) html += '<div class="empty-state glass-card" style="padding:40px;"><i class="fas fa-comment-slash"></i><div>Нет сообщений. Напишите психологу из раздела «Психологи»!</div></div>';
+            html += `</div></div>`;
+            document.getElementById('mainContent').innerHTML = html;
+        }
+
+        async function openChat(userId, userName) {
+            currentChatPartner = { id: userId, name: userName };
+            
+            await fetch('/api/messages/read', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId: currentUser.id, fromUserId: userId })
+            });
+            await window.refreshUser();
+            
+            if (currentUser.unreadCounts && currentUser.unreadCounts[userId]) {
+                delete currentUser.unreadCounts[userId];
+            }
+            
+            if (currentTab === 'chats') {
+                const chatsContainer = document.querySelector('.chat-list');
+                if (chatsContainer) {
+                    const chatItems = document.querySelectorAll('.chat-contact');
+                    for (const item of chatItems) {
+                        const contactId = item.getAttribute('data-contact-id');
+                        if (contactId === userId) {
+                            const badge = item.querySelector('.unread-badge');
+                            if (badge) badge.remove();
+                            break;
+                        }
+                    }
+                }
+            }
+            
+            document.getElementById('mainContent').innerHTML = `
+                <div class="chat-page">
+                    <div class="chat-messages-container">
+                        <div class="chat-messages-header">
+                            <button class="back-btn" onclick="renderChats()"><i class="fas fa-arrow-left"></i></button>
+                            <img src="" id="chatPartnerAvatar" style="width:36px;height:36px;border-radius:50%;object-fit:cover;border:2px solid var(--green-border);" onerror="this.style.display='none'">
+                            <div style="flex:1">
+                                <div style="font-weight:600;font-size:15px;">${escapeHtml(userName)}</div>
+                            </div>
+                        </div>
+                        <div class="chat-messages-list" id="chatMessagesList"></div>
+                        <div class="chat-input-area">
+                            <div class="chat-controls">
+                                <button id="attachImageBtn" title="Фото"><i class="fas fa-image"></i></button>
+                                <button id="voiceRecordBtn" title="Голосовое"><i class="fas fa-microphone"></i></button>
+                            </div>
+                            <input type="file" id="imageInput" accept="image/*" style="display:none">
+                            <input type="text" id="chatMessageInput" placeholder="Сообщение...">
+                            <button class="send-btn-chat" id="sendMsgBtn"><i class="fas fa-paper-plane"></i></button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            await new Promise(resolve => setTimeout(resolve, 10));
+            
+            fetch(`/api/user/${userId}`).then(r => r.json()).then(d => {
+                const av = document.getElementById('chatPartnerAvatar');
+                if (av && d.success) av.src = d.user.avatar;
+            }).catch(console.error);
+            
+            await loadChatMessages();
+            scrollToBottom();
+            
+            const sendBtn = document.getElementById('sendMsgBtn');
+            const chatInput = document.getElementById('chatMessageInput');
+            const attachBtn = document.getElementById('attachImageBtn');
+            const imageInput = document.getElementById('imageInput');
+            const voiceBtn = document.getElementById('voiceRecordBtn');
+            
+            if (sendBtn) sendBtn.onclick = sendChatMessage;
+            if (chatInput) chatInput.onkeypress = (e) => { if (e.key === 'Enter') sendChatMessage(); };
+            
+            if (attachBtn && imageInput) {
+                attachBtn.onclick = () => imageInput.click();
+                imageInput.onchange = async () => {
+                    const file = imageInput.files[0];
+                    if (!file || !file.type.startsWith('image/')) { showToast('Только изображения', true); return; }
+                    const compressedBlob = await compressImage(file, 1024, 0.8);
+                    const formData = new FormData();
+                    formData.append('image', compressedBlob, file.name);
+                    const res = await fetch('/api/upload-chat-image', { method: 'POST', body: formData });
+                    const data = await res.json();
+                    if (data.success) {
+                        await fetch('/api/messages', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ from: currentUser.id, to: currentChatPartner.id, text: '', image: data.imageUrl })
+                        });
+                        await loadChatMessages();
+                        scrollToBottom();
+                    }
+                    imageInput.value = '';
+                };
+            }
+            
+            if (voiceBtn) {
+                let mediaRecorder = null, audioChunks = [], isRecording = false;
+                voiceBtn.onclick = async () => {
+                    if (!isRecording) {
+                        try {
+                            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                            mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+                            audioChunks = [];
+                            mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunks.push(e.data); };
+                            mediaRecorder.onstop = async () => {
+                                const blob = new Blob(audioChunks, { type: 'audio/webm' });
+                                const fd = new FormData();
+                                fd.append('voice', blob, 'voice.webm');
+                                const res = await fetch('/api/upload-voice', { method: 'POST', body: fd });
+                                const data = await res.json();
+                                if (data.success) {
+                                    await fetch('/api/messages', {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({ from: currentUser.id, to: currentChatPartner.id, text: '', voice: data.voiceUrl })
+                                    });
+                                    await loadChatMessages();
+                                    scrollToBottom();
+                                    showToast('Голосовое отправлено');
+                                }
+                                stream.getTracks().forEach(t => t.stop());
+                                voiceBtn.innerHTML = '<i class="fas fa-microphone"></i>';
+                                voiceBtn.classList.remove('recording-active');
+                                isRecording = false;
+                            };
+                            mediaRecorder.start();
+                            isRecording = true;
+                            voiceBtn.classList.add('recording-active');
+                            voiceBtn.innerHTML = '<i class="fas fa-stop"></i>';
+                            setTimeout(() => {
+                                if (mediaRecorder?.state === 'recording') mediaRecorder.stop();
+                            }, 30000);
+                        } catch(e) {
+                            showToast('Нет доступа к микрофону', true);
+                        }
+                    } else {
+                        if (mediaRecorder?.state === 'recording') mediaRecorder.stop();
+                    }
+                };
+            }
+        }
+
+        async function loadChatMessages() {
+            if (!currentChatPartner) return;
+            const res = await fetchJSON(`/api/messages/${currentUser.id}`);
+            const messages = (res.messages || []).filter(m => (m.from_user === currentChatPartner.id && m.to_user === currentUser.id) || (m.from_user === currentUser.id && m.to_user === currentChatPartner.id));
+            messages.sort((a,b) => new Date(a.created_at) - new Date(b.created_at));
+            const listDiv = document.getElementById('chatMessagesList');
+            if (!listDiv) return;
+            let html = '';
+            for (const m of messages) {
+                let voiceHtml = '';
+                if (m.voice) {
+                    voiceHtml = `<div class="voice-message"><audio controls src="${escapeHtml(m.voice)}"></audio></div>`;
+                }
+                html += `
+                    <div class="message ${m.from_user === currentUser.id ? 'outgoing' : 'incoming'}">
+                        ${m.text ? `<div class="message-text">${escapeHtml(m.text)}</div>` : ''}
+                        ${m.image ? `<img class="chat-image" src="${escapeHtml(m.image)}" onclick="openImageModal('${escapeHtml(m.image)}')">` : ''}
+                        ${voiceHtml}
+                        <div class="message-time">${new Date(m.created_at).toLocaleTimeString()}</div>
+                    </div>
+                `;
+            }
+            listDiv.innerHTML = html;
+            document.querySelectorAll('.voice-message').forEach(container => {
+                const audio = container.querySelector('audio');
+                if (audio && !container.querySelector('.speed-btn')) {
+                    const speeds = [1, 1.5, 2];
+                    let currentSpeed = 1;
+                    const btn = document.createElement('button');
+                    btn.className = 'speed-btn';
+                    btn.textContent = `${currentSpeed}x`;
+                    btn.onclick = (e) => {
+                        e.stopPropagation();
+                        let idx = speeds.indexOf(currentSpeed);
+                        idx = (idx + 1) % speeds.length;
+                        currentSpeed = speeds[idx];
+                        audio.playbackRate = currentSpeed;
+                        btn.textContent = `${currentSpeed}x`;
+                    };
+                    container.appendChild(btn);
+                }
+            });
+            scrollToBottom();
+        }
+
+        async function sendChatMessage() {
+            const input = document.getElementById('chatMessageInput');
+            if (!input || !input.value.trim()) return;
+            const text = input.value.trim();
+            input.value = '';
+            await fetch('/api/messages', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ from: currentUser.id, to: currentChatPartner.id, text }) });
+            await loadChatMessages();
+            scrollToBottom();
+        }
+
+        function startChatWith(userId, name) {
+            if (!currentUser) { showToast('Войдите в аккаунт', true); return; }
+            switchTab('chats');
+            setTimeout(() => openChat(userId, name), 400);
+        }
+
+        // ======================= УВЕДОМЛЕНИЯ =======================
+        async function renderNotifications() {
+            if (!currentUser) { showToast('Войдите в аккаунт', true); return; }
+            const notifs = currentUser.notifications || [];
+            let html = `<div class="container"><div class="page-title">Уведомления</div><div class="notifications-list">`;
+            for (const n of notifs) {
+                const isAppointmentNotif = n.type === 'new_appointment' && currentUser.role === 'psychologist';
+                html += `
+                    <div class="notification-item glass-card">
+                        <div class="notif-title">${escapeHtml(n.title)}</div>
+                        <div class="notif-msg">${escapeHtml(n.message)}</div>
+                        <div class="notif-time">${new Date(n.createdAt).toLocaleString()}</div>
+                        ${isAppointmentNotif ? `<div style="margin-top:10px;"><button class="btn-sm" onclick="confirmAppointmentFromNotif('${n.appointmentId}')">✅ Подтвердить</button></div>` : ''}
+                        ${n.roomId && !isAppointmentNotif ? `<div style="margin-top:10px;"><button class="btn-sm" onclick="startCall('${n.roomId}', '${currentUser.role}')"><i class="fas fa-video"></i> Войти в звонок</button></div>` : ''}
+                    </div>
+                `;
+            }
+            if (notifs.length === 0) html += '<div class="empty-state glass-card" style="padding:40px;"><i class="fas fa-bell-slash"></i><div>Нет уведомлений</div></div>';
+            html += `</div></div>`;
+            document.getElementById('mainContent').innerHTML = html;
+        }
+
+        async function confirmAppointmentFromNotif(appointmentId) {
+            const apt = currentUser.clients.find(a => a.appointmentId === appointmentId);
+            if (!apt) { showToast('Запись не найдена', true); return; }
+            await confirmAppointment(appointmentId, apt.clientId);
+            renderNotifications();
+        }
+
+        // ======================= ЗАПИСЬ К ПСИХОЛОГУ =======================
+        async function bookPsychologist(id, name) {
+            const userRes = await fetch(`/api/user/${id}`);
+            const userData = await userRes.json();
+            if (!userData.success) {
+                showToast('Не удалось загрузить данные психолога', true);
+                return;
+            }
+            const psychologist = userData.user;
+            const sched = psychologist.schedule || {};
+            if (!allPsychologists.length) await fetchJSON('/api/psychologists').then(d => { allPsychologists = d.psychologists || []; });
+            const p = allPsychologists.find(p => p.id === id);
+            const dates = Object.keys(sched).sort();
+
+            let slotsHtml = '';
+            if (dates.length) {
+                for (const d of dates) {
+                    slotsHtml += `<div style="margin-bottom:12px;"><div style="font-size:12px;color:var(--text-muted);margin-bottom:6px;">${d}</div><div style="display:flex;flex-wrap:wrap;gap:6px;">`;
+                    for (const t of sched[d]) {
+                        slotsHtml += `<button class="time-slot" data-date="${d}" data-time="${t}">${t}</button>`;
+                    }
+                    slotsHtml += `</div></div>`;
+                }
+            } else {
+                slotsHtml = '<div class="empty-state" style="padding:20px;"><i class="fas fa-calendar-times"></i><div>Нет свободного времени</div></div>';
+            }
+
+            const html = `
+                <div class="modal" id="bookModal">
+                    <div class="modal-content">
+                        <div class="modal-handle"></div>
+                        <h3>Записаться к ${name}</h3>
+                        <div id="slots" style="max-height:300px;overflow-y:auto;">${slotsHtml}</div>
+                        <div id="selSlot" style="margin-top:10px;font-size:13px;color:var(--green);min-height:20px;"></div>
+                        <div class="modal-buttons">
+                            <button class="btn-secondary" onclick="closeModal('bookModal')">Отмена</button>
+                            <button class="btn-primary" id="confirmBook" disabled onclick="submitBook('${id}')">Записаться</button>
+                        </div>
+                    </div>
+                </div>`;
+            document.body.insertAdjacentHTML('beforeend', html);
+            setTimeout(() => document.getElementById('bookModal').classList.add('active'), 10);
+
+            document.querySelectorAll('.time-slot').forEach(b => {
+                b.onclick = () => {
+                    document.querySelectorAll('.time-slot').forEach(bb => bb.classList.remove('selected'));
+                    b.classList.add('selected');
+                    document.getElementById('selSlot').textContent = `✅ Выбрано: ${b.dataset.date} в ${b.dataset.time}`;
+                    document.getElementById('confirmBook').disabled = false;
+                    window.selDate = b.dataset.date;
+                    window.selTime = b.dataset.time;
+                };
+            });
+        }
+
+        async function submitBook(id) {
+            if (!window.selDate || !window.selTime) { showToast('Выберите время', true); return; }
+            const r = await fetch('/api/appointment', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ clientId: currentUser.id, psychologistId: id, date: window.selDate, time: window.selTime }) });
+            const d = await r.json();
+            if (d.success) { showToast('Заявка отправлена!'); closeModal('bookModal'); await window.refreshUser(); }
+            else showToast(d.error || 'Ошибка', true);
+        }
+
+        // ======================= ОТЗЫВ =======================
+        function openReviewModal(id, name) {
+            let rating = 0;
+            const html = `
+                <div class="modal" id="revModal">
+                    <div class="modal-content">
+                        <div class="modal-handle"></div>
+                        <h3>Отзыв о ${name}</h3>
+                        <div id="stars" style="display:flex;gap:6px;margin-bottom:18px;justify-content:center;">
+                            ${[1,2,3,4,5].map(s => `<i class="far fa-star" data-r="${s}" style="font-size:32px;cursor:pointer;color:#f5c518;transition:transform 0.1s;"></i>`).join('')}
+                        </div>
+                        <textarea id="revText" rows="3" placeholder="Расскажите о своём опыте..."></textarea>
+                        <div class="modal-buttons">
+                            <button class="btn-secondary" onclick="closeModal('revModal')">Отмена</button>
+                            <button class="btn-primary" onclick="window._submitReview('${id}')">Отправить</button>
+                        </div>
+                    </div>
+                </div>`;
+            document.body.insertAdjacentHTML('beforeend', html);
+            setTimeout(() => document.getElementById('revModal').classList.add('active'), 10);
+            document.querySelectorAll('#stars i').forEach(s => {
+                s.onmouseenter = () => {
+                    document.querySelectorAll('#stars i').forEach((ss, i) => {
+                        ss.className = i < parseInt(s.dataset.r) ? 'fas fa-star' : 'far fa-star';
+                    });
+                };
+                s.onmouseleave = () => {
+                    document.querySelectorAll('#stars i').forEach((ss, i) => {
+                        ss.className = i < rating ? 'fas fa-star' : 'far fa-star';
+                    });
+                };
+                s.onclick = () => {
+                    rating = parseInt(s.dataset.r);
+                    document.querySelectorAll('#stars i').forEach((ss, i) => {
+                        ss.className = i < rating ? 'fas fa-star' : 'far fa-star';
+                    });
+                };
+            });
+            window._submitReview = async (pid) => {
+                if (!rating) { showToast('Выберите рейтинг', true); return; }
+                const r = await fetch('/api/reviews', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ psychologistId: pid, clientId: currentUser.id, rating, text: document.getElementById('revText').value }) });
+                const d = await r.json();
+                if (d.success) { showToast('Отзыв отправлен!'); closeModal('revModal'); await window.refreshUser(); }
+                else showToast(d.error || 'Ошибка', true);
+            };
+        }
+
+        // ======================= НОВЫЙ ПОСТ =======================
+        function createPostModal() {
+            const html = `
+                <div class="modal" id="cpModal">
+                    <div class="modal-content">
+                        <div class="modal-handle"></div>
+                        <h3>Новый пост</h3>
+                        <textarea id="postText" rows="5" placeholder="Поделитесь чем-то полезным..."></textarea>
+                        <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:6px;">Фото или видео (необязательно, видео до 1 минуты)</label>
+                        <input type="file" id="postMedia" accept="image/*,video/*" style="font-size:12px;">
+                        <div id="mediaPreview" style="margin-top:8px; display:none;"></div>
+                        <div id="uploadProgress" style="display:none;" class="upload-progress"><div class="upload-progress-bar"></div></div>
+                        <div class="modal-buttons">
+                            <button class="btn-secondary" onclick="closeModal('cpModal')">Отмена</button>
+                            <button class="btn-primary" id="publishPostBtn">Опубликовать</button>
+                        </div>
+                    </div>
+                </div>`;
+            document.body.insertAdjacentHTML('beforeend', html);
+            setTimeout(() => document.getElementById('cpModal').classList.add('active'), 10);
+            
+            const mediaInput = document.getElementById('postMedia');
+            const previewDiv = document.getElementById('mediaPreview');
+            const progressDiv = document.getElementById('uploadProgress');
+            const progressBar = progressDiv.querySelector('.upload-progress-bar');
+            const publishBtn = document.getElementById('publishPostBtn');
+            let selectedFile = null;
+
+            mediaInput.onchange = async () => {
+                const file = mediaInput.files[0];
+                if (!file) return;
+                selectedFile = file;
+                if (file.type.startsWith('video/')) {
+                    const video = document.createElement('video');
+                    video.preload = 'metadata';
+                    video.onloadedmetadata = () => {
+                        URL.revokeObjectURL(video.src);
+                        if (video.duration > 60) {
+                            showToast('Видео не должно превышать 60 секунд', true);
+                            mediaInput.value = '';
+                            previewDiv.innerHTML = '';
+                            previewDiv.style.display = 'none';
+                            selectedFile = null;
+                        } else {
+                            previewDiv.innerHTML = `<video controls style="max-width:100%; max-height:120px; border-radius:12px;"><source src="${URL.createObjectURL(file)}"></video><div style="font-size:11px; color:var(--text-muted); margin-top:4px;">✅ Видео ${Math.round(video.duration)} сек.</div>`;
+                            previewDiv.style.display = 'block';
+                        }
+                    };
+                    video.src = URL.createObjectURL(file);
+                } else if (file.type.startsWith('image/')) {
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        previewDiv.innerHTML = `<img src="${e.target.result}" style="max-width:100%; max-height:120px; border-radius:12px;">`;
+                        previewDiv.style.display = 'block';
+                    };
+                    reader.readAsDataURL(file);
+                } else {
+                    showToast('Неподдерживаемый формат', true);
+                    mediaInput.value = '';
+                    selectedFile = null;
+                }
+            };
+
+            publishBtn.onclick = async () => {
+                if (isPosting) {
+                    showToast('Пост уже публикуется, подождите...', true);
+                    return;
+                }
+                const txt = document.getElementById('postText').value;
+                if (!txt.trim()) { showToast('Введите текст', true); return; }
+                isPosting = true;
+                publishBtn.disabled = true;
+                publishBtn.innerHTML = '<span class="spinner-small"></span> Публикация...';
+                
+                const fd = new FormData();
+                fd.append('authorId', currentUser.id);
+                fd.append('text', txt);
+                if (selectedFile) {
+                    if (selectedFile.type.startsWith('video/')) {
+                        fd.append('video', selectedFile);
+                    } else if (selectedFile.type.startsWith('image/')) {
+                        fd.append('image', selectedFile);
+                    }
+                }
+                
+                progressDiv.style.display = 'block';
+                let progress = 0;
+                const interval = setInterval(() => {
+                    progress += 10;
+                    if (progress <= 90) progressBar.style.width = progress + '%';
+                }, 200);
+                
+                try {
+                    const res = await fetch('/api/posts', { method:'POST', body: fd });
+                    const data = await res.json();
+                    clearInterval(interval);
+                    progressBar.style.width = '100%';
+                    if (data.success) {
+                        setTimeout(() => {
+                            closeModal('cpModal');
+                            showToast('Пост опубликован');
+                            if (currentTab === 'profile') renderProfile();
+                            else renderFeed();
+                        }, 500);
+                    } else {
+                        showToast(data.error || 'Ошибка публикации', true);
+                        progressDiv.style.display = 'none';
+                    }
+                } catch(err) {
+                    clearInterval(interval);
+                    showToast('Ошибка соединения', true);
+                    progressDiv.style.display = 'none';
+                } finally {
+                    isPosting = false;
+                    publishBtn.disabled = false;
+                    publishBtn.innerHTML = 'Опубликовать';
+                    setTimeout(() => { progressDiv.style.display = 'none'; progressBar.style.width = '0%'; }, 1000);
+                }
+            };
+        }
+
+        // ======================= ПОИСК =======================
+        function openSearchModal() {
+            const html = `
+                <div class="modal" id="searchM">
+                    <div class="modal-content">
+                        <div class="modal-handle"></div>
+                        <h3>Поиск психологов</h3>
+                        <input type="search" id="searchInp" placeholder="Введите имя...">
+                        <div id="searchRes"></div>
+                        <div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('searchM')">Закрыть</button></div>
+                    </div>
+                </div>`;
+            document.body.insertAdjacentHTML('beforeend', html);
+            setTimeout(() => { document.getElementById('searchM').classList.add('active'); document.getElementById('searchInp').focus(); }, 10);
+            let searchTimeout;
+            document.getElementById('searchInp').oninput = async (e) => {
+                clearTimeout(searchTimeout);
+                const q = e.target.value;
+                if (q.length < 2) { document.getElementById('searchRes').innerHTML = ''; return; }
+                searchTimeout = setTimeout(async () => {
+                    const r = await fetchJSON(`/api/search/psychologists?q=${encodeURIComponent(q)}`);
+                    if (r.success) {
+                        let resHtml = '';
+                        for (const p of r.psychologists) {
+                            resHtml += `
+                                <div class="psychologist-item" style="padding:10px;cursor:pointer;border-radius:12px;transition:background 0.2s;" onclick="closeModal('searchM');viewPsychologistPage('${p.id}')">
+                                    <img src="${escapeHtml(p.avatar)}" style="width:42px;height:42px;border-radius:50%;object-fit:cover;border:2px solid var(--green-border);">
+                                    <div>
+                                        <div style="font-weight:600;font-size:14px;">${escapeHtml(p.full_name)}</div>
+                                        <div style="font-size:12px;color:var(--text-muted);">${escapeHtml(p.specialization||'Психолог')}</div>
+                                    </div>
+                                </div>
+                            `;
+                        }
+                        document.getElementById('searchRes').innerHTML = resHtml || '<div class="empty-state" style="padding:16px;"><i class="fas fa-search"></i><div>Ничего не найдено</div></div>';
+                    }
+                }, 300);
+            };
+        }
+
+        // ======================= НАПОМИНАНИЯ =======================
+        function checkUpcomingEvents() {
+            if (!currentUser) return;
+            const now = new Date();
+            const appointments = currentUser.role === 'psychologist' ? (currentUser.clients || []) : (currentUser.appointments || []);
+            for (const apt of appointments) {
+                if (apt.status === 'confirmed') {
+                    const eventDate = new Date(apt.date + 'T' + apt.time);
+                    const diff = (eventDate - now) / (1000 * 60);
+                    if (diff > 0 && diff <= 60 && !localStorage.getItem(`notified_${apt.appointmentId}`)) {
+                        showFloatingNotification('Скоро созвон', `Запись с ${apt.clientName || apt.psychologistName} через ${Math.round(diff)} минут`, 'warning');
+                        localStorage.setItem(`notified_${apt.appointmentId}`, '1');
+                    }
+                }
+            }
+            if (currentUser.role === 'psychologist') {
+                fetchJSON(`/api/tasks/${currentUser.id}`).then(res => {
+                    for (const task of (res.tasks || [])) {
+                        if (!task.completed && task.dueDate) {
+                            const due = new Date(task.dueDate);
+                            const today = new Date(); today.setHours(0,0,0,0);
+                            const daysDiff = Math.ceil((due - today) / (1000 * 60 * 60 * 24));
+                            if (daysDiff === 0 && !localStorage.getItem(`task_today_${task.id}`)) {
+                                showFloatingNotification('Задача на сегодня', task.text, 'warning');
+                                localStorage.setItem(`task_today_${task.id}`, '1');
+                            } else if (daysDiff === 1 && !localStorage.getItem(`task_tomorrow_${task.id}`)) {
+                                showFloatingNotification('Задача на завтра', task.text, 'info');
+                                localStorage.setItem(`task_tomorrow_${task.id}`, '1');
+                            }
+                        }
+                    }
+                });
+            }
+        }
+        setInterval(checkUpcomingEvents, 15 * 60 * 1000);
+
+        // ======================= АВТОРИЗАЦИЯ =======================
+        function openLoginModal() {
+            const html = `
+                <div class="modal" id="loginM">
+                    <div class="modal-content">
+                        <div class="modal-handle"></div>
+                        <h3>Войти в аккаунт</h3>
+                        <input type="email" id="logEmail" placeholder="Email">
+                        <input type="password" id="logPass" placeholder="Пароль">
+                        <div class="modal-buttons">
+                            <button class="btn-secondary" onclick="closeModal('loginM')">Отмена</button>
+                            <button class="btn-primary" onclick="login()">Войти</button>
+                        </div>
+                        <p style="text-align:center;margin-top:14px;font-size:13px;color:var(--text-muted);">Нет аккаунта? <a href="#" onclick="closeModal('loginM');openRegisterModal()" style="color:var(--green);">Зарегистрироваться</a></p>
+                    </div>
+                </div>`;
+            document.body.insertAdjacentHTML('beforeend', html);
+            setTimeout(() => document.getElementById('loginM').classList.add('active'), 10);
+            document.getElementById('logPass').onkeypress = (e) => { if (e.key === 'Enter') login(); };
+        }
+
+        function openRegisterModal() {
+            const html = `
+                <div class="modal" id="regM">
+                    <div class="modal-content">
+                        <div class="modal-handle"></div>
+                        <h3>Создать аккаунт</h3>
+                        <input type="text" id="regName" placeholder="ФИО *">
+                        <input type="email" id="regEmail" placeholder="Email *">
+                        <input type="tel" id="regPhone" placeholder="Телефон">
+                        <input type="password" id="regPass" placeholder="Пароль (мин 6 символов) *">
+                        <select id="regRole">
+                            <option value="client">Клиент</option>
+                            <option value="psychologist">Психолог</option>
+                        </select>
+                        <div id="psychF" style="display:none">
+                            <input type="text" id="regSpec" placeholder="Специализация *">
+                            <input type="text" id="regExp" placeholder="Опыт работы *">
+                            <textarea id="regAbout" rows="2" placeholder="О себе"></textarea>
+                        </div>
+                        <div class="modal-buttons">
+                            <button class="btn-secondary" onclick="closeModal('regM')">Отмена</button>
+                            <button class="btn-primary" onclick="register()">Зарегистрироваться</button>
+                        </div>
+                        <p style="text-align:center;margin-top:14px;font-size:13px;color:var(--text-muted);">Есть аккаунт? <a href="#" onclick="closeModal('regM');openLoginModal()" style="color:var(--green);">Войти</a></p>
+                    </div>
+                </div>`;
+            document.body.insertAdjacentHTML('beforeend', html);
+            setTimeout(() => document.getElementById('regM').classList.add('active'), 10);
+            document.getElementById('regRole').onchange = () => {
+                document.getElementById('psychF').style.display = document.getElementById('regRole').value === 'psychologist' ? 'block' : 'none';
+            };
+        }
+
+        async function login() {
+            const e = document.getElementById('logEmail').value;
+            const p = document.getElementById('logPass').value;
+            if (!e || !p) { showToast('Заполните все поля', true); return; }
+            const r = await fetch('/api/login', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ email: e, password: p }) });
+            const d = await r.json();
+            if (d.success) { localStorage.setItem('userId', d.userId); showToast('Добро пожаловать!'); closeModal('loginM'); location.reload(); }
+            else showToast(d.error || 'Неверный email или пароль', true);
+        }
+
+        async function register() {
+            const body = {
+                fullName: document.getElementById('regName').value,
+                email: document.getElementById('regEmail').value,
+                phone: document.getElementById('regPhone').value,
+                password: document.getElementById('regPass').value,
+                role: document.getElementById('regRole').value
+            };
+            if (!body.fullName || !body.email || !body.password) { showToast('Заполните обязательные поля', true); return; }
+            if (body.role === 'psychologist') {
+                body.specialization = document.getElementById('regSpec').value;
+                body.experience = document.getElementById('regExp').value;
+                body.about = document.getElementById('regAbout').value;
+            }
+            const r = await fetch('/api/register', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+            const d = await r.json();
+            if (d.success) { showToast('Регистрация успешна! Войдите'); closeModal('regM'); openLoginModal(); }
+            else showToast(d.error || 'Ошибка регистрации', true);
+        }
+
+        function logout() {
+            openConfirmModal('Выйти из аккаунта?', '', () => {
+                if (socket) socket.disconnect();
+                localStorage.clear();
+                location.reload();
+            });
+        }
+
+        function startCall(roomId, role) {
+            window.location.href = `/call.html?room=${roomId}&role=${role}`;
+        }
+
+        function closeModal(id) {
+            const m = document.getElementById(id);
+            if (m) { m.classList.remove('active'); setTimeout(() => m.remove(), 320); }
+        }
+
+        document.addEventListener('click', (e) => {
+            if (e.target.classList.contains('modal')) {
+                e.target.classList.remove('active');
+                setTimeout(() => e.target.remove(), 320);
+            }
+        });
+
+        function openPromptModal(label, confirmText = 'ОК') {
+            return new Promise((resolve) => {
+                const modalId = 'promptModal_' + Date.now();
+                const html = `
+                    <div class="modal" id="${modalId}">
+                        <div class="modal-content">
+                            <div class="modal-handle"></div>
+                            <h3>${escapeHtml(label)}</h3>
+                            <input type="text" id="promptInput_${modalId}" placeholder="Введите текст...">
+                            <div class="modal-buttons">
+                                <button class="btn-secondary" id="cancelBtn_${modalId}">Отмена</button>
+                                <button class="btn-primary" id="okBtn_${modalId}">${escapeHtml(confirmText)}</button>
+                            </div>
+                        </div>
+                    </div>`;
+                document.body.insertAdjacentHTML('beforeend', html);
+                const modal = document.getElementById(modalId);
+                const input = document.getElementById(`promptInput_${modalId}`);
+                const cancel = document.getElementById(`cancelBtn_${modalId}`);
+                const ok = document.getElementById(`okBtn_${modalId}`);
+                const cleanup = () => {
+                    modal.classList.remove('active');
+                    setTimeout(() => modal.remove(), 300);
+                };
+                ok.onclick = () => { const val = input.value.trim(); cleanup(); resolve(val || null); };
+                cancel.onclick = () => { cleanup(); resolve(null); };
+                input.onkeypress = (e) => { if (e.key === 'Enter') { const val = input.value.trim(); cleanup(); resolve(val || null); } };
+                setTimeout(() => modal.classList.add('active'), 10);
+                input.focus();
+            });
+        }
+
+        // ======================= НАВИГАЦИЯ =======================
+        function switchTab(tab) {
+            currentTab = tab;
+            document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+            const act = document.querySelector(`.nav-item[data-tab="${tab}"]`);
+            if (act) act.classList.add('active');
+            if (tab === 'feed') renderFeed();
+            else if (tab === 'psychologists') renderPsychologistsList();
+            else if (tab === 'chats') {
+                window.refreshUser().then(() => renderChats());
+            }
+            else if (tab === 'notifications') renderNotifications();
+            else if (tab === 'profile') renderProfile();
+        }
+
+        // ======================= ВИДЕО НАБЛЮДАТЕЛЬ =======================
+        function initVideoObservers() {
+            if (videoObserver) videoObserver.disconnect();
+            const videos = document.querySelectorAll('.post-video');
+            if (videos.length === 0) return;
+            videoObserver = new IntersectionObserver((entries) => {
+                entries.forEach(entry => {
+                    const video = entry.target;
+                    if (entry.isIntersecting) {
+                        video.play().catch(e => console.log('Автовоспроизведение заблокировано', e));
+                    } else {
+                        video.pause();
+                        video.currentTime = 0;
+                    }
+                });
+            }, { threshold: 0.5 });
+            videos.forEach(video => videoObserver.observe(video));
+        }
+
+        // ======================= ИНИЦИАЛИЗАЦИЯ =======================
+        async function init() {
+            const uid = localStorage.getItem('userId');
+            if (uid) {
+                try {
+                    const r = await fetch(`/api/user/${uid}`);
+                    const d = await r.json();
+                    if (d.success) {
+                        currentUser = d.user;
+                        document.getElementById('navAuth').style.display = 'none';
+                        document.getElementById('navUser').style.display = 'flex';
+                        document.getElementById('bottomNav').style.display = 'flex';
+                        await fetchJSON('/api/psychologists').then(d => { allPsychologists = d.psychologists || []; });
+                        document.getElementById('searchNavBtn').onclick = openSearchModal;
+                        initSocket();
+                    }
+                } catch(e) { localStorage.clear(); }
+            }
+            document.querySelectorAll('.nav-item').forEach(el => { el.onclick = () => switchTab(el.dataset.tab); });
+            if (currentUser) { switchTab('feed'); checkUpcomingEvents(); }
+            else { renderFeed(); }
+        }
+        init();
+    </script>
+</body>
+</html>
