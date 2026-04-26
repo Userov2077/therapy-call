@@ -749,7 +749,11 @@
             try {
                 const r = await fetch(url, opt);
                 return await r.json();
-            } catch(e) { showToast('Ошибка соединения', true); return { success: false }; }
+            } catch(e) { 
+                console.error('Fetch error:', e);
+                showToast('Ошибка соединения', true); 
+                return { success: false }; 
+            }
         }
 
         function escapeHtml(s) {
@@ -837,77 +841,6 @@
             }
         }
 
-        // Добавляет сообщение в открытый чат без перерисовки
-function appendMessageToChat(msg) {
-    const listDiv = document.getElementById('chatMessagesList');
-    if (!listDiv) return;
-    
-    let voiceHtml = '';
-    if (msg.voice) {
-        voiceHtml = `<div class="voice-message"><audio controls src="${escapeHtml(msg.voice)}"></audio></div>`;
-    }
-    
-    const messageHtml = `
-        <div class="message ${msg.from === currentUser.id ? 'outgoing' : 'incoming'}">
-            ${msg.text ? `<div class="message-text">${escapeHtml(msg.text)}</div>` : ''}
-            ${msg.image ? `<img class="chat-image" src="${escapeHtml(msg.image)}" onclick="openImageModal('${escapeHtml(msg.image)}')">` : ''}
-            ${voiceHtml}
-            <div class="message-time">${new Date().toLocaleTimeString()}</div>
-        </div>
-    `;
-    
-    listDiv.insertAdjacentHTML('beforeend', messageHtml);
-    scrollToBottom();
-    
-    // Добавляем кнопки скорости для голосовых
-    listDiv.querySelectorAll('.voice-message:last-child audio').forEach(audio => {
-        if (audio && !audio.parentElement.querySelector('.speed-btn')) {
-            addSpeedButton(audio);
-        }
-    });
-}
-
-function addSpeedButton(audio) {
-    const container = audio.closest('.voice-message');
-    if (!container || container.querySelector('.speed-btn')) return;
-    
-    const speeds = [1, 1.5, 2];
-    let currentSpeed = 1;
-    const btn = document.createElement('button');
-    btn.className = 'speed-btn';
-    btn.textContent = `${currentSpeed}x`;
-    btn.onclick = (e) => {
-        e.stopPropagation();
-        let idx = speeds.indexOf(currentSpeed);
-        idx = (idx + 1) % speeds.length;
-        currentSpeed = speeds[idx];
-        audio.playbackRate = currentSpeed;
-        btn.textContent = `${currentSpeed}x`;
-    };
-    container.appendChild(btn);
-}
-
-// Обновляет бейдж непрочитанных в списке чатов
-function updateChatListUnread(contactId, count) {
-    const chatItems = document.querySelectorAll('.chat-contact');
-    for (const item of chatItems) {
-        const id = item.getAttribute('data-contact-id');
-        if (id === contactId) {
-            const existingBadge = item.querySelector('.unread-badge');
-            if (count > 0) {
-                if (existingBadge) {
-                    existingBadge.textContent = count;
-                } else {
-                    item.insertAdjacentHTML('beforeend', `<div class="unread-badge">${count}</div>`);
-                }
-            } else {
-                if (existingBadge) existingBadge.remove();
-            }
-            break;
-        }
-    }
-}
-
         function openImageModal(imgUrl) {
             const html = `
                 <div class="modal" id="imageModal">
@@ -921,6 +854,125 @@ function updateChatListUnread(contactId, count) {
                 </div>`;
             document.body.insertAdjacentHTML('beforeend', html);
             setTimeout(() => document.getElementById('imageModal').classList.add('active'), 10);
+        }
+
+        // ======================= ЧАТ - ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ =======================
+        function appendMessageToChat(msg) {
+            const listDiv = document.getElementById('chatMessagesList');
+            if (!listDiv) return;
+            
+            let voiceHtml = '';
+            if (msg.voice) {
+                voiceHtml = `<div class="voice-message"><audio controls src="${escapeHtml(msg.voice)}"></audio></div>`;
+            }
+            
+            const messageHtml = `
+                <div class="message ${msg.from === currentUser.id ? 'outgoing' : 'incoming'}">
+                    ${msg.text ? `<div class="message-text">${escapeHtml(msg.text)}</div>` : ''}
+                    ${msg.image ? `<img class="chat-image" src="${escapeHtml(msg.image)}" onclick="openImageModal('${escapeHtml(msg.image)}')">` : ''}
+                    ${voiceHtml}
+                    <div class="message-time">${new Date().toLocaleTimeString()}</div>
+                </div>
+            `;
+            
+            listDiv.insertAdjacentHTML('beforeend', messageHtml);
+            scrollToBottom();
+            
+            // Добавляем кнопки скорости для голосовых
+            listDiv.querySelectorAll('.voice-message:last-child audio').forEach(audio => {
+                if (audio && !audio.parentElement.querySelector('.speed-btn')) {
+                    addSpeedButtonToAudio(audio);
+                }
+            });
+        }
+
+        function addSpeedButtonToAudio(audio) {
+            const container = audio.closest('.voice-message');
+            if (!container || container.querySelector('.speed-btn')) return;
+            
+            const speeds = [1, 1.5, 2];
+            let currentSpeed = 1;
+            const btn = document.createElement('button');
+            btn.className = 'speed-btn';
+            btn.textContent = `${currentSpeed}x`;
+            btn.onclick = (e) => {
+                e.stopPropagation();
+                let idx = speeds.indexOf(currentSpeed);
+                idx = (idx + 1) % speeds.length;
+                currentSpeed = speeds[idx];
+                audio.playbackRate = currentSpeed;
+                btn.textContent = `${currentSpeed}x`;
+            };
+            container.appendChild(btn);
+        }
+
+        function updateChatListUnread(contactId, count) {
+            const chatItems = document.querySelectorAll('.chat-contact');
+            for (const item of chatItems) {
+                const id = item.getAttribute('data-contact-id');
+                if (id === contactId) {
+                    const existingBadge = item.querySelector('.unread-badge');
+                    if (count > 0) {
+                        if (existingBadge) {
+                            existingBadge.textContent = count;
+                        } else {
+                            item.insertAdjacentHTML('beforeend', `<div class="unread-badge">${count}</div>`);
+                        }
+                    } else {
+                        if (existingBadge) existingBadge.remove();
+                    }
+                    break;
+                }
+            }
+        }
+
+        // ======================= КОММЕНТАРИИ - ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ =======================
+        function appendCommentToPost(postId, text) {
+            const commentsDiv = document.getElementById(`comments-${postId}`);
+            if (!commentsDiv) return;
+            
+            const commentsList = commentsDiv.querySelector('.comments-list');
+            if (!commentsList) return;
+            
+            const newCommentHtml = `
+                <div class="comment">
+                    <img class="comment-avatar" src="${escapeHtml(currentUser.avatar)}" onerror="this.src='https://ui-avatars.com/api/?name=U&background=8bca8b&color=fff'">
+                    <div class="comment-content">
+                        <div class="comment-author">${escapeHtml(currentUser.fullName)}</div>
+                        <div class="comment-text">${escapeHtml(text)}</div>
+                        <div class="comment-time">Только что</div>
+                    </div>
+                </div>
+            `;
+            
+            // Удаляем пустое состояние если есть
+            const emptyState = commentsList.querySelector('.empty-state');
+            if (emptyState) emptyState.remove();
+            
+            commentsList.insertAdjacentHTML('beforeend', newCommentHtml);
+            commentsDiv.style.display = 'block';
+            
+            // Обновляем иконку комментария
+            const postCard = document.querySelector(`.post-card[data-post-id="${postId}"]`);
+            if (postCard) {
+                const commentToggle = postCard.querySelector('.comment-toggle');
+                if (commentToggle) {
+                    const currentCount = parseInt(commentToggle.querySelector('span').textContent) || 0;
+                    commentToggle.querySelector('span').textContent = currentCount + 1;
+                }
+            }
+        }
+
+        function updateCommentCount(postId, increment) {
+            const postCard = document.querySelector(`.post-card[data-post-id="${postId}"]`);
+            if (postCard) {
+                const commentToggle = postCard.querySelector('.comment-toggle');
+                if (commentToggle) {
+                    const span = commentToggle.querySelector('span');
+                    const currentCount = parseInt(span.textContent) || 0;
+                    span.textContent = currentCount + increment;
+                }
+            }
         }
 
         // ======================= ОБНОВЛЕНИЕ ДАННЫХ ПОЛЬЗОВАТЕЛЯ =======================
@@ -943,66 +995,81 @@ function updateChatListUnread(contactId, count) {
             socket = io({
                 transports: ['websocket', 'polling']
             });
+            
             socket.on('connect', () => {
                 console.log('Socket connected');
                 if (currentUser) socket.emit('register_user', currentUser.id);
             });
+            
             socket.on('connect_error', (err) => {
                 console.error('Socket connect error:', err.message);
                 showToast('Ошибка соединения с сервером', true);
             });
+            
             socket.on('new_message', async (msg) => {
-    await window.refreshUser();
-    
-    let preview = '';
-    if (msg.text) preview = msg.text.substring(0,50);
-    else if (msg.image) preview = '📷 Фото';
-    else if (msg.voice) preview = '🎤 Голосовое';
-    else preview = 'Вложение';
-    
-    const userRes = await fetch(`/api/user/${msg.from}`);
-    const userData = await userRes.json();
-    const senderName = userData.success ? userData.user.fullName : 'Кто-то';
-    
-    // Показываем уведомление ТОЛЬКО если мы не в этом чате
-    if (!currentChatPartner || msg.from !== currentChatPartner.id) {
-        showFloatingNotification('Новое сообщение', `${senderName}: ${preview}`);
-    }
-    
-    // Обновляем непрочитанные
-    if (currentUser && currentUser.unreadCounts) {
-        currentUser.unreadCounts[msg.from] = (currentUser.unreadCounts[msg.from] || 0) + 1;
-    }
-    
-    // Если мы в этом чате - просто добавляем сообщение без перерисовки
-    if (currentChatPartner && msg.from === currentChatPartner.id) {
-        // Помечаем как прочитанное
-        await fetch('/api/messages/read', { 
-            method:'POST', 
-            headers:{'Content-Type':'application/json'}, 
-            body: JSON.stringify({ userId: currentUser.id, fromUserId: msg.from }) 
-        });
-        // Добавляем сообщение в чат без перезагрузки всей страницы
-        appendMessageToChat(msg);
-        // Обновляем счетчик в списке чатов (если нужно)
-        updateChatListUnread(msg.from, 0);
-    } else {
-        // Если мы НЕ в этом чате - обновляем список чатов
-        if (currentTab === 'chats') {
-            renderChats();
-        }
-    }
-});
+                await window.refreshUser();
+                
+                let preview = '';
+                if (msg.text) preview = msg.text.substring(0,50);
+                else if (msg.image) preview = '📷 Фото';
+                else if (msg.voice) preview = '🎤 Голосовое';
+                else preview = 'Вложение';
+                
+                const userRes = await fetch(`/api/user/${msg.from}`);
+                const userData = await userRes.json();
+                const senderName = userData.success ? userData.user.fullName : 'Кто-то';
+                
+                // Показываем уведомление ТОЛЬКО если мы не в этом чате
+                if (!currentChatPartner || msg.from !== currentChatPartner.id) {
+                    showFloatingNotification('Новое сообщение', `${senderName}: ${preview}`);
+                    
+                    // Браузерное уведомление (если разрешено)
+                    if ('Notification' in window && Notification.permission === 'granted') {
+                        new Notification('Новое сообщение', {
+                            body: `${senderName}: ${preview}`,
+                            icon: '/favicon.ico'
+                        });
+                    }
+                }
+                
+                // Обновляем непрочитанные
+                if (currentUser && currentUser.unreadCounts) {
+                    currentUser.unreadCounts[msg.from] = (currentUser.unreadCounts[msg.from] || 0) + 1;
+                }
+                
+                // Если мы в этом чате - просто добавляем сообщение без перерисовки
+                if (currentChatPartner && msg.from === currentChatPartner.id) {
+                    // Помечаем как прочитанное
+                    await fetch('/api/messages/read', { 
+                        method:'POST', 
+                        headers:{'Content-Type':'application/json'}, 
+                        body: JSON.stringify({ userId: currentUser.id, fromUserId: msg.from }) 
+                    });
+                    // Добавляем сообщение в чат без перезагрузки всей страницы
+                    appendMessageToChat(msg);
+                    // Обновляем счетчик в списке чатов
+                    updateChatListUnread(msg.from, 0);
+                } else {
+                    // Если мы НЕ в этом чате - обновляем список чатов
+                    if (currentTab === 'chats') {
+                        renderChats();
+                    }
+                }
+            });
+            
             socket.on('notification', (notif) => {
                 showFloatingNotification(notif.title, notif.message);
                 if (currentUser) window.refreshUser();
                 if (currentTab === 'notifications') renderNotifications();
             });
+            
             socket.on('unread_update', (data) => {
                 if (currentUser && data.from && data.count !== undefined) {
                     if (!currentUser.unreadCounts) currentUser.unreadCounts = {};
                     currentUser.unreadCounts[data.from] = data.count;
-                    if (currentTab === 'chats') renderChats();
+                    if (currentTab === 'chats') {
+                        renderChats();
+                    }
                 }
             });
         }
@@ -1143,91 +1210,41 @@ function updateChatListUnread(contactId, count) {
         }
 
         async function addComment(postId) {
-    if (!currentUser) { showToast('Войдите в аккаунт', true); return; }
-    const input = document.getElementById(`comment-input-${postId}`);
-    const text = input?.value.trim();
-    if (!text) return;
-    
-    // Отключаем кнопку на время отправки
-    const sendBtn = input.nextElementSibling;
-    sendBtn.disabled = true;
-    sendBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
-    
-    try {
-        const res = await fetch(`/api/posts/${postId}/comment`, { 
-            method:'POST', 
-            headers:{'Content-Type':'application/json'}, 
-            body:JSON.stringify({ userId: currentUser.id, text: text }) 
-        });
-        const data = await res.json();
-        
-        if (data.success) {
-            input.value = '';
-            // Добавляем комментарий без перезагрузки страницы
-            appendCommentToPost(postId, text);
-            // Обновляем счетчик комментариев
-            updateCommentCount(postId, 1);
-            showToast('Комментарий добавлен');
-        } else {
-            showToast(data.error || 'Ошибка', true);
+            if (!currentUser) { showToast('Войдите в аккаунт', true); return; }
+            const input = document.getElementById(`comment-input-${postId}`);
+            const text = input?.value.trim();
+            if (!text) return;
+            
+            // Отключаем кнопку на время отправки
+            const sendBtn = input.nextElementSibling;
+            sendBtn.disabled = true;
+            sendBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+            
+            try {
+                const res = await fetch(`/api/posts/${postId}/comment`, { 
+                    method:'POST', 
+                    headers:{'Content-Type':'application/json'}, 
+                    body:JSON.stringify({ userId: currentUser.id, text: text }) 
+                });
+                const data = await res.json();
+                
+                if (data.success) {
+                    input.value = '';
+                    // Добавляем комментарий без перезагрузки страницы
+                    appendCommentToPost(postId, text);
+                    // Обновляем счетчик комментариев
+                    updateCommentCount(postId, 1);
+                    showToast('Комментарий добавлен');
+                } else {
+                    showToast(data.error || 'Ошибка', true);
+                }
+            } catch(err) {
+                showToast('Ошибка соединения', true);
+            } finally {
+                sendBtn.disabled = false;
+                sendBtn.innerHTML = '<i class="fas fa-paper-plane"></i>';
+            }
         }
-    } catch(err) {
-        showToast('Ошибка соединения', true);
-    } finally {
-        sendBtn.disabled = false;
-        sendBtn.innerHTML = '<i class="fas fa-paper-plane"></i>';
-    }
-}
-
-// Добавляет комментарий в пост без перезагрузки
-function appendCommentToPost(postId, text) {
-    const commentsDiv = document.getElementById(`comments-${postId}`);
-    if (!commentsDiv) return;
-    
-    const commentsList = commentsDiv.querySelector('.comments-list');
-    if (!commentsList) return;
-    
-    const newCommentHtml = `
-        <div class="comment">
-            <img class="comment-avatar" src="${escapeHtml(currentUser.avatar)}" onerror="this.src='https://ui-avatars.com/api/?name=U&background=8bca8b&color=fff'">
-            <div class="comment-content">
-                <div class="comment-author">${escapeHtml(currentUser.fullName)}</div>
-                <div class="comment-text">${escapeHtml(text)}</div>
-                <div class="comment-time">Только что</div>
-            </div>
-        </div>
-    `;
-    
-    // Удаляем пустое состояние если есть
-    const emptyState = commentsList.querySelector('.empty-state');
-    if (emptyState) emptyState.remove();
-    
-    commentsList.insertAdjacentHTML('beforeend', newCommentHtml);
-    commentsDiv.style.display = 'block';
-    
-    // Обновляем иконку комментария
-    const postCard = document.querySelector(`.post-card[data-post-id="${postId}"]`);
-    if (postCard) {
-        const commentToggle = postCard.querySelector('.comment-toggle');
-        if (commentToggle) {
-            const currentCount = parseInt(commentToggle.querySelector('span').textContent) || 0;
-            commentToggle.querySelector('span').textContent = currentCount + 1;
-        }
-    }
-}
-
-// Обновляет счетчик комментариев
-function updateCommentCount(postId, increment) {
-    const postCard = document.querySelector(`.post-card[data-post-id="${postId}"]`);
-    if (postCard) {
-        const commentToggle = postCard.querySelector('.comment-toggle');
-        if (commentToggle) {
-            const span = commentToggle.querySelector('span');
-            const currentCount = parseInt(span.textContent) || 0;
-            span.textContent = currentCount + increment;
-        }
-    }
-}
 
         // ======================= ПСИХОЛОГИ =======================
         async function renderPsychologistsList() {
@@ -1257,7 +1274,7 @@ function updateCommentCount(postId, increment) {
             initVideoObservers();
         }
 
-        // ======================= ПРОФИЛЬ (ПОЛНАЯ ВЕРСИЯ) =======================
+        // ======================= ПРОФИЛЬ =======================
         async function renderProfile() {
             if (!currentUser) { showToast('Войдите в аккаунт', true); return; }
             const isPsych = currentUser.role === 'psychologist';
@@ -1276,7 +1293,7 @@ function updateCommentCount(postId, increment) {
             const followersCount = subsRes.followers?.length || 0;
 
             let appointmentsHtml = '';
-            if (!isPsych && currentUser.appointments) {
+            if (!isPsych && currentUser.appointments && currentUser.appointments.length > 0) {
                 const appointments = currentUser.appointments.filter(a => a.status === 'confirmed' || a.status === 'completed');
                 appointmentsHtml = `<div class="profile-sections">
                     <div class="collapsible-section open">
@@ -2342,20 +2359,7 @@ function updateCommentCount(postId, increment) {
             document.querySelectorAll('.voice-message').forEach(container => {
                 const audio = container.querySelector('audio');
                 if (audio && !container.querySelector('.speed-btn')) {
-                    const speeds = [1, 1.5, 2];
-                    let currentSpeed = 1;
-                    const btn = document.createElement('button');
-                    btn.className = 'speed-btn';
-                    btn.textContent = `${currentSpeed}x`;
-                    btn.onclick = (e) => {
-                        e.stopPropagation();
-                        let idx = speeds.indexOf(currentSpeed);
-                        idx = (idx + 1) % speeds.length;
-                        currentSpeed = speeds[idx];
-                        audio.playbackRate = currentSpeed;
-                        btn.textContent = `${currentSpeed}x`;
-                    };
-                    container.appendChild(btn);
+                    addSpeedButtonToAudio(audio);
                 }
             });
             scrollToBottom();
@@ -2887,6 +2891,13 @@ function updateCommentCount(postId, increment) {
             videos.forEach(video => videoObserver.observe(video));
         }
 
+        // ======================= ЗАПРОС УВЕДОМЛЕНИЙ =======================
+        function requestNotificationPermission() {
+            if ('Notification' in window && Notification.permission !== 'granted' && Notification.permission !== 'denied') {
+                Notification.requestPermission();
+            }
+        }
+
         // ======================= ИНИЦИАЛИЗАЦИЯ =======================
         async function init() {
             const uid = localStorage.getItem('userId');
@@ -2902,6 +2913,7 @@ function updateCommentCount(postId, increment) {
                         await fetchJSON('/api/psychologists').then(d => { allPsychologists = d.psychologists || []; });
                         document.getElementById('searchNavBtn').onclick = openSearchModal;
                         initSocket();
+                        requestNotificationPermission();
                     }
                 } catch(e) { localStorage.clear(); }
             }
