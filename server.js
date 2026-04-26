@@ -24,173 +24,22 @@ const io = socketIo(server, {
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
+app.use('/uploads', express.static(path.join(__dirname, 'public/uploads')));
 
-// Подключение к PostgreSQL
+// Подключение к PostgreSQL с оптимизациями
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
     ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
     max: 20,
     idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 2000
+    connectionTimeoutMillis: 5000,
+    statement_timeout: 10000
 });
 
-// ======================================================================
-// СОЗДАНИЕ ТАБЛИЦ (автоматически при запуске)
-// ======================================================================
-async function initDatabase() {
-    const createTableQueries = [
-        // Таблица пользователей
-        `CREATE TABLE IF NOT EXISTS users (
-            id VARCHAR(50) PRIMARY KEY,
-            full_name TEXT NOT NULL,
-            email TEXT UNIQUE NOT NULL,
-            phone TEXT,
-            password TEXT NOT NULL,
-            role TEXT NOT NULL,
-            specialization TEXT,
-            experience TEXT,
-            about TEXT,
-            price INTEGER DEFAULT 0,
-            topics JSONB DEFAULT '[]',
-            schedule JSONB DEFAULT '{}',
-            certificates JSONB DEFAULT '[]',
-            rating FLOAT DEFAULT 0,
-            avatar TEXT,
-            appointments JSONB DEFAULT '[]',
-            clients JSONB DEFAULT '[]',
-            notifications JSONB DEFAULT '[]',
-            unread_counts JSONB DEFAULT '{}',
-            created_at TIMESTAMP DEFAULT NOW()
-        )`,
-        
-        // Таблица постов
-        `CREATE TABLE IF NOT EXISTS posts (
-            id VARCHAR(50) PRIMARY KEY,
-            author_id VARCHAR(50) REFERENCES users(id) ON DELETE CASCADE,
-            text TEXT NOT NULL,
-            image TEXT,
-            video TEXT,
-            created_at TIMESTAMP DEFAULT NOW()
-        )`,
-        
-        // Таблица лайков
-        `CREATE TABLE IF NOT EXISTS likes (
-            id VARCHAR(50) PRIMARY KEY,
-            post_id VARCHAR(50) REFERENCES posts(id) ON DELETE CASCADE,
-            user_id VARCHAR(50) REFERENCES users(id) ON DELETE CASCADE,
-            created_at TIMESTAMP DEFAULT NOW()
-        )`,
-        
-        // Таблица комментариев
-        `CREATE TABLE IF NOT EXISTS comments (
-            id VARCHAR(50) PRIMARY KEY,
-            post_id VARCHAR(50) REFERENCES posts(id) ON DELETE CASCADE,
-            author_id VARCHAR(50) REFERENCES users(id) ON DELETE CASCADE,
-            text TEXT NOT NULL,
-            created_at TIMESTAMP DEFAULT NOW()
-        )`,
-        
-        // Таблица сообщений
-        `CREATE TABLE IF NOT EXISTS messages (
-            id VARCHAR(50) PRIMARY KEY,
-            from_user VARCHAR(50) REFERENCES users(id) ON DELETE CASCADE,
-            to_user VARCHAR(50) REFERENCES users(id) ON DELETE CASCADE,
-            text TEXT,
-            image TEXT,
-            voice TEXT,
-            is_read BOOLEAN DEFAULT FALSE,
-            created_at TIMESTAMP DEFAULT NOW()
-        )`,
-        
-        // Таблица записей
-        `CREATE TABLE IF NOT EXISTS appointments (
-            id VARCHAR(50) PRIMARY KEY,
-            psychologist_id VARCHAR(50) REFERENCES users(id),
-            client_id VARCHAR(50) REFERENCES users(id),
-            psychologist_name TEXT,
-            client_name TEXT,
-            date TEXT,
-            time TEXT,
-            room_id TEXT,
-            status TEXT DEFAULT 'pending',
-            created_at TIMESTAMP DEFAULT NOW()
-        )`,
-        
-        // Таблица записей звонков
-        `CREATE TABLE IF NOT EXISTS recordings (
-            id VARCHAR(50) PRIMARY KEY,
-            url TEXT NOT NULL,
-            from_user VARCHAR(50),
-            to_user VARCHAR(50),
-            room_id TEXT,
-            created_at TIMESTAMP DEFAULT NOW()
-        )`,
-        
-        // Таблица задач
-        `CREATE TABLE IF NOT EXISTS tasks (
-            id VARCHAR(50) PRIMARY KEY,
-            psychologist_id VARCHAR(50) REFERENCES users(id) ON DELETE CASCADE,
-            text TEXT NOT NULL,
-            due_date TEXT,
-            completed BOOLEAN DEFAULT FALSE,
-            created_at TIMESTAMP DEFAULT NOW()
-        )`,
-        
-        // Таблица отзывов
-        `CREATE TABLE IF NOT EXISTS reviews (
-            id VARCHAR(50) PRIMARY KEY,
-            psychologist_id VARCHAR(50) REFERENCES users(id) ON DELETE CASCADE,
-            client_id VARCHAR(50) REFERENCES users(id) ON DELETE CASCADE,
-            client_name TEXT,
-            rating INTEGER,
-            text TEXT,
-            created_at TIMESTAMP DEFAULT NOW()
-        )`,
-        
-        // Таблица заметок
-        `CREATE TABLE IF NOT EXISTS notes (
-            id VARCHAR(50) PRIMARY KEY,
-            psychologist_id VARCHAR(50) REFERENCES users(id) ON DELETE CASCADE,
-            title TEXT,
-            content TEXT,
-            attachment TEXT,
-            attachment_type TEXT,
-            created_at TIMESTAMP DEFAULT NOW()
-        )`,
-        
-        // Таблица подписок
-        `CREATE TABLE IF NOT EXISTS subscriptions (
-            id VARCHAR(50) PRIMARY KEY,
-            follower_id VARCHAR(50) REFERENCES users(id) ON DELETE CASCADE,
-            following_id VARCHAR(50) REFERENCES users(id) ON DELETE CASCADE,
-            created_at TIMESTAMP DEFAULT NOW()
-        )`,
-        
-        // Таблица сертификатов
-        `CREATE TABLE IF NOT EXISTS certificates (
-            id VARCHAR(50) PRIMARY KEY,
-            user_id VARCHAR(50) REFERENCES users(id) ON DELETE CASCADE,
-            title TEXT,
-            image TEXT,
-            created_at TIMESTAMP DEFAULT NOW()
-        )`,
-        
-        // Индексы для ускорения запросов
-        `CREATE INDEX IF NOT EXISTS idx_posts_author ON posts(author_id)`,
-        `CREATE INDEX IF NOT EXISTS idx_messages_users ON messages(from_user, to_user)`,
-        `CREATE INDEX IF NOT EXISTS idx_appointments_psychologist ON appointments(psychologist_id)`,
-        `CREATE INDEX IF NOT EXISTS idx_appointments_client ON appointments(client_id)`
-    ];
-    
-    for (const query of createTableQueries) {
-        try {
-            await pool.query(query);
-        } catch (err) {
-            console.error('Ошибка создания таблицы:', err.message);
-        }
-    }
-    console.log('✅ База данных инициализирована');
-}
+pool.connect((err) => {
+    if (err) console.error('❌ Ошибка подключения к БД:', err);
+    else console.log('✅ PostgreSQL подключена');
+});
 
 // Создание папок для загрузки
 const uploadDirs = ['public/uploads', 'public/uploads/images', 'public/uploads/audio', 'public/uploads/recordings', 'public/uploads/files', 'public/uploads/certificates', 'public/uploads/videos'];
@@ -216,6 +65,148 @@ const storage = multer.diskStorage({
 });
 
 const upload = multer({ storage, limits: { fileSize: 100 * 1024 * 1024 } });
+
+// ======================================================================
+// СОЗДАНИЕ ТАБЛИЦ С ИНДЕКСАМИ
+// ======================================================================
+async function initDatabase() {
+    const createTableQueries = [
+        `CREATE TABLE IF NOT EXISTS users (
+            id VARCHAR(50) PRIMARY KEY,
+            full_name TEXT NOT NULL,
+            email TEXT UNIQUE NOT NULL,
+            phone TEXT,
+            password TEXT NOT NULL,
+            role TEXT NOT NULL,
+            specialization TEXT,
+            experience TEXT,
+            about TEXT,
+            price INTEGER DEFAULT 0,
+            topics JSONB DEFAULT '[]',
+            schedule JSONB DEFAULT '{}',
+            certificates JSONB DEFAULT '[]',
+            rating FLOAT DEFAULT 0,
+            avatar TEXT,
+            appointments JSONB DEFAULT '[]',
+            clients JSONB DEFAULT '[]',
+            notifications JSONB DEFAULT '[]',
+            unread_counts JSONB DEFAULT '{}',
+            created_at TIMESTAMP DEFAULT NOW()
+        )`,
+        `CREATE TABLE IF NOT EXISTS posts (
+            id VARCHAR(50) PRIMARY KEY,
+            author_id VARCHAR(50) REFERENCES users(id) ON DELETE CASCADE,
+            text TEXT NOT NULL,
+            image TEXT,
+            video TEXT,
+            created_at TIMESTAMP DEFAULT NOW()
+        )`,
+        `CREATE TABLE IF NOT EXISTS likes (
+            id VARCHAR(50) PRIMARY KEY,
+            post_id VARCHAR(50) REFERENCES posts(id) ON DELETE CASCADE,
+            user_id VARCHAR(50) REFERENCES users(id) ON DELETE CASCADE,
+            created_at TIMESTAMP DEFAULT NOW()
+        )`,
+        `CREATE TABLE IF NOT EXISTS comments (
+            id VARCHAR(50) PRIMARY KEY,
+            post_id VARCHAR(50) REFERENCES posts(id) ON DELETE CASCADE,
+            author_id VARCHAR(50) REFERENCES users(id) ON DELETE CASCADE,
+            text TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT NOW()
+        )`,
+        `CREATE TABLE IF NOT EXISTS messages (
+            id VARCHAR(50) PRIMARY KEY,
+            from_user VARCHAR(50) REFERENCES users(id) ON DELETE CASCADE,
+            to_user VARCHAR(50) REFERENCES users(id) ON DELETE CASCADE,
+            text TEXT,
+            image TEXT,
+            voice TEXT,
+            is_read BOOLEAN DEFAULT FALSE,
+            created_at TIMESTAMP DEFAULT NOW()
+        )`,
+        `CREATE TABLE IF NOT EXISTS appointments (
+            id VARCHAR(50) PRIMARY KEY,
+            psychologist_id VARCHAR(50) REFERENCES users(id),
+            client_id VARCHAR(50) REFERENCES users(id),
+            psychologist_name TEXT,
+            client_name TEXT,
+            date TEXT,
+            time TEXT,
+            room_id TEXT,
+            status TEXT DEFAULT 'pending',
+            created_at TIMESTAMP DEFAULT NOW()
+        )`,
+        `CREATE TABLE IF NOT EXISTS recordings (
+            id VARCHAR(50) PRIMARY KEY,
+            url TEXT NOT NULL,
+            from_user VARCHAR(50),
+            to_user VARCHAR(50),
+            room_id TEXT,
+            created_at TIMESTAMP DEFAULT NOW()
+        )`,
+        `CREATE TABLE IF NOT EXISTS tasks (
+            id VARCHAR(50) PRIMARY KEY,
+            psychologist_id VARCHAR(50) REFERENCES users(id) ON DELETE CASCADE,
+            text TEXT NOT NULL,
+            due_date TEXT,
+            completed BOOLEAN DEFAULT FALSE,
+            created_at TIMESTAMP DEFAULT NOW()
+        )`,
+        `CREATE TABLE IF NOT EXISTS reviews (
+            id VARCHAR(50) PRIMARY KEY,
+            psychologist_id VARCHAR(50) REFERENCES users(id) ON DELETE CASCADE,
+            client_id VARCHAR(50) REFERENCES users(id) ON DELETE CASCADE,
+            client_name TEXT,
+            rating INTEGER,
+            text TEXT,
+            created_at TIMESTAMP DEFAULT NOW()
+        )`,
+        `CREATE TABLE IF NOT EXISTS notes (
+            id VARCHAR(50) PRIMARY KEY,
+            psychologist_id VARCHAR(50) REFERENCES users(id) ON DELETE CASCADE,
+            title TEXT,
+            content TEXT,
+            attachment TEXT,
+            attachment_type TEXT,
+            created_at TIMESTAMP DEFAULT NOW()
+        )`,
+        `CREATE TABLE IF NOT EXISTS subscriptions (
+            id VARCHAR(50) PRIMARY KEY,
+            follower_id VARCHAR(50) REFERENCES users(id) ON DELETE CASCADE,
+            following_id VARCHAR(50) REFERENCES users(id) ON DELETE CASCADE,
+            created_at TIMESTAMP DEFAULT NOW()
+        )`,
+        `CREATE TABLE IF NOT EXISTS certificates (
+            id VARCHAR(50) PRIMARY KEY,
+            user_id VARCHAR(50) REFERENCES users(id) ON DELETE CASCADE,
+            title TEXT,
+            image TEXT,
+            created_at TIMESTAMP DEFAULT NOW()
+        )`,
+        // Индексы для ускорения запросов
+        `CREATE INDEX IF NOT EXISTS idx_posts_author_id ON posts(author_id)`,
+        `CREATE INDEX IF NOT EXISTS idx_posts_created_at ON posts(created_at DESC)`,
+        `CREATE INDEX IF NOT EXISTS idx_messages_from_user ON messages(from_user)`,
+        `CREATE INDEX IF NOT EXISTS idx_messages_to_user ON messages(to_user)`,
+        `CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at)`,
+        `CREATE INDEX IF NOT EXISTS idx_messages_users ON messages(from_user, to_user, created_at)`,
+        `CREATE INDEX IF NOT EXISTS idx_likes_post_id ON likes(post_id)`,
+        `CREATE INDEX IF NOT EXISTS idx_comments_post_id ON comments(post_id)`,
+        `CREATE INDEX IF NOT EXISTS idx_appointments_psychologist ON appointments(psychologist_id)`,
+        `CREATE INDEX IF NOT EXISTS idx_appointments_client ON appointments(client_id)`,
+        `CREATE INDEX IF NOT EXISTS idx_users_role ON users(role)`,
+        `CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)`
+    ];
+    
+    for (const query of createTableQueries) {
+        try {
+            await pool.query(query);
+        } catch (err) {
+            console.error('Ошибка создания таблицы:', err.message);
+        }
+    }
+    console.log('✅ База данных инициализирована с индексами');
+}
 
 // ======================================================================
 // ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
@@ -254,7 +245,7 @@ async function getUser(id) {
         appointments: safeJSONParse(dbUser.appointments, []),
         clients: safeJSONParse(dbUser.clients, []),
         notifications: safeJSONParse(dbUser.notifications, []),
-        unreadCounts: safeJSONParse(dbUser.unread_counts, {}),
+        unreadCounts: safeJSONParse(dbPlayer.unread_counts, {}),
         createdAt: dbUser.created_at
     };
     return user;
@@ -431,6 +422,11 @@ app.post('/api/upload-chat-image', upload.single('image'), (req, res) => {
 app.post('/api/upload-voice', upload.single('voice'), (req, res) => {
     if (!req.file) return res.json({ success: false, error: 'Файл не загружен' });
     res.json({ success: true, voiceUrl: `/uploads/audio/${req.file.filename}` });
+});
+
+app.post('/api/upload-recording', upload.single('recording'), async (req, res) => {
+    if (!req.file) return res.json({ success: false, error: 'Файл не загружен' });
+    res.json({ success: true, recordingUrl: `/uploads/recordings/${req.file.filename}` });
 });
 
 // ---- Сертификаты ----
@@ -1001,9 +997,6 @@ app.post('/api/subscriptions', async (req, res) => {
 app.get('/api/messages/:userId', async (req, res) => {
     try {
         const userId = req.params.userId;
-        const user = await getUser(userId);
-        if (!user) return res.json({ success: false });
-        
         const messagesRes = await pool.query('SELECT * FROM messages WHERE from_user = $1 OR to_user = $1 ORDER BY created_at ASC', [userId]);
         const messages = messagesRes.rows.map(m => ({
             id: m.id,
@@ -1015,7 +1008,6 @@ app.get('/api/messages/:userId', async (req, res) => {
             is_read: m.is_read,
             created_at: m.created_at
         }));
-        
         res.json({ success: true, messages });
     } catch (err) {
         console.error('Get messages error:', err);
@@ -1036,17 +1028,12 @@ app.post('/api/messages', async (req, res) => {
             is_read: false,
             created_at: new Date().toISOString()
         };
+        
+        // Сохраняем сообщение
         await pool.query(`INSERT INTO messages (id, from_user, to_user, text, image, voice, is_read, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
             [newMsg.id, newMsg.from_user, newMsg.to_user, newMsg.text, newMsg.image, newMsg.voice, newMsg.is_read, newMsg.created_at]);
         
-        const recipient = await getUser(to);
-        if (recipient) {
-            if (!recipient.unreadCounts) recipient.unreadCounts = {};
-            recipient.unreadCounts[from] = (recipient.unreadCounts[from] || 0) + 1;
-            await updateUser(recipient);
-            io.to(to).emit('unread_update', { from, count: recipient.unreadCounts[from] });
-        }
-        
+        // Форматируем для клиента
         const msgForClient = {
             id: newMsg.id,
             from: newMsg.from_user,
@@ -1056,8 +1043,25 @@ app.post('/api/messages', async (req, res) => {
             voice: newMsg.voice,
             createdAt: newMsg.created_at
         };
-        io.to(to).emit('new_message', msgForClient);
-        res.json({ success: true });
+        
+        // Обновляем unreadCounts у получателя
+        const recipient = await getUser(to);
+        if (recipient) {
+            if (!recipient.unreadCounts) recipient.unreadCounts = {};
+            recipient.unreadCounts[from] = (recipient.unreadCounts[from] || 0) + 1;
+            await updateUser(recipient);
+            
+            // Отправляем уведомление о непрочитанных
+            io.to(to).emit('unread_update', { from, count: recipient.unreadCounts[from] });
+            
+            // Отправляем новое сообщение получателю
+            io.to(to).emit('new_message', msgForClient);
+        }
+        
+        // Отправляем подтверждение отправителю (чтобы он знал, что сообщение доставлено)
+        io.to(from).emit('message_sent', msgForClient);
+        
+        res.json({ success: true, messageId: newMsg.id });
     } catch (err) {
         console.error('Send message error:', err);
         res.json({ success: false, error: 'Ошибка сервера' });
@@ -1067,12 +1071,20 @@ app.post('/api/messages', async (req, res) => {
 app.post('/api/messages/read', async (req, res) => {
     try {
         const { userId, fromUserId } = req.body;
+        
+        // Обновляем статус прочитанных в базе
+        await pool.query('UPDATE messages SET is_read = true WHERE to_user = $1 AND from_user = $2', [userId, fromUserId]);
+        
+        // Обновляем unreadCounts у пользователя
         const user = await getUser(userId);
         if (user && user.unreadCounts && user.unreadCounts[fromUserId]) {
             delete user.unreadCounts[fromUserId];
             await updateUser(user);
+            
+            // Уведомляем отправителя, что сообщение прочитано
+            io.to(fromUserId).emit('messages_read', { by: userId, from: fromUserId });
         }
-        await pool.query('UPDATE messages SET is_read = true WHERE to_user = $1 AND from_user = $2', [userId, fromUserId]);
+        
         res.json({ success: true });
     } catch (err) {
         console.error('Mark read error:', err);
@@ -1108,13 +1120,19 @@ io.on('connection', (socket) => {
     
     socket.on('register_user', (userId) => {
         socket.userId = userId;
-        if (userId) socket.join(userId);
-        console.log(`User ${userId} registered`);
+        if (userId) {
+            socket.join(userId);
+            console.log(`✅ User ${userId} registered, joined room ${userId}`);
+        }
     });
     
     socket.on('join-call-room', (roomId, userId, userType) => {
         try {
-            if (!activeRooms.has(roomId)) activeRooms.set(roomId, { psychologist: null, client: null, users: new Map() });
+            console.log(`📞 User ${userId} (${userType}) joining room ${roomId}`);
+            
+            if (!activeRooms.has(roomId)) {
+                activeRooms.set(roomId, { psychologist: null, client: null, users: new Map() });
+            }
             const room = activeRooms.get(roomId);
             
             if (userType === 'psychologist' && room.psychologist && room.psychologist !== socket.id) {
@@ -1141,6 +1159,7 @@ io.on('connection', (socket) => {
             socket.userType = userType;
             
             if (room.psychologist && room.client) {
+                console.log(`🎥 Both users ready in room ${roomId}`);
                 io.to(room.psychologist).emit('call-ready', { partnerId: room.client });
                 io.to(room.client).emit('call-ready', { partnerId: room.psychologist });
             }
@@ -1154,29 +1173,81 @@ io.on('connection', (socket) => {
         const room = activeRooms.get(socket.roomId);
         if (room) {
             const targetId = socket.userType === 'psychologist' ? room.client : room.psychologist;
-            if (targetId) io.to(targetId).emit('call-message', { from: socket.userId, text: msgData.text, time: new Date().toISOString() });
+            if (targetId) {
+                io.to(targetId).emit('call-message', { 
+                    from: socket.userId, 
+                    text: msgData.text, 
+                    time: new Date().toISOString() 
+                });
+            }
         }
     });
     
-    socket.on('offer', (data) => socket.to(data.target).emit('offer', { sdp: data.sdp, from: socket.id }));
-    socket.on('answer', (data) => socket.to(data.target).emit('answer', { sdp: data.sdp, from: socket.id }));
-    socket.on('ice-candidate', (data) => socket.to(data.target).emit('ice-candidate', { candidate: data.candidate, from: socket.id }));
+    socket.on('offer', (data) => {
+        if (data.target) {
+            socket.to(data.target).emit('offer', { sdp: data.sdp, from: socket.id });
+        }
+    });
+    
+    socket.on('answer', (data) => {
+        if (data.target) {
+            socket.to(data.target).emit('answer', { sdp: data.sdp, from: socket.id });
+        }
+    });
+    
+    socket.on('ice-candidate', (data) => {
+        if (data.target) {
+            socket.to(data.target).emit('ice-candidate', { candidate: data.candidate, from: socket.id });
+        }
+    });
+    
     socket.on('end-call', () => {
         if (socket.roomId) {
+            console.log(`📞 Call ended in room ${socket.roomId}`);
             socket.to(socket.roomId).emit('call-ended');
             socket.leave(socket.roomId);
+            const room = activeRooms.get(socket.roomId);
+            if (room) {
+                room.users.delete(socket.id);
+                if (socket.userType === 'psychologist') room.psychologist = null;
+                else room.client = null;
+                if (room.users.size === 0) {
+                    setTimeout(() => {
+                        if (activeRooms.get(socket.roomId)?.users.size === 0) {
+                            activeRooms.delete(socket.roomId);
+                            console.log(`🗑️ Room ${socket.roomId} deleted`);
+                        }
+                    }, 10000);
+                }
+            }
             delete socket.roomId;
         }
     });
     
     socket.on('disconnect', () => {
+        console.log(`🔌 WebSocket disconnected: ${socket.id}`);
         if (socket.roomId) {
             socket.to(socket.roomId).emit('partner-disconnected');
+            const room = activeRooms.get(socket.roomId);
+            if (room) {
+                room.users.delete(socket.id);
+                if (socket.userType === 'psychologist') room.psychologist = null;
+                else room.client = null;
+                if (room.users.size === 0) {
+                    setTimeout(() => {
+                        if (activeRooms.get(socket.roomId)?.users.size === 0) {
+                            activeRooms.delete(socket.roomId);
+                        }
+                    }, 10000);
+                }
+            }
             socket.leave(socket.roomId);
+            delete socket.roomId;
         }
-        console.log('WebSocket disconnected:', socket.id);
     });
 });
+
+app.get('/health', (req, res) => res.status(200).send('OK'));
 
 // ======================================================================
 // ЗАПУСК СЕРВЕРА
