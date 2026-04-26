@@ -7,7 +7,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        /* ------------------- БАЗОВЫЕ ПЕРЕМЕННЫЕ ------------------- */
+        /* ------------------- БАЗОВЫЕ ПЕРЕМЕННЫЕ (без изменений) ------------------- */
         :root {
             --green: #8bca8b;
             --green-dark: #5a9e5a;
@@ -735,6 +735,9 @@
         let isPosting = false;
         let videoObserver = null;
 
+        // Хранилище для избежания глобальных переменных в модалках
+        let modalResolvers = new Map();
+
         // ======================= ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ =======================
         function showToast(msg, isErr = false) {
             document.querySelectorAll('.toast').forEach(t => t.remove());
@@ -771,7 +774,14 @@
 
         function toggleSection(el) {
             const section = el.closest('.collapsible-section');
-            if (section) section.classList.toggle('open');
+            if (section) {
+                section.classList.toggle('open');
+                // Ленивая загрузка календаря: если секция календаря открыта и ещё не загружена
+                if (section.id === 'sec-calendar' && section.classList.contains('open') && !section.dataset.loaded) {
+                    renderProfileCalendar();
+                    section.dataset.loaded = 'true';
+                }
+            }
         }
 
         function playBeep() {
@@ -856,12 +866,11 @@
             setTimeout(() => document.getElementById('imageModal').classList.add('active'), 10);
         }
 
-        // ======================= ЧАТ - ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ (исправленные) =======================
+        // ======================= ЧАТ - ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ =======================
         function appendMessageToChat(msg) {
             const listDiv = document.getElementById('chatMessagesList');
             if (!listDiv) return;
             
-            // Нормализуем поля: поддерживаем оба формата (из БД и из сокета)
             const fromId = msg.from_user || msg.from;
             const isOutgoing = fromId === currentUser.id;
             
@@ -972,14 +981,7 @@
             if (emptyState) emptyState.remove();
             commentsList.insertAdjacentHTML('beforeend', newCommentHtml);
             commentsDiv.style.display = 'block';
-            const postCard = document.querySelector(`.post-card[data-post-id="${postId}"]`);
-            if (postCard) {
-                const commentToggle = postCard.querySelector('.comment-toggle');
-                if (commentToggle) {
-                    const currentCount = parseInt(commentToggle.querySelector('span').textContent) || 0;
-                    commentToggle.querySelector('span').textContent = currentCount + 1;
-                }
-            }
+            updateCommentCount(postId, 1);
         }
 
         function updateCommentCount(postId, increment) {
@@ -1005,7 +1007,7 @@
             }
         };
 
-        // ======================= ИНИЦИАЛИЗАЦИЯ СОКЕТА =======================
+        // ======================= ИНИЦИАЛИЗАЦИЯ СОКЕТА С REAL-TIME ОБРАБОТЧИКАМИ =======================
         function initSocket() {
             if (socket) {
                 socket.disconnect();
@@ -1025,56 +1027,122 @@
                 showToast('Ошибка соединения с сервером', true);
             });
             
+            // === НОВЫЕ ОБРАБОТЧИКИ REAL-TIME ===
+            socket.on('post_created', (newPost) => {
+                if (currentTab === 'feed') renderFeed();
+                else if (currentTab === 'profile' && currentUser?.role === 'psychologist') renderProfile();
+            });
+            
+            socket.on('post_updated', (data) => {
+                if (currentTab === 'feed') renderFeed();
+                else if (currentTab === 'profile') renderProfile();
+            });
+            
+            socket.on('post_deleted', (postId) => {
+                if (currentTab === 'feed') renderFeed();
+                else if (currentTab === 'profile') renderProfile();
+            });
+            
+            socket.on('comment_created', ({ postId, comment }) => {
+                // Обновляем комментарии на странице, если лента или профиль открыты
+                const commentsDiv = document.getElementById(`comments-${postId}`);
+                if (commentsDiv) {
+                    const commentsList = commentsDiv.querySelector('.comments-list');
+                    if (commentsList) {
+                        const newHtml = `
+                            <div class="comment">
+                                <img class="comment-avatar" src="${escapeHtml(comment.author.avatar)}" onerror="this.src='https://ui-avatars.com/api/?name=U&background=8bca8b&color=fff'">
+                                <div class="comment-content">
+                                    <div class="comment-author">${escapeHtml(comment.author.fullName)}</div>
+                                    <div class="comment-text">${escapeHtml(comment.text)}</div>
+                                    <div class="comment-time">Только что</div>
+                                </div>
+                            </div>
+                        `;
+                        const emptyState = commentsList.querySelector('.empty-state');
+                        if (emptyState) emptyState.remove();
+                        commentsList.insertAdjacentHTML('beforeend', newHtml);
+                        updateCommentCount(postId, 1);
+                    }
+                } else {
+                    // Если секция комментариев не загружена, просто перерисуем ленту
+                    if (currentTab === 'feed') renderFeed();
+                }
+            });
+            
+            socket.on('post_liked', ({ postId, likesCount, userId, liked }) => {
+                const likeBtn = document.querySelector(`.like-btn[data-id="${postId}"]`);
+                if (likeBtn) {
+                    const span = likeBtn.querySelector('span');
+                    if (span) span.textContent = likesCount;
+                    if (liked) {
+                        likeBtn.classList.add('liked');
+                        likeBtn.querySelector('i').className = 'fa-solid fa-heart';
+                    } else {
+                        likeBtn.classList.remove('liked');
+                        likeBtn.querySelector('i').className = 'fa-regular fa-heart';
+                    }
+                } else if (currentTab === 'feed') {
+                    // Если кнопки нет на странице (например, профиль), перерисуем
+                    renderFeed();
+                }
+            });
+            
+            socket.on('appointment_updated', (apt) => {
+                if (currentTab === 'profile') renderProfile();
+                if (currentTab === 'notifications') renderNotifications();
+            });
+            
+            socket.on('appointment_completed', (appointmentId) => {
+                if (currentTab === 'profile') renderProfile();
+                if (currentTab === 'notifications') renderNotifications();
+                showFloatingNotification('Сеанс завершён', 'Запись отмечена как завершённая', 'info');
+            });
+            
+            // Обработка новых сообщений
             socket.on('new_message', async (msg) => {
-    // Определяем превью сразу — не ждём refreshUser
-    let preview = '';
-    if (msg.text) preview = msg.text.substring(0, 50);
-    else if (msg.image) preview = '📷 Фото';
-    else if (msg.voice) preview = '🎤 Голосовое';
-    else preview = 'Вложение';
+                let preview = '';
+                if (msg.text) preview = msg.text.substring(0, 50);
+                else if (msg.image) preview = '📷 Фото';
+                else if (msg.voice) preview = '🎤 Голосовое';
+                else preview = 'Вложение';
 
-    // Если мы ВНУТРИ чата с этим отправителем — просто добавляем сообщение
-    if (currentChatPartner && msg.from === currentChatPartner.id) {
-        appendMessageToChat(msg);
-        scrollToBottom();
+                if (currentChatPartner && msg.from === currentChatPartner.id) {
+                    appendMessageToChat(msg);
+                    scrollToBottom();
+                    // Помечаем как прочитанное
+                    fetch('/api/messages/read', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ userId: currentUser.id, fromUserId: msg.from })
+                    }).catch(console.error);
+                    updateChatListUnread(msg.from, 0);
+                    // Обновляем локальный счётчик
+                    if (currentUser.unreadCounts) delete currentUser.unreadCounts[msg.from];
+                    return;
+                }
 
-        // Читаем сообщения в фоне — не ждём результата
-        fetch('/api/messages/read', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userId: currentUser.id, fromUserId: msg.from })
-        }).catch(console.error);
-
-        // Убираем бейдж если список чатов виден за открытым диалогом
-        updateChatListUnread(msg.from, 0);
-        return; // выходим — больше ничего не делаем
-    }
-
-    // Сообщение от кого-то другого — обновляем счётчик локально
-    if (currentUser && currentUser.unreadCounts) {
-        currentUser.unreadCounts[msg.from] = (currentUser.unreadCounts[msg.from] || 0) + 1;
-    }
-
-    // Получаем имя отправителя в фоне
-    fetch(`/api/user/${msg.from}`)
-        .then(r => r.json())
-        .then(userData => {
-            const senderName = userData.success ? userData.user.fullName : 'Новое сообщение';
-
-            // Показываем уведомление
-            showFloatingNotification('Новое сообщение', `${senderName}: ${preview}`);
-            if ('Notification' in window && Notification.permission === 'granted') {
-                new Notification('Новое сообщение', { body: `${senderName}: ${preview}` });
-            }
-
-            // Обновляем список чатов если он открыт
-            const chatListExists = document.querySelector('.chat-list');
-            if (chatListExists) {
-                updateChatListItem(msg, senderName, preview);
-            }
-        })
-        .catch(console.error);
-});
+                if (currentUser && currentUser.unreadCounts) {
+                    currentUser.unreadCounts[msg.from] = (currentUser.unreadCounts[msg.from] || 0) + 1;
+                }
+                // Получаем имя отправителя (можно из кэша, но для простоты запрос)
+                fetch(`/api/user/${msg.from}`)
+                    .then(r => r.json())
+                    .then(userData => {
+                        const senderName = userData.success ? userData.user.fullName : 'Новое сообщение';
+                        showFloatingNotification('Новое сообщение', `${senderName}: ${preview}`);
+                        if ('Notification' in window && Notification.permission === 'granted') {
+                            new Notification('Новое сообщение', { body: `${senderName}: ${preview}` });
+                        }
+                        if (currentTab === 'chats') {
+                            renderChats();
+                        } else {
+                            const chatListExists = document.querySelector('.chat-list');
+                            if (chatListExists) updateChatListItem(msg, senderName, preview);
+                        }
+                    })
+                    .catch(console.error);
+            });
             
             socket.on('notification', (notif) => {
                 showFloatingNotification(notif.title, notif.message);
@@ -1246,7 +1314,6 @@
                 if (data.success) {
                     input.value = '';
                     appendCommentToPost(postId, text);
-                    updateCommentCount(postId, 1);
                     showToast('Комментарий добавлен');
                 } else {
                     showToast(data.error || 'Ошибка', true);
@@ -1589,18 +1656,6 @@
                         if (label) label.classList.toggle('task-completed', cb.checked);
                     };
                 });
-                const calSection = document.getElementById('sec-calendar');
-                if (calSection) {
-                    const header = calSection.querySelector('.collapsible-header');
-                    if (header) {
-                        header.onclick = function() {
-                            toggleSection(this);
-                            if (calSection.classList.contains('open') && !document.getElementById('profileCalendar').innerHTML.trim()) {
-                                renderProfileCalendar();
-                            }
-                        };
-                    }
-                }
             }
             checkUpcomingEvents();
         }
@@ -1736,21 +1791,22 @@
         }
 
         function openConfirmModal(title, text, onConfirm) {
+            const modalId = 'confirmModal_' + Date.now();
             const html = `
-                <div class="modal" id="confirmModal">
+                <div class="modal" id="${modalId}">
                     <div class="modal-content">
                         <div class="modal-handle"></div>
                         <h3>${escapeHtml(title)}</h3>
                         <p style="color:rgba(255,255,255,0.65);font-size:14px;margin-bottom:4px;">${escapeHtml(text)}</p>
                         <div class="modal-buttons">
-                            <button class="btn-secondary" onclick="closeModal('confirmModal')">Отмена</button>
-                            <button class="btn-danger" style="background:rgba(220,38,38,0.25)!important;border:1px solid rgba(220,38,38,0.4)!important;color:#ff6b6b!important;" onclick="closeModal('confirmModal');window._confirmCb()">Удалить</button>
+                            <button class="btn-secondary" onclick="closeModal('${modalId}')">Отмена</button>
+                            <button class="btn-danger" style="background:rgba(220,38,38,0.25)!important;border:1px solid rgba(220,38,38,0.4)!important;color:#ff6b6b!important;" onclick="closeModal('${modalId}');window._confirmCb_${modalId}()">Удалить</button>
                         </div>
                     </div>
                 </div>`;
-            window._confirmCb = onConfirm;
+            window[`_confirmCb_${modalId}`] = onConfirm;
             document.body.insertAdjacentHTML('beforeend', html);
-            setTimeout(() => document.getElementById('confirmModal').classList.add('active'), 10);
+            setTimeout(() => document.getElementById(modalId).classList.add('active'), 10);
         }
 
         // ======================= РЕДАКТИРОВАНИЕ ПРОФИЛЯ =======================
@@ -1844,8 +1900,9 @@
                 `).join('') : '<div class="empty-state" style="padding:20px;"><i class="fas fa-calendar-times"></i><div>Нет добавленного времени</div></div>';
             };
 
+            const modalId = 'scheduleModal';
             const html = `
-                <div class="modal" id="scheduleModal">
+                <div class="modal" id="${modalId}">
                     <div class="modal-content" style="max-height:85vh;display:flex;flex-direction:column;">
                         <div class="modal-handle"></div>
                         <h3>📅 Свободное время</h3>
@@ -1859,19 +1916,19 @@
                                     <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px;">Время</label>
                                     <input type="time" id="slotTime" style="margin-bottom:0;width:100%;">
                                 </div>
-                                <button class="btn-sm" style="height:44px;margin-bottom:0;" onclick="addSlot()"><i class="fas fa-plus"></i> Добавить</button>
+                                <button class="btn-sm" style="height:44px;margin-bottom:0;" onclick="window.addSlot()"><i class="fas fa-plus"></i> Добавить</button>
                             </div>
                         </div>
-                        <div class="schedule-modal-list">
+                        <div class="schedule-modal-list" id="schedule-list">
                             ${renderSlots()}
                         </div>
                         <div class="modal-buttons" style="margin-top:0;">
-                            <button class="btn-secondary" onclick="closeModal('scheduleModal')">Закрыть</button>
+                            <button class="btn-secondary" onclick="closeModal('${modalId}')">Закрыть</button>
                         </div>
                     </div>
                 </div>`;
             document.body.insertAdjacentHTML('beforeend', html);
-            setTimeout(() => document.getElementById('scheduleModal').classList.add('active'), 10);
+            setTimeout(() => document.getElementById(modalId).classList.add('active'), 10);
 
             window.addSlot = async () => {
                 const date = document.getElementById('slotDate').value;
@@ -1884,7 +1941,7 @@
                 const res = await fetch('/api/schedule', { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ userId: currentUser.id, schedule: sched }) });
                 if (res.ok) {
                     currentUser.schedule = sched;
-                    document.getElementById('scheduleModal').querySelector('.schedule-modal-list').innerHTML = renderSlots();
+                    document.getElementById('schedule-list').innerHTML = renderSlots();
                     showToast('Время добавлено');
                 }
             };
@@ -1896,7 +1953,7 @@
                     if (!sched[date].length) delete sched[date];
                     await fetch('/api/schedule', { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ userId: currentUser.id, schedule: sched }) });
                     currentUser.schedule = sched;
-                    document.getElementById('scheduleModal').querySelector('.schedule-modal-list').innerHTML = renderSlots();
+                    document.getElementById('schedule-list').innerHTML = renderSlots();
                 }
             };
         }
@@ -2015,8 +2072,9 @@
         }
 
         async function openNoteModal(id, title, content, att) {
+            const modalId = 'editNoteModal';
             const html = `
-                <div class="modal" id="editNoteModal">
+                <div class="modal" id="${modalId}">
                     <div class="modal-content">
                         <div class="modal-handle"></div>
                         <h3>Заметка</h3>
@@ -2024,14 +2082,14 @@
                         <textarea id="editNoteContent" rows="6">${content}</textarea>
                         ${att ? `<div style="margin-bottom:12px;"><a href="${att}" target="_blank" style="color:var(--green);font-size:13px;"><i class="fas fa-paperclip"></i> Вложение</a></div>` : ''}
                         <div class="modal-buttons">
-                            <button class="btn-secondary" onclick="closeModal('editNoteModal')">Закрыть</button>
+                            <button class="btn-secondary" onclick="closeModal('${modalId}')">Закрыть</button>
                             <button class="btn-danger" style="background:rgba(220,38,38,0.2)!important;border:1px solid rgba(220,38,38,0.35)!important;color:#ff6b6b!important;" onclick="deleteNote('${id}')">Удалить</button>
                             <button class="btn-primary" onclick="updateNote('${id}')">Сохранить</button>
                         </div>
                     </div>
                 </div>`;
             document.body.insertAdjacentHTML('beforeend', html);
-            setTimeout(() => document.getElementById('editNoteModal').classList.add('active'), 10);
+            setTimeout(() => document.getElementById(modalId).classList.add('active'), 10);
         }
 
         async function updateNote(id) {
@@ -2149,7 +2207,6 @@
 
         // ======================= ЧАТЫ =======================
         async function renderChats() {
-            // БАГ 2: сбрасываем currentChatPartner при входе в список чатов
             currentChatPartner = null;
             if (!currentUser) { showToast('Войдите в аккаунт', true); return; }
             await window.refreshUser();
@@ -2157,6 +2214,7 @@
 
             const messagesRes = await fetchJSON(`/api/messages/${currentUser.id}`);
             const messages = messagesRes.messages || [];
+            const usersFromServer = messagesRes.users || []; // используем готовых пользователей
             const contactsMap = new Map();
             const unreadCountsFromServer = currentUser.unreadCounts || {};
 
@@ -2176,20 +2234,15 @@
                 }
             });
 
-            const contacts = await Promise.all(Array.from(contactsMap.keys()).map(async id => {
-                const r = await fetch(`/api/user/${id}`);
-                const d = await r.json();
-                if (d.success) {
-                    const unread = unreadCountsFromServer[id] || 0;
-                    return { ...d.user, ...contactsMap.get(id), unread };
-                }
-                return null;
-            }));
-
-            const validContacts = contacts.filter(Boolean).sort((a,b) => new Date(b.lastTime) - new Date(a.lastTime));
+            // используем пользователей из ответа сервера
+            const contacts = usersFromServer.map(u => {
+                const contactInfo = contactsMap.get(u.id) || { lastMessage: '', lastTime: new Date(0).toISOString() };
+                const unread = unreadCountsFromServer[u.id] || 0;
+                return { ...u, ...contactInfo, unread };
+            }).sort((a,b) => new Date(b.lastTime) - new Date(a.lastTime));
 
             let html = `<div class="container"><div class="page-title">Сообщения</div><div class="chat-list">`;
-            for (const c of validContacts) {
+            for (const c of contacts) {
                 html += `
                     <div class="chat-contact glass-card" data-contact-id="${c.id}" onclick="openChat('${c.id}','${escapeHtml(c.fullName)}')">
                         <img class="chat-contact-avatar" src="${escapeHtml(c.avatar)}" onerror="this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(c.fullName)}&background=8bca8b&color=fff'">
@@ -2201,7 +2254,7 @@
                     </div>
                 `;
             }
-            if (validContacts.length === 0) html += '<div class="empty-state glass-card" style="padding:40px;"><i class="fas fa-comment-slash"></i><div>Нет сообщений. Напишите психологу из раздела «Психологи»!</div></div>';
+            if (contacts.length === 0) html += '<div class="empty-state glass-card" style="padding:40px;"><i class="fas fa-comment-slash"></i><div>Нет сообщений. Напишите психологу из раздела «Психологи»!</div></div>';
             html += `</div></div>`;
             document.getElementById('mainContent').innerHTML = html;
         }
@@ -2214,23 +2267,18 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ userId: currentUser.id, fromUserId: userId })
             });
-            await window.refreshUser();
-            
+            // Обновляем локальный счётчик
             if (currentUser.unreadCounts && currentUser.unreadCounts[userId]) {
                 delete currentUser.unreadCounts[userId];
             }
             
             if (currentTab === 'chats') {
-                const chatsContainer = document.querySelector('.chat-list');
-                if (chatsContainer) {
-                    const chatItems = document.querySelectorAll('.chat-contact');
-                    for (const item of chatItems) {
-                        const contactId = item.getAttribute('data-contact-id');
-                        if (contactId === userId) {
-                            const badge = item.querySelector('.unread-badge');
-                            if (badge) badge.remove();
-                            break;
-                        }
+                const chatItems = document.querySelectorAll('.chat-contact');
+                for (const item of chatItems) {
+                    if (item.getAttribute('data-contact-id') === userId) {
+                        const badge = item.querySelector('.unread-badge');
+                        if (badge) badge.remove();
+                        break;
                     }
                 }
             }
@@ -2467,21 +2515,22 @@
                 slotsHtml = '<div class="empty-state" style="padding:20px;"><i class="fas fa-calendar-times"></i><div>Нет свободного времени</div></div>';
             }
 
+            const modalId = 'bookModal';
             const html = `
-                <div class="modal" id="bookModal">
+                <div class="modal" id="${modalId}">
                     <div class="modal-content">
                         <div class="modal-handle"></div>
                         <h3>Записаться к ${name}</h3>
                         <div id="slots" style="max-height:300px;overflow-y:auto;">${slotsHtml}</div>
                         <div id="selSlot" style="margin-top:10px;font-size:13px;color:var(--green);min-height:20px;"></div>
                         <div class="modal-buttons">
-                            <button class="btn-secondary" onclick="closeModal('bookModal')">Отмена</button>
-                            <button class="btn-primary" id="confirmBook" disabled onclick="submitBook('${id}')">Записаться</button>
+                            <button class="btn-secondary" onclick="closeModal('${modalId}')">Отмена</button>
+                            <button class="btn-primary" id="confirmBook" disabled onclick="window.submitBook('${id}')">Записаться</button>
                         </div>
                     </div>
                 </div>`;
             document.body.insertAdjacentHTML('beforeend', html);
-            setTimeout(() => document.getElementById('bookModal').classList.add('active'), 10);
+            setTimeout(() => document.getElementById(modalId).classList.add('active'), 10);
 
             document.querySelectorAll('.time-slot').forEach(b => {
                 b.onclick = () => {
@@ -2493,21 +2542,21 @@
                     window.selTime = b.dataset.time;
                 };
             });
-        }
-
-        async function submitBook(id) {
-            if (!window.selDate || !window.selTime) { showToast('Выберите время', true); return; }
-            const r = await fetch('/api/appointment', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ clientId: currentUser.id, psychologistId: id, date: window.selDate, time: window.selTime }) });
-            const d = await r.json();
-            if (d.success) { showToast('Заявка отправлена!'); closeModal('bookModal'); await window.refreshUser(); }
-            else showToast(d.error || 'Ошибка', true);
+            window.submitBook = async (pid) => {
+                if (!window.selDate || !window.selTime) { showToast('Выберите время', true); return; }
+                const r = await fetch('/api/appointment', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ clientId: currentUser.id, psychologistId: pid, date: window.selDate, time: window.selTime }) });
+                const d = await r.json();
+                if (d.success) { showToast('Заявка отправлена!'); closeModal(modalId); await window.refreshUser(); }
+                else showToast(d.error || 'Ошибка', true);
+            };
         }
 
         // ======================= ОТЗЫВ =======================
         function openReviewModal(id, name) {
             let rating = 0;
+            const modalId = 'revModal';
             const html = `
-                <div class="modal" id="revModal">
+                <div class="modal" id="${modalId}">
                     <div class="modal-content">
                         <div class="modal-handle"></div>
                         <h3>Отзыв о ${name}</h3>
@@ -2516,13 +2565,13 @@
                         </div>
                         <textarea id="revText" rows="3" placeholder="Расскажите о своём опыте..."></textarea>
                         <div class="modal-buttons">
-                            <button class="btn-secondary" onclick="closeModal('revModal')">Отмена</button>
+                            <button class="btn-secondary" onclick="closeModal('${modalId}')">Отмена</button>
                             <button class="btn-primary" onclick="window._submitReview('${id}')">Отправить</button>
                         </div>
                     </div>
                 </div>`;
             document.body.insertAdjacentHTML('beforeend', html);
-            setTimeout(() => document.getElementById('revModal').classList.add('active'), 10);
+            setTimeout(() => document.getElementById(modalId).classList.add('active'), 10);
             document.querySelectorAll('#stars i').forEach(s => {
                 s.onmouseenter = () => {
                     document.querySelectorAll('#stars i').forEach((ss, i) => {
@@ -2545,15 +2594,16 @@
                 if (!rating) { showToast('Выберите рейтинг', true); return; }
                 const r = await fetch('/api/reviews', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ psychologistId: pid, clientId: currentUser.id, rating, text: document.getElementById('revText').value }) });
                 const d = await r.json();
-                if (d.success) { showToast('Отзыв отправлен!'); closeModal('revModal'); await window.refreshUser(); }
+                if (d.success) { showToast('Отзыв отправлен!'); closeModal(modalId); await window.refreshUser(); }
                 else showToast(d.error || 'Ошибка', true);
             };
         }
 
         // ======================= НОВЫЙ ПОСТ =======================
         function createPostModal() {
+            const modalId = 'cpModal';
             const html = `
-                <div class="modal" id="cpModal">
+                <div class="modal" id="${modalId}">
                     <div class="modal-content">
                         <div class="modal-handle"></div>
                         <h3>Новый пост</h3>
@@ -2563,13 +2613,13 @@
                         <div id="mediaPreview" style="margin-top:8px; display:none;"></div>
                         <div id="uploadProgress" style="display:none;" class="upload-progress"><div class="upload-progress-bar"></div></div>
                         <div class="modal-buttons">
-                            <button class="btn-secondary" onclick="closeModal('cpModal')">Отмена</button>
+                            <button class="btn-secondary" onclick="closeModal('${modalId}')">Отмена</button>
                             <button class="btn-primary" id="publishPostBtn">Опубликовать</button>
                         </div>
                     </div>
                 </div>`;
             document.body.insertAdjacentHTML('beforeend', html);
-            setTimeout(() => document.getElementById('cpModal').classList.add('active'), 10);
+            setTimeout(() => document.getElementById(modalId).classList.add('active'), 10);
             
             const mediaInput = document.getElementById('postMedia');
             const previewDiv = document.getElementById('mediaPreview');
@@ -2649,7 +2699,7 @@
                     progressBar.style.width = '100%';
                     if (data.success) {
                         setTimeout(() => {
-                            closeModal('cpModal');
+                            closeModal(modalId);
                             showToast('Пост опубликован');
                             if (currentTab === 'profile') renderProfile();
                             else renderFeed();
@@ -2673,18 +2723,19 @@
 
         // ======================= ПОИСК =======================
         function openSearchModal() {
+            const modalId = 'searchM';
             const html = `
-                <div class="modal" id="searchM">
+                <div class="modal" id="${modalId}">
                     <div class="modal-content">
                         <div class="modal-handle"></div>
                         <h3>Поиск психологов</h3>
                         <input type="search" id="searchInp" placeholder="Введите имя...">
                         <div id="searchRes"></div>
-                        <div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('searchM')">Закрыть</button></div>
+                        <div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('${modalId}')">Закрыть</button></div>
                     </div>
                 </div>`;
             document.body.insertAdjacentHTML('beforeend', html);
-            setTimeout(() => { document.getElementById('searchM').classList.add('active'); document.getElementById('searchInp').focus(); }, 10);
+            setTimeout(() => { document.getElementById(modalId).classList.add('active'); document.getElementById('searchInp').focus(); }, 10);
             let searchTimeout;
             document.getElementById('searchInp').oninput = async (e) => {
                 clearTimeout(searchTimeout);
@@ -2696,7 +2747,7 @@
                         let resHtml = '';
                         for (const p of r.psychologists) {
                             resHtml += `
-                                <div class="psychologist-item" style="padding:10px;cursor:pointer;border-radius:12px;transition:background 0.2s;" onclick="closeModal('searchM');viewPsychologistPage('${p.id}')">
+                                <div class="psychologist-item" style="padding:10px;cursor:pointer;border-radius:12px;transition:background 0.2s;" onclick="closeModal('${modalId}');viewPsychologistPage('${p.id}')">
                                     <img src="${escapeHtml(p.avatar)}" style="width:42px;height:42px;border-radius:50%;object-fit:cover;border:2px solid var(--green-border);">
                                     <div>
                                         <div style="font-weight:600;font-size:14px;">${escapeHtml(p.full_name)}</div>
@@ -2749,28 +2800,30 @@
 
         // ======================= АВТОРИЗАЦИЯ =======================
         function openLoginModal() {
+            const modalId = 'loginM';
             const html = `
-                <div class="modal" id="loginM">
+                <div class="modal" id="${modalId}">
                     <div class="modal-content">
                         <div class="modal-handle"></div>
                         <h3>Войти в аккаунт</h3>
                         <input type="email" id="logEmail" placeholder="Email">
                         <input type="password" id="logPass" placeholder="Пароль">
                         <div class="modal-buttons">
-                            <button class="btn-secondary" onclick="closeModal('loginM')">Отмена</button>
+                            <button class="btn-secondary" onclick="closeModal('${modalId}')">Отмена</button>
                             <button class="btn-primary" onclick="login()">Войти</button>
                         </div>
-                        <p style="text-align:center;margin-top:14px;font-size:13px;color:var(--text-muted);">Нет аккаунта? <a href="#" onclick="closeModal('loginM');openRegisterModal()" style="color:var(--green);">Зарегистрироваться</a></p>
+                        <p style="text-align:center;margin-top:14px;font-size:13px;color:var(--text-muted);">Нет аккаунта? <a href="#" onclick="closeModal('${modalId}');openRegisterModal()" style="color:var(--green);">Зарегистрироваться</a></p>
                     </div>
                 </div>`;
             document.body.insertAdjacentHTML('beforeend', html);
-            setTimeout(() => document.getElementById('loginM').classList.add('active'), 10);
+            setTimeout(() => document.getElementById(modalId).classList.add('active'), 10);
             document.getElementById('logPass').onkeypress = (e) => { if (e.key === 'Enter') login(); };
         }
 
         function openRegisterModal() {
+            const modalId = 'regM';
             const html = `
-                <div class="modal" id="regM">
+                <div class="modal" id="${modalId}">
                     <div class="modal-content">
                         <div class="modal-handle"></div>
                         <h3>Создать аккаунт</h3>
@@ -2788,14 +2841,14 @@
                             <textarea id="regAbout" rows="2" placeholder="О себе"></textarea>
                         </div>
                         <div class="modal-buttons">
-                            <button class="btn-secondary" onclick="closeModal('regM')">Отмена</button>
+                            <button class="btn-secondary" onclick="closeModal('${modalId}')">Отмена</button>
                             <button class="btn-primary" onclick="register()">Зарегистрироваться</button>
                         </div>
-                        <p style="text-align:center;margin-top:14px;font-size:13px;color:var(--text-muted);">Есть аккаунт? <a href="#" onclick="closeModal('regM');openLoginModal()" style="color:var(--green);">Войти</a></p>
+                        <p style="text-align:center;margin-top:14px;font-size:13px;color:var(--text-muted);">Есть аккаунт? <a href="#" onclick="closeModal('${modalId}');openLoginModal()" style="color:var(--green);">Войти</a></p>
                     </div>
                 </div>`;
             document.body.insertAdjacentHTML('beforeend', html);
-            setTimeout(() => document.getElementById('regM').classList.add('active'), 10);
+            setTimeout(() => document.getElementById(modalId).classList.add('active'), 10);
             document.getElementById('regRole').onchange = () => {
                 document.getElementById('psychF').style.display = document.getElementById('regRole').value === 'psychologist' ? 'block' : 'none';
             };

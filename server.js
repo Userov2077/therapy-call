@@ -219,7 +219,6 @@ function safeJSONParse(str, defaultValue) {
     try { return JSON.parse(str); } catch (e) { return defaultValue; }
 }
 
-// Получить пользователя из БД и нормализовать поля
 async function getUser(id) {
     try {
         const result = await pool.query('SELECT * FROM users WHERE id = $1', [id]);
@@ -253,7 +252,6 @@ async function getUser(id) {
     }
 }
 
-// Сохранить пользователя в БД
 async function updateUser(user) {
     await pool.query(
         `UPDATE users SET
@@ -488,7 +486,7 @@ app.delete('/api/certificates/:userId/:certId', async (req, res) => {
 });
 
 // ======================================================================
-// ПОСТЫ — ИСПРАВЛЕН: один JOIN-запрос вместо N запросов в цикле
+// ПОСТЫ — ОПТИМИЗИРОВАННЫЙ JOIN, С ПОДДЕРЖКОЙ REAL-TIME
 // ======================================================================
 app.post('/api/posts', upload.fields([{ name: 'image', maxCount: 1 }, { name: 'video', maxCount: 1 }]), async (req, res) => {
     try {
@@ -511,6 +509,7 @@ app.post('/api/posts', upload.fields([{ name: 'image', maxCount: 1 }, { name: 'v
             `INSERT INTO posts (id,author_id,text,image,video,created_at) VALUES ($1,$2,$3,$4,$5,$6)`,
             [newPost.id, newPost.author_id, newPost.text, newPost.image, newPost.video, newPost.created_at]
         );
+        // Эмитируем событие всем (можно только подписчикам, но для простоты всем)
         io.emit('post_created', newPost);
         res.json({ success: true, post: newPost });
     } catch (err) {
@@ -523,7 +522,6 @@ app.get('/api/posts', async (req, res) => {
     try {
         const userId = req.query.userId || null;
 
-        // ИСПРАВЛЕНИЕ: один запрос с JOIN вместо десятков отдельных запросов
         const postsRes = await pool.query(`
             SELECT
                 p.id, p.text, p.image, p.video, p.created_at,
@@ -541,7 +539,6 @@ app.get('/api/posts', async (req, res) => {
         const postIds = postsRes.rows.map(p => p.id);
         if (postIds.length === 0) return res.json({ success: true, posts: [] });
 
-        // Все комментарии одним запросом
         const commentsRes = await pool.query(`
             SELECT c.id, c.post_id, c.text, c.created_at,
                    u.id AS author_id, u.full_name AS author_name, u.avatar AS author_avatar
@@ -551,7 +548,6 @@ app.get('/api/posts', async (req, res) => {
             ORDER BY c.created_at ASC
         `, [postIds]);
 
-        // Лайки текущего пользователя одним запросом
         let userLikedSet = new Set();
         if (userId) {
             const likedRes = await pool.query(
@@ -561,7 +557,6 @@ app.get('/api/posts', async (req, res) => {
             likedRes.rows.forEach(r => userLikedSet.add(r.post_id));
         }
 
-        // Группируем комментарии по postId
         const commentsByPost = {};
         commentsRes.rows.forEach(c => {
             if (!commentsByPost[c.post_id]) commentsByPost[c.post_id] = [];
@@ -1004,7 +999,6 @@ app.post('/api/reviews', async (req, res) => {
             [newReview.id, newReview.psychologist_id, newReview.client_id, newReview.client_name, newReview.rating, newReview.text, newReview.created_at]
         );
 
-        // Пересчитываем рейтинг
         const reviewsRes = await pool.query('SELECT rating FROM reviews WHERE psychologist_id=$1', [psychologistId]);
         const sum = reviewsRes.rows.reduce((s, r) => s + r.rating, 0);
         const avgRating = reviewsRes.rows.length ? sum / reviewsRes.rows.length : 0;
@@ -1118,7 +1112,7 @@ app.post('/api/subscriptions', async (req, res) => {
 });
 
 // ======================================================================
-// ЧАТ — ИСПРАВЛЕНЫ: N+1 запросы, логика контактов, поля from/from_user
+// ЧАТ — С ПОДДЕРЖКОЙ КОНТАКТОВ И UNREAD COUNTS
 // ======================================================================
 app.get('/api/messages/:userId', async (req, res) => {
     try {
@@ -1126,14 +1120,12 @@ app.get('/api/messages/:userId', async (req, res) => {
         const user = await getUser(userId);
         if (!user) return res.json({ success: false });
 
-        // Все сообщения пользователя
         const messagesRes = await pool.query(
             `SELECT * FROM messages WHERE from_user=$1 OR to_user=$1 ORDER BY created_at ASC`,
             [userId]
         );
         const messages = messagesRes.rows;
 
-        // ИСПРАВЛЕНИЕ: берём контакты только из реальных сообщений (не всех психологов)
         const contactIdSet = new Set();
         messages.forEach(m => {
             const otherId = m.from_user === userId ? m.to_user : m.from_user;
@@ -1141,7 +1133,6 @@ app.get('/api/messages/:userId', async (req, res) => {
         });
         const contactIds = Array.from(contactIdSet);
 
-        // ИСПРАВЛЕНИЕ: один запрос для всех контактов вместо цикла
         let users = [];
         if (contactIds.length > 0) {
             const usersRes = await pool.query(
@@ -1156,8 +1147,6 @@ app.get('/api/messages/:userId', async (req, res) => {
             }));
         }
 
-        // Сообщения возвращаем как есть — поля from_user/to_user (snake_case)
-        // Фронтенд index.html уже работает с from_user/to_user
         res.json({ success: true, messages, users });
     } catch (err) {
         console.error('Get messages error:', err);
@@ -1183,7 +1172,6 @@ app.post('/api/messages', async (req, res) => {
             [newMsg.id, newMsg.from_user, newMsg.to_user, newMsg.text, newMsg.image, newMsg.voice, newMsg.is_read, newMsg.created_at]
         );
 
-        // Обновляем счётчик непрочитанных у получателя
         const recipient = await getUser(to);
         if (recipient) {
             if (!recipient.unreadCounts) recipient.unreadCounts = {};
@@ -1192,8 +1180,6 @@ app.post('/api/messages', async (req, res) => {
             io.to(to).emit('unread_update', { from, count: recipient.unreadCounts[from] });
         }
 
-        // Отправляем сообщение получателю через сокет
-        // Используем поле from (camelCase) чтобы фронтенд мог определить отправителя
         const msgForClient = {
             id: newMsg.id,
             from: newMsg.from_user,
@@ -1276,7 +1262,6 @@ io.on('connection', (socket) => {
             }
             const room = activeRooms.get(roomId);
 
-            // Если слот уже занят другим сокетом — вытесняем его
             if (userType === 'psychologist' && room.psychologist && room.psychologist !== socket.id) {
                 io.to(room.psychologist).emit('partner-disconnected');
                 const old = io.sockets.sockets.get(room.psychologist);
@@ -1300,7 +1285,6 @@ io.on('connection', (socket) => {
 
             socket.emit('room-joined');
 
-            // Оба участника в комнате — запускаем звонок
             if (room.psychologist && room.client) {
                 io.to(room.psychologist).emit('call-ready', { partnerId: room.client });
                 io.to(room.client).emit('call-ready', { partnerId: room.psychologist });
@@ -1341,7 +1325,6 @@ io.on('connection', (socket) => {
             socket.to(socket.roomId).emit('call-ended');
             const room = activeRooms.get(socket.roomId);
 
-            // Если оба участника были в комнате — завершаем запись
             if (room && room.users.size >= 2) {
                 try {
                     const result = await pool.query('SELECT * FROM appointments WHERE room_id=$1', [socket.roomId]);
