@@ -503,7 +503,7 @@ app.delete('/api/certificates/:userId/:certId', async (req, res) => {
     }
 });
 
-// ---- Посты ----
+// ---- Посты (оптимизированный GET /api/posts) ----
 app.post('/api/posts', upload.fields([{ name: 'image', maxCount: 1 }, { name: 'video', maxCount: 1 }]), async (req, res) => {
     try {
         const { authorId, text } = req.body;
@@ -531,13 +531,38 @@ app.post('/api/posts', upload.fields([{ name: 'image', maxCount: 1 }, { name: 'v
 
 app.get('/api/posts', async (req, res) => {
     try {
-        const postsRes = await pool.query('SELECT * FROM posts ORDER BY created_at DESC');
+        // Оптимизированный запрос с JOIN и подсчётом лайков/комментариев
+        const query = `
+            SELECT 
+                p.id,
+                p.author_id,
+                p.text,
+                p.image,
+                p.video,
+                p.created_at,
+                u.full_name as author_name,
+                u.avatar as author_avatar,
+                u.rating as author_rating,
+                COUNT(DISTINCT l.id) as likes_count,
+                COUNT(DISTINCT c.id) as comments_count
+            FROM posts p
+            JOIN users u ON p.author_id = u.id
+            LEFT JOIN likes l ON l.post_id = p.id
+            LEFT JOIN comments c ON c.post_id = p.id
+            GROUP BY p.id, u.full_name, u.avatar, u.rating
+            ORDER BY p.created_at DESC
+        `;
+        const postsRes = await pool.query(query);
         const posts = postsRes.rows;
         const enriched = [];
         for (const post of posts) {
-            const author = await getUser(post.author_id);
-            const likesCountRes = await pool.query('SELECT COUNT(*) FROM likes WHERE post_id = $1', [post.id]);
-            const likesCount = parseInt(likesCountRes.rows[0].count);
+            const author = {
+                id: post.author_id,
+                fullName: post.author_name,
+                avatar: post.author_avatar,
+                rating: post.author_rating
+            };
+            // Комментарии всё равно нужно подтягивать с авторами
             const commentsRes = await pool.query('SELECT * FROM comments WHERE post_id = $1 ORDER BY created_at ASC', [post.id]);
             const comments = [];
             for (const c of commentsRes.rows) {
@@ -560,11 +585,11 @@ app.get('/api/posts', async (req, res) => {
                 image: post.image,
                 video: post.video,
                 createdAt: post.created_at,
-                author: { id: author.id, fullName: author.fullName, avatar: author.avatar, rating: author.rating || 0 },
-                likesCount,
-                commentsCount: comments.length,
-                comments,
-                userLiked
+                author: author,
+                likesCount: parseInt(post.likes_count),
+                commentsCount: parseInt(post.comments_count),
+                comments: comments,
+                userLiked: userLiked
             });
         }
         res.json({ success: true, posts: enriched });
@@ -1063,28 +1088,44 @@ app.post('/api/subscriptions', async (req, res) => {
     }
 });
 
-// ---- Чат ----
+// ---- Чат (оптимизированный GET /api/messages/:userId) ----
 app.get('/api/messages/:userId', async (req, res) => {
     try {
         const userId = req.params.userId;
-        const user = await getUser(userId);
-        if (!user) return res.json({ success: false });
         
-        let contactIds = user.role === 'client'
-            ? (await pool.query('SELECT id FROM users WHERE role = $1', ['psychologist'])).rows.map(r => r.id)
-            : [...new Set([...(await pool.query('SELECT id FROM users WHERE role = $1 AND id != $2', ['client', userId])).rows.map(r => r.id), ...(user.clients?.map(c => c.clientId) || [])])];
+        // Получаем уникальных собеседников из сообщений (только те, с кем была переписка)
+        const partnersRes = await pool.query(`
+            SELECT DISTINCT
+                CASE WHEN from_user = $1 THEN to_user ELSE from_user END as contact_id
+            FROM messages
+            WHERE from_user = $1 OR to_user = $1
+        `, [userId]);
+        const contactIds = partnersRes.rows.map(r => r.contact_id);
         
+        let contacts = [];
+        if (contactIds.length > 0) {
+            // Один запрос для получения всех контактов
+            const placeholders = contactIds.map((_, i) => `$${i+1}`).join(',');
+            const usersRes = await pool.query(
+                `SELECT id, full_name, avatar, role FROM users WHERE id IN (${placeholders})`,
+                contactIds
+            );
+            contacts = usersRes.rows.map(u => ({
+                id: u.id,
+                fullName: u.full_name,
+                avatar: u.avatar,
+                role: u.role
+            }));
+        }
+        
+        // Получаем все сообщения пользователя
         const messagesRes = await pool.query('SELECT * FROM messages WHERE from_user = $1 OR to_user = $1 ORDER BY created_at ASC', [userId]);
         const messages = messagesRes.rows;
-        const contacts = [];
-        for (const id of contactIds) {
-            const u = await getUser(id);
-            if (u) contacts.push({ id: u.id, fullName: u.fullName, avatar: u.avatar, role: u.role });
-        }
+        
         res.json({ success: true, messages, users: contacts });
     } catch (err) {
         console.error('Get messages error:', err);
-        res.json({ success: false });
+        res.json({ success: false, messages: [], users: [] });
     }
 });
 
