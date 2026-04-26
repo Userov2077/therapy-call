@@ -735,6 +735,88 @@
         let isPosting = false;
         let videoObserver = null;
 
+
+        // ---------- ДОБАВИТЬ ПОСЛЕ ОБЪЯВЛЕНИЯ ПЕРЕМЕННЫХ ----------
+function appendMessageToChat(msg) {
+    const listDiv = document.getElementById('chatMessagesList');
+    if (!listDiv) return;
+    let voiceHtml = '';
+    if (msg.voice) {
+        voiceHtml = `<div class="voice-message"><audio controls src="${escapeHtml(msg.voice)}"></audio></div>`;
+    }
+    const messageHtml = `
+        <div class="message ${msg.from === currentUser.id ? 'outgoing' : 'incoming'}">
+            ${msg.text ? `<div class="message-text">${escapeHtml(msg.text)}</div>` : ''}
+            ${msg.image ? `<img class="chat-image" src="${escapeHtml(msg.image)}" onclick="openImageModal('${escapeHtml(msg.image)}')">` : ''}
+            ${voiceHtml}
+            <div class="message-time">${new Date(msg.created_at || Date.now()).toLocaleTimeString()}</div>
+        </div>
+    `;
+    listDiv.insertAdjacentHTML('beforeend', messageHtml);
+    scrollToBottom();
+    if (msg.voice) {
+        const audio = listDiv.querySelector('.voice-message:last-child audio');
+        if (audio && !audio.parentElement.querySelector('.speed-btn')) {
+            const speeds = [1, 1.5, 2];
+            let currentSpeed = 1;
+            const btn = document.createElement('button');
+            btn.className = 'speed-btn';
+            btn.textContent = `${currentSpeed}x`;
+            btn.onclick = (e) => {
+                e.stopPropagation();
+                let idx = speeds.indexOf(currentSpeed);
+                idx = (idx + 1) % speeds.length;
+                currentSpeed = speeds[idx];
+                audio.playbackRate = currentSpeed;
+                btn.textContent = `${currentSpeed}x`;
+            };
+            audio.parentElement.appendChild(btn);
+        }
+    }
+}
+
+function updateChatListUnread(contactId, count) {
+    const chatItems = document.querySelectorAll('.chat-contact');
+    for (const item of chatItems) {
+        if (item.getAttribute('data-contact-id') === contactId) {
+            const badge = item.querySelector('.unread-badge');
+            if (count > 0) {
+                if (badge) badge.textContent = count;
+                else item.insertAdjacentHTML('beforeend', `<div class="unread-badge">${count}</div>`);
+            } else {
+                if (badge) badge.remove();
+            }
+            break;
+        }
+    }
+}
+
+function appendCommentToPost(postId, text) {
+    const commentsDiv = document.getElementById(`comments-${postId}`);
+    if (!commentsDiv) return;
+    const commentsList = commentsDiv.querySelector('.comments-list');
+    if (!commentsList) return;
+    const newCommentHtml = `
+        <div class="comment">
+            <img class="comment-avatar" src="${escapeHtml(currentUser.avatar)}" onerror="this.src='https://ui-avatars.com/api/?name=U&background=8bca8b&color=fff'">
+            <div class="comment-content">
+                <div class="comment-author">${escapeHtml(currentUser.fullName)}</div>
+                <div class="comment-text">${escapeHtml(text)}</div>
+                <div class="comment-time">Только что</div>
+            </div>
+        </div>
+    `;
+    const empty = commentsList.querySelector('.empty-state');
+    if (empty) empty.remove();
+    commentsList.insertAdjacentHTML('beforeend', newCommentHtml);
+    commentsDiv.style.display = 'block';
+    const commentToggle = document.querySelector(`.post-card[data-post-id="${postId}"] .comment-toggle`);
+    if (commentToggle) {
+        const span = commentToggle.querySelector('span');
+        span.textContent = (parseInt(span.textContent) || 0) + 1;
+    }
+}
+
         // ======================= ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ =======================
         function showToast(msg, isErr = false) {
             document.querySelectorAll('.toast').forEach(t => t.remove());
@@ -1008,52 +1090,33 @@
             
             socket.on('new_message', async (msg) => {
                 await window.refreshUser();
-                
                 let preview = '';
                 if (msg.text) preview = msg.text.substring(0,50);
                 else if (msg.image) preview = '📷 Фото';
                 else if (msg.voice) preview = '🎤 Голосовое';
                 else preview = 'Вложение';
-                
                 const userRes = await fetch(`/api/user/${msg.from}`);
                 const userData = await userRes.json();
                 const senderName = userData.success ? userData.user.fullName : 'Кто-то';
-                
-                // Показываем уведомление ТОЛЬКО если мы не в этом чате
                 if (!currentChatPartner || msg.from !== currentChatPartner.id) {
                     showFloatingNotification('Новое сообщение', `${senderName}: ${preview}`);
-                    
-                    // Браузерное уведомление (если разрешено)
                     if ('Notification' in window && Notification.permission === 'granted') {
-                        new Notification('Новое сообщение', {
-                            body: `${senderName}: ${preview}`,
-                            icon: '/favicon.ico'
-                        });
+                        new Notification('Новое сообщение', { body: `${senderName}: ${preview}` });
                     }
                 }
-                
-                // Обновляем непрочитанные
                 if (currentUser && currentUser.unreadCounts) {
                     currentUser.unreadCounts[msg.from] = (currentUser.unreadCounts[msg.from] || 0) + 1;
                 }
-                
-                // Если мы в этом чате - просто добавляем сообщение без перерисовки
                 if (currentChatPartner && msg.from === currentChatPartner.id) {
-                    // Помечаем как прочитанное
-                    await fetch('/api/messages/read', { 
-                        method:'POST', 
-                        headers:{'Content-Type':'application/json'}, 
-                        body: JSON.stringify({ userId: currentUser.id, fromUserId: msg.from }) 
+                    await fetch('/api/messages/read', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ userId: currentUser.id, fromUserId: msg.from })
                     });
-                    // Добавляем сообщение в чат без перезагрузки всей страницы
                     appendMessageToChat(msg);
-                    // Обновляем счетчик в списке чатов
                     updateChatListUnread(msg.from, 0);
                 } else {
-                    // Если мы НЕ в этом чате - обновляем список чатов
-                    if (currentTab === 'chats') {
-                        renderChats();
-                    }
+                    if (currentTab === 'chats') renderChats();
                 }
             });
             
