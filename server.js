@@ -26,7 +26,7 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/uploads', express.static(path.join(__dirname, 'public/uploads')));
 
-// Подключение к PostgreSQL с оптимизациями
+// Подключение к PostgreSQL
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
     ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
@@ -183,7 +183,6 @@ async function initDatabase() {
             image TEXT,
             created_at TIMESTAMP DEFAULT NOW()
         )`,
-        // Индексы для ускорения запросов
         `CREATE INDEX IF NOT EXISTS idx_posts_author_id ON posts(author_id)`,
         `CREATE INDEX IF NOT EXISTS idx_posts_created_at ON posts(created_at DESC)`,
         `CREATE INDEX IF NOT EXISTS idx_messages_from_user ON messages(from_user)`,
@@ -223,32 +222,37 @@ function safeJSONParse(str, defaultValue) {
 }
 
 async function getUser(id) {
-    const result = await pool.query('SELECT * FROM users WHERE id = $1', [id]);
-    if (result.rows.length === 0) return null;
-    const dbUser = result.rows[0];
-    const user = {
-        id: dbUser.id,
-        fullName: dbUser.full_name,
-        email: dbUser.email,
-        phone: dbUser.phone,
-        password: dbUser.password,
-        role: dbUser.role,
-        specialization: dbUser.specialization,
-        experience: dbUser.experience,
-        about: dbUser.about,
-        price: dbUser.price,
-        topics: safeJSONParse(dbUser.topics, []),
-        schedule: safeJSONParse(dbUser.schedule, {}),
-        certificates: safeJSONParse(dbUser.certificates, []),
-        rating: dbUser.rating || 0,
-        avatar: dbUser.avatar,
-        appointments: safeJSONParse(dbUser.appointments, []),
-        clients: safeJSONParse(dbUser.clients, []),
-        notifications: safeJSONParse(dbUser.notifications, []),
-        unreadCounts: safeJSONParse(dbUser.unread_counts, {}),
-        createdAt: dbUser.created_at
-    };
-    return user;
+    try {
+        const result = await pool.query('SELECT * FROM users WHERE id = $1', [id]);
+        if (result.rows.length === 0) return null;
+        const dbUser = result.rows[0];
+        const user = {
+            id: dbUser.id,
+            fullName: dbUser.full_name,
+            email: dbUser.email,
+            phone: dbUser.phone,
+            password: dbUser.password,
+            role: dbUser.role,
+            specialization: dbUser.specialization,
+            experience: dbUser.experience,
+            about: dbUser.about,
+            price: dbUser.price,
+            topics: safeJSONParse(dbUser.topics, []),
+            schedule: safeJSONParse(dbUser.schedule, {}),
+            certificates: safeJSONParse(dbUser.certificates, []),
+            rating: dbUser.rating || 0,
+            avatar: dbUser.avatar,
+            appointments: safeJSONParse(dbUser.appointments, []),
+            clients: safeJSONParse(dbUser.clients, []),
+            notifications: safeJSONParse(dbUser.notifications, []),
+            unreadCounts: safeJSONParse(dbUser.unread_counts, {}),
+            createdAt: dbUser.created_at
+        };
+        return user;
+    } catch (err) {
+        console.error('getUser error:', err);
+        return null;
+    }
 }
 
 async function updateUser(user) {
@@ -297,6 +301,7 @@ app.post('/api/register', async (req, res) => {
             return res.json({ success: false, error: 'Заполните специализацию и опыт' });
         }
         const id = Date.now().toString();
+        const createdAt = new Date().toISOString();
         const newUser = {
             id, 
             fullName, 
@@ -316,18 +321,19 @@ app.post('/api/register', async (req, res) => {
             appointments: [], 
             clients: [], 
             notifications: [], 
-            unreadCounts: {}
+            unreadCounts: {},
+            createdAt
         };
         await pool.query(
-            `INSERT INTO users (id, full_name, email, phone, password, role, specialization, experience, about, price, topics, schedule, certificates, rating, avatar, appointments, clients, notifications, unread_counts)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)`,
+            `INSERT INTO users (id, full_name, email, phone, password, role, specialization, experience, about, price, topics, schedule, certificates, rating, avatar, appointments, clients, notifications, unread_counts, created_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)`,
             [
                 newUser.id, newUser.fullName, newUser.email, newUser.phone, newUser.password,
                 newUser.role, newUser.specialization, newUser.experience, newUser.about, newUser.price,
                 JSON.stringify(newUser.topics), JSON.stringify(newUser.schedule),
                 JSON.stringify(newUser.certificates), newUser.rating, newUser.avatar,
                 JSON.stringify(newUser.appointments), JSON.stringify(newUser.clients),
-                JSON.stringify(newUser.notifications), JSON.stringify(newUser.unreadCounts)
+                JSON.stringify(newUser.notifications), JSON.stringify(newUser.unreadCounts), newUser.createdAt
             ]
         );
         res.json({ success: true, userId: id, role });
@@ -389,6 +395,19 @@ app.put('/api/user/profile', upload.single('avatar'), async (req, res) => {
 });
 
 // ---- Расписание ----
+app.get('/api/schedule/:psychologistId', async (req, res) => {
+    try {
+        const psychologist = await getUser(req.params.psychologistId);
+        if (!psychologist || psychologist.role !== 'psychologist') {
+            return res.json({ success: false, error: 'Психолог не найден' });
+        }
+        res.json({ success: true, schedule: psychologist.schedule || {} });
+    } catch (err) {
+        console.error('Get schedule error:', err);
+        res.json({ success: false, error: 'Ошибка сервера' });
+    }
+});
+
 app.put('/api/schedule', async (req, res) => {
     try {
         const { userId, schedule } = req.body;
@@ -426,7 +445,19 @@ app.post('/api/upload-voice', upload.single('voice'), (req, res) => {
 
 app.post('/api/upload-recording', upload.single('recording'), async (req, res) => {
     if (!req.file) return res.json({ success: false, error: 'Файл не загружен' });
-    res.json({ success: true, recordingUrl: `/uploads/recordings/${req.file.filename}` });
+    const recording = {
+        id: Date.now().toString(),
+        url: `/uploads/recordings/${req.file.filename}`,
+        from_user: req.body.from,
+        to_user: req.body.to,
+        room_id: req.body.roomId,
+        created_at: new Date().toISOString()
+    };
+    await pool.query(
+        `INSERT INTO recordings (id, url, from_user, to_user, room_id, created_at) VALUES ($1, $2, $3, $4, $5, $6)`,
+        [recording.id, recording.url, recording.from_user, recording.to_user, recording.room_id, recording.created_at]
+    );
+    res.json({ success: true, recordingUrl: recording.url });
 });
 
 // ---- Сертификаты ----
@@ -440,10 +471,11 @@ app.post('/api/certificates', upload.single('certificate'), async (req, res) => 
             id: Date.now().toString(),
             user_id: userId,
             title: title || 'Сертификат',
-            image: `/uploads/certificates/${req.file.filename}`
+            image: `/uploads/certificates/${req.file.filename}`,
+            created_at: new Date().toISOString()
         };
-        await pool.query(`INSERT INTO certificates (id, user_id, title, image) VALUES ($1, $2, $3, $4)`,
-            [newCert.id, newCert.user_id, newCert.title, newCert.image]);
+        await pool.query(`INSERT INTO certificates (id, user_id, title, image, created_at) VALUES ($1, $2, $3, $4, $5)`,
+            [newCert.id, newCert.user_id, newCert.title, newCert.image, newCert.created_at]);
         if (!user.certificates) user.certificates = [];
         user.certificates.push({ id: newCert.id, title: newCert.title, image: newCert.image });
         await updateUser(user);
@@ -677,7 +709,7 @@ app.post('/api/appointment', async (req, res) => {
             psychologistName: psychologist.fullName,
             clientId: clientId,
             clientName: client.fullName,
-            date, time, roomId, status: 'pending'
+            date, time, roomId, status: 'pending', createdAt: appointment.created_at
         });
         
         if (!psychologist.clients) psychologist.clients = [];
@@ -698,6 +730,7 @@ app.post('/api/appointment', async (req, res) => {
             message: `${client.fullName} хочет записаться на ${date} в ${time}`,
             appointmentId: appointment.id,
             roomId,
+            read: false,
             createdAt: new Date().toISOString()
         };
         if (!psychologist.notifications) psychologist.notifications = [];
@@ -705,7 +738,8 @@ app.post('/api/appointment', async (req, res) => {
         await updateUser(psychologist);
         
         io.to(psychologistId).emit('notification', notification);
-        res.json({ success: true });
+        io.to(psychologistId).emit('appointment_created', appointment);
+        res.json({ success: true, appointment });
     } catch (err) {
         console.error('Appointment error:', err);
         res.json({ success: false, error: 'Ошибка сервера' });
@@ -731,6 +765,11 @@ app.post('/api/appointment/confirm', async (req, res) => {
             await updateUser(client);
         }
         
+        if (psychologist && psychologist.notifications) {
+            psychologist.notifications = psychologist.notifications.filter(n => n.appointmentId !== appointmentId);
+            await updateUser(psychologist);
+        }
+        
         const appointmentRes = await pool.query('SELECT * FROM appointments WHERE id = $1', [appointmentId]);
         const appointment = appointmentRes.rows[0];
         
@@ -741,6 +780,7 @@ app.post('/api/appointment/confirm', async (req, res) => {
             message: `${psychologist.fullName} подтвердил запись на ${appointment.date} в ${appointment.time}`,
             appointmentId,
             roomId: appointment.room_id,
+            read: false,
             createdAt: new Date().toISOString()
         };
         if (!client.notifications) client.notifications = [];
@@ -748,10 +788,43 @@ app.post('/api/appointment/confirm', async (req, res) => {
         await updateUser(client);
         
         io.to(clientId).emit('notification', clientNotif);
+        io.to(clientId).emit('appointment_updated', appointment);
+        io.to(psychologistId).emit('appointment_updated', appointment);
         res.json({ success: true });
     } catch (err) {
         console.error('Confirm appointment error:', err);
         res.json({ success: false, error: 'Ошибка сервера' });
+    }
+});
+
+app.post('/api/appointment/complete', async (req, res) => {
+    try {
+        const { appointmentId } = req.body;
+        await pool.query('UPDATE appointments SET status = $1 WHERE id = $2', ['completed', appointmentId]);
+        const appointmentRes = await pool.query('SELECT * FROM appointments WHERE id = $1', [appointmentId]);
+        const appointment = appointmentRes.rows[0];
+        if (!appointment) return res.json({ success: false });
+        
+        const psychologist = await getUser(appointment.psychologist_id);
+        const client = await getUser(appointment.client_id);
+        
+        if (psychologist && psychologist.clients) {
+            const c = psychologist.clients.find(c => c.appointmentId === appointmentId);
+            if (c) c.status = 'completed';
+            await updateUser(psychologist);
+        }
+        if (client && client.appointments) {
+            const a = client.appointments.find(a => a.id === appointmentId);
+            if (a) a.status = 'completed';
+            await updateUser(client);
+        }
+        
+        io.to(appointment.psychologist_id).emit('appointment_completed', appointmentId);
+        io.to(appointment.client_id).emit('appointment_completed', appointmentId);
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Complete appointment error:', err);
+        res.json({ success: false });
     }
 });
 
@@ -892,15 +965,12 @@ app.post('/api/reviews', async (req, res) => {
         await pool.query(`INSERT INTO reviews (id, psychologist_id, client_id, client_name, rating, text, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
             [newReview.id, newReview.psychologist_id, newReview.client_id, newReview.client_name, newReview.rating, newReview.text, newReview.created_at]);
         
-        // Пересчитываем рейтинг
         const reviewsRes = await pool.query('SELECT rating FROM reviews WHERE psychologist_id = $1', [psychologistId]);
         let avgRating = 0;
         if (reviewsRes.rows.length) {
             const sum = reviewsRes.rows.reduce((s, r) => s + r.rating, 0);
             avgRating = sum / reviewsRes.rows.length;
         }
-        
-        // Бонус за лайки
         const postsRes = await pool.query('SELECT id FROM posts WHERE author_id = $1', [psychologist.id]);
         let totalLikes = 0;
         for (const p of postsRes.rows) {
@@ -911,7 +981,7 @@ app.post('/api/reviews', async (req, res) => {
         psychologist.rating = Math.min(5, avgRating + bonus);
         await updateUser(psychologist);
         
-        res.json({ success: true });
+        res.json({ success: true, review: newReview, newRating: psychologist.rating });
     } catch (err) {
         console.error('Review error:', err);
         res.json({ success: false, error: 'Ошибка сервера' });
@@ -997,18 +1067,21 @@ app.post('/api/subscriptions', async (req, res) => {
 app.get('/api/messages/:userId', async (req, res) => {
     try {
         const userId = req.params.userId;
+        const user = await getUser(userId);
+        if (!user) return res.json({ success: false });
+        
+        let contactIds = user.role === 'client'
+            ? (await pool.query('SELECT id FROM users WHERE role = $1', ['psychologist'])).rows.map(r => r.id)
+            : [...new Set([...(await pool.query('SELECT id FROM users WHERE role = $1 AND id != $2', ['client', userId])).rows.map(r => r.id), ...(user.clients?.map(c => c.clientId) || [])])];
+        
         const messagesRes = await pool.query('SELECT * FROM messages WHERE from_user = $1 OR to_user = $1 ORDER BY created_at ASC', [userId]);
-        const messages = messagesRes.rows.map(m => ({
-            id: m.id,
-            from_user: m.from_user,
-            to_user: m.to_user,
-            text: m.text,
-            image: m.image,
-            voice: m.voice,
-            is_read: m.is_read,
-            created_at: m.created_at
-        }));
-        res.json({ success: true, messages });
+        const messages = messagesRes.rows;
+        const contacts = [];
+        for (const id of contactIds) {
+            const u = await getUser(id);
+            if (u) contacts.push({ id: u.id, fullName: u.fullName, avatar: u.avatar, role: u.role });
+        }
+        res.json({ success: true, messages, users: contacts });
     } catch (err) {
         console.error('Get messages error:', err);
         res.json({ success: false });
@@ -1028,12 +1101,17 @@ app.post('/api/messages', async (req, res) => {
             is_read: false,
             created_at: new Date().toISOString()
         };
-        
-        // Сохраняем сообщение
         await pool.query(`INSERT INTO messages (id, from_user, to_user, text, image, voice, is_read, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
             [newMsg.id, newMsg.from_user, newMsg.to_user, newMsg.text, newMsg.image, newMsg.voice, newMsg.is_read, newMsg.created_at]);
         
-        // Форматируем для клиента
+        const recipient = await getUser(to);
+        if (recipient) {
+            if (!recipient.unreadCounts) recipient.unreadCounts = {};
+            recipient.unreadCounts[from] = (recipient.unreadCounts[from] || 0) + 1;
+            await updateUser(recipient);
+            io.to(to).emit('unread_update', { from, count: recipient.unreadCounts[from] });
+        }
+        
         const msgForClient = {
             id: newMsg.id,
             from: newMsg.from_user,
@@ -1043,25 +1121,8 @@ app.post('/api/messages', async (req, res) => {
             voice: newMsg.voice,
             createdAt: newMsg.created_at
         };
-        
-        // Обновляем unreadCounts у получателя
-        const recipient = await getUser(to);
-        if (recipient) {
-            if (!recipient.unreadCounts) recipient.unreadCounts = {};
-            recipient.unreadCounts[from] = (recipient.unreadCounts[from] || 0) + 1;
-            await updateUser(recipient);
-            
-            // Отправляем уведомление о непрочитанных
-            io.to(to).emit('unread_update', { from, count: recipient.unreadCounts[from] });
-            
-            // Отправляем новое сообщение получателю
-            io.to(to).emit('new_message', msgForClient);
-        }
-        
-        // Отправляем подтверждение отправителю (чтобы он знал, что сообщение доставлено)
-        io.to(from).emit('message_sent', msgForClient);
-        
-        res.json({ success: true, messageId: newMsg.id });
+        io.to(to).emit('new_message', msgForClient);
+        res.json({ success: true });
     } catch (err) {
         console.error('Send message error:', err);
         res.json({ success: false, error: 'Ошибка сервера' });
@@ -1071,20 +1132,12 @@ app.post('/api/messages', async (req, res) => {
 app.post('/api/messages/read', async (req, res) => {
     try {
         const { userId, fromUserId } = req.body;
-        
-        // Обновляем статус прочитанных в базе
-        await pool.query('UPDATE messages SET is_read = true WHERE to_user = $1 AND from_user = $2', [userId, fromUserId]);
-        
-        // Обновляем unreadCounts у пользователя
         const user = await getUser(userId);
         if (user && user.unreadCounts && user.unreadCounts[fromUserId]) {
             delete user.unreadCounts[fromUserId];
             await updateUser(user);
-            
-            // Уведомляем отправителя, что сообщение прочитано
-            io.to(fromUserId).emit('messages_read', { by: userId, from: fromUserId });
         }
-        
+        await pool.query('UPDATE messages SET is_read = true WHERE to_user = $1 AND from_user = $2', [userId, fromUserId]);
         res.json({ success: true });
     } catch (err) {
         console.error('Mark read error:', err);
@@ -1111,7 +1164,7 @@ app.get('/api/psychologists', async (req, res) => {
 });
 
 // ======================================================================
-// WEBSOCKET / WEBRTC
+// WEBRTC
 // ======================================================================
 const activeRooms = new Map();
 
@@ -1120,19 +1173,13 @@ io.on('connection', (socket) => {
     
     socket.on('register_user', (userId) => {
         socket.userId = userId;
-        if (userId) {
-            socket.join(userId);
-            console.log(`✅ User ${userId} registered, joined room ${userId}`);
-        }
+        if (userId) socket.join(userId);
+        console.log(`User ${userId} registered`);
     });
     
     socket.on('join-call-room', (roomId, userId, userType) => {
         try {
-            console.log(`📞 User ${userId} (${userType}) joining room ${roomId}`);
-            
-            if (!activeRooms.has(roomId)) {
-                activeRooms.set(roomId, { psychologist: null, client: null, users: new Map() });
-            }
+            if (!activeRooms.has(roomId)) activeRooms.set(roomId, { psychologist: null, client: null, users: new Map() });
             const room = activeRooms.get(roomId);
             
             if (userType === 'psychologist' && room.psychologist && room.psychologist !== socket.id) {
@@ -1159,7 +1206,6 @@ io.on('connection', (socket) => {
             socket.userType = userType;
             
             if (room.psychologist && room.client) {
-                console.log(`🎥 Both users ready in room ${roomId}`);
                 io.to(room.psychologist).emit('call-ready', { partnerId: room.client });
                 io.to(room.client).emit('call-ready', { partnerId: room.psychologist });
             }
@@ -1173,59 +1219,49 @@ io.on('connection', (socket) => {
         const room = activeRooms.get(socket.roomId);
         if (room) {
             const targetId = socket.userType === 'psychologist' ? room.client : room.psychologist;
-            if (targetId) {
-                io.to(targetId).emit('call-message', { 
-                    from: socket.userId, 
-                    text: msgData.text, 
-                    time: new Date().toISOString() 
-                });
-            }
+            if (targetId) io.to(targetId).emit('call-message', { from: socket.userId, text: msgData.text, time: new Date().toISOString() });
         }
     });
     
-    socket.on('offer', (data) => {
-        if (data.target) {
-            socket.to(data.target).emit('offer', { sdp: data.sdp, from: socket.id });
-        }
-    });
+    socket.on('offer', (data) => socket.to(data.target).emit('offer', { sdp: data.sdp, from: socket.id }));
+    socket.on('answer', (data) => socket.to(data.target).emit('answer', { sdp: data.sdp, from: socket.id }));
+    socket.on('ice-candidate', (data) => socket.to(data.target).emit('ice-candidate', { candidate: data.candidate, from: socket.id }));
     
-    socket.on('answer', (data) => {
-        if (data.target) {
-            socket.to(data.target).emit('answer', { sdp: data.sdp, from: socket.id });
-        }
-    });
-    
-    socket.on('ice-candidate', (data) => {
-        if (data.target) {
-            socket.to(data.target).emit('ice-candidate', { candidate: data.candidate, from: socket.id });
-        }
-    });
-    
-    socket.on('end-call', () => {
+    socket.on('end-call', async () => {
         if (socket.roomId) {
-            console.log(`📞 Call ended in room ${socket.roomId}`);
             socket.to(socket.roomId).emit('call-ended');
-            socket.leave(socket.roomId);
             const room = activeRooms.get(socket.roomId);
-            if (room) {
-                room.users.delete(socket.id);
-                if (socket.userType === 'psychologist') room.psychologist = null;
-                else room.client = null;
-                if (room.users.size === 0) {
-                    setTimeout(() => {
-                        if (activeRooms.get(socket.roomId)?.users.size === 0) {
-                            activeRooms.delete(socket.roomId);
-                            console.log(`🗑️ Room ${socket.roomId} deleted`);
-                        }
-                    }, 10000);
+            if (room && room.users.size >= 2) {
+                const result = await pool.query('SELECT * FROM appointments WHERE room_id = $1', [socket.roomId]);
+                const appointment = result.rows[0];
+                if (appointment && appointment.status === 'confirmed') {
+                    await pool.query('UPDATE appointments SET status = $1 WHERE id = $2', ['completed', appointment.id]);
+                    const psychologist = await getUser(appointment.psychologist_id);
+                    const client = await getUser(appointment.client_id);
+                    if (psychologist && psychologist.clients) {
+                        const c = psychologist.clients.find(c => c.appointmentId === appointment.id);
+                        if (c) c.status = 'completed';
+                        await updateUser(psychologist);
+                    }
+                    if (client && client.appointments) {
+                        const a = client.appointments.find(a => a.id === appointment.id);
+                        if (a) a.status = 'completed';
+                        await updateUser(client);
+                    }
+                    io.to(appointment.psychologist_id).emit('appointment_completed', appointment.id);
+                    io.to(appointment.client_id).emit('appointment_completed', appointment.id);
                 }
             }
+            setTimeout(() => {
+                const room = activeRooms.get(socket.roomId);
+                if (room && (!room.psychologist || !room.client)) activeRooms.delete(socket.roomId);
+            }, 5000);
+            socket.leave(socket.roomId);
             delete socket.roomId;
         }
     });
     
     socket.on('disconnect', () => {
-        console.log(`🔌 WebSocket disconnected: ${socket.id}`);
         if (socket.roomId) {
             socket.to(socket.roomId).emit('partner-disconnected');
             const room = activeRooms.get(socket.roomId);
@@ -1235,23 +1271,18 @@ io.on('connection', (socket) => {
                 else room.client = null;
                 if (room.users.size === 0) {
                     setTimeout(() => {
-                        if (activeRooms.get(socket.roomId)?.users.size === 0) {
-                            activeRooms.delete(socket.roomId);
-                        }
+                        if (activeRooms.get(socket.roomId)?.users.size === 0) activeRooms.delete(socket.roomId);
                     }, 10000);
                 }
             }
             socket.leave(socket.roomId);
-            delete socket.roomId;
         }
+        console.log('WebSocket disconnected:', socket.id);
     });
 });
 
 app.get('/health', (req, res) => res.status(200).send('OK'));
 
-// ======================================================================
-// ЗАПУСК СЕРВЕРА
-// ======================================================================
 const PORT = process.env.PORT || 3000;
 
 async function startServer() {
