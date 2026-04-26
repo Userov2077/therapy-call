@@ -245,7 +245,7 @@ async function getUser(id) {
         appointments: safeJSONParse(dbUser.appointments, []),
         clients: safeJSONParse(dbUser.clients, []),
         notifications: safeJSONParse(dbUser.notifications, []),
-        unreadCounts: safeJSONParse(dbPlayer.unread_counts, {}),
+        unreadCounts: safeJSONParse(dbUser.unread_counts, {}),
         createdAt: dbUser.created_at
     };
     return user;
