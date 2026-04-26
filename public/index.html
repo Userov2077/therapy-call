@@ -1083,15 +1083,13 @@
             });
             
             socket.on('unread_update', (data) => {
-                if (currentUser && data.from && data.count !== undefined) {
-                    if (!currentUser.unreadCounts) currentUser.unreadCounts = {};
-                    currentUser.unreadCounts[data.from] = data.count;
-                    if (currentTab === 'chats') {
-                        renderChats();
-                    }
-                }
-            });
-        }
+    if (currentUser && data.from && data.count !== undefined) {
+        if (!currentUser.unreadCounts) currentUser.unreadCounts = {};
+        currentUser.unreadCounts[data.from] = data.count;
+        // Обновляем только бейдж — не перерисовываем всю страницу
+        updateChatListUnread(data.from, data.count);
+    }
+});
 
         // ======================= ЛЕНТА =======================
         async function renderFeed() {
@@ -2150,7 +2148,6 @@
         // ======================= ЧАТЫ =======================
         async function renderChats() {
             // БАГ 2: сбрасываем currentChatPartner при входе в список чатов
-            currentChatPartner = null;
             if (!currentUser) { showToast('Войдите в аккаунт', true); return; }
             await window.refreshUser();
             document.getElementById('mainContent').innerHTML = `<div class="container"><div class="empty-state"><i class="fas fa-circle-notch fa-spin"></i></div></div>`;
@@ -2239,7 +2236,7 @@
                 <div class="chat-page">
                     <div class="chat-messages-container">
                         <div class="chat-messages-header">
-                            <button class="back-btn" onclick="renderChats()"><i class="fas fa-arrow-left"></i></button>
+                            <button class="back-btn" onclick="currentChatPartner = null; renderChats()"><i class="fas fa-arrow-left"></i></button>
                             <img src="" id="chatPartnerAvatar" style="width:36px;height:36px;border-radius:50%;object-fit:cover;border:2px solid var(--green-border);" onerror="this.style.display='none'">
                             <div style="flex:1">
                                 <div style="font-weight:600;font-size:15px;">${escapeHtml(userName)}</div>
