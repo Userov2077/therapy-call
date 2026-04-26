@@ -776,7 +776,6 @@
             const section = el.closest('.collapsible-section');
             if (section) {
                 section.classList.toggle('open');
-                // Ленивая загрузка календаря: если секция календаря открыта и ещё не загружена
                 if (section.id === 'sec-calendar' && section.classList.contains('open') && !section.dataset.loaded) {
                     renderProfileCalendar();
                     section.dataset.loaded = 'true';
@@ -1027,7 +1026,7 @@
                 showToast('Ошибка соединения с сервером', true);
             });
             
-            // === НОВЫЕ ОБРАБОТЧИКИ REAL-TIME ===
+            // === ОБРАБОТЧИК REAL-TIME ДЛЯ ПОСТОВ ===
             socket.on('post_created', (newPost) => {
                 if (currentTab === 'feed') renderFeed();
                 else if (currentTab === 'profile' && currentUser?.role === 'psychologist') renderProfile();
@@ -1044,7 +1043,6 @@
             });
             
             socket.on('comment_created', ({ postId, comment }) => {
-                // Обновляем комментарии на странице, если лента или профиль открыты
                 const commentsDiv = document.getElementById(`comments-${postId}`);
                 if (commentsDiv) {
                     const commentsList = commentsDiv.querySelector('.comments-list');
@@ -1065,7 +1063,6 @@
                         updateCommentCount(postId, 1);
                     }
                 } else {
-                    // Если секция комментариев не загружена, просто перерисуем ленту
                     if (currentTab === 'feed') renderFeed();
                 }
             });
@@ -1083,7 +1080,6 @@
                         likeBtn.querySelector('i').className = 'fa-regular fa-heart';
                     }
                 } else if (currentTab === 'feed') {
-                    // Если кнопки нет на странице (например, профиль), перерисуем
                     renderFeed();
                 }
             });
@@ -1099,7 +1095,7 @@
                 showFloatingNotification('Сеанс завершён', 'Запись отмечена как завершённая', 'info');
             });
             
-            // Обработка новых сообщений
+            // === ИСПРАВЛЕННЫЙ ОБРАБОТЧИК НОВЫХ СООБЩЕНИЙ (БЕЗ ВЫБРОСА ИЗ ЧАТА) ===
             socket.on('new_message', async (msg) => {
                 let preview = '';
                 if (msg.text) preview = msg.text.substring(0, 50);
@@ -1107,25 +1103,26 @@
                 else if (msg.voice) preview = '🎤 Голосовое';
                 else preview = 'Вложение';
 
+                // Если мы в чате с этим отправителем — добавляем сообщение и помечаем прочитанным
                 if (currentChatPartner && msg.from === currentChatPartner.id) {
                     appendMessageToChat(msg);
                     scrollToBottom();
-                    // Помечаем как прочитанное
                     fetch('/api/messages/read', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ userId: currentUser.id, fromUserId: msg.from })
                     }).catch(console.error);
                     updateChatListUnread(msg.from, 0);
-                    // Обновляем локальный счётчик
                     if (currentUser.unreadCounts) delete currentUser.unreadCounts[msg.from];
                     return;
                 }
 
+                // Сообщение от другого пользователя
                 if (currentUser && currentUser.unreadCounts) {
                     currentUser.unreadCounts[msg.from] = (currentUser.unreadCounts[msg.from] || 0) + 1;
                 }
-                // Получаем имя отправителя (можно из кэша, но для простоты запрос)
+
+                // Получаем имя отправителя
                 fetch(`/api/user/${msg.from}`)
                     .then(r => r.json())
                     .then(userData => {
@@ -1134,11 +1131,17 @@
                         if ('Notification' in window && Notification.permission === 'granted') {
                             new Notification('Новое сообщение', { body: `${senderName}: ${preview}` });
                         }
-                        if (currentTab === 'chats') {
+
+                        // Обновляем список чатов ТОЛЬКО если мы не внутри диалога
+                        // Иначе перерисовка уничтожит текущий чат
+                        const isInsideChat = currentChatPartner !== null;
+                        if (!isInsideChat && currentTab === 'chats') {
                             renderChats();
-                        } else {
+                        } else if (!isInsideChat) {
                             const chatListExists = document.querySelector('.chat-list');
-                            if (chatListExists) updateChatListItem(msg, senderName, preview);
+                            if (chatListExists) {
+                                updateChatListItem(msg, senderName, preview);
+                            }
                         }
                     })
                     .catch(console.error);
@@ -2214,7 +2217,7 @@
 
             const messagesRes = await fetchJSON(`/api/messages/${currentUser.id}`);
             const messages = messagesRes.messages || [];
-            const usersFromServer = messagesRes.users || []; // используем готовых пользователей
+            const usersFromServer = messagesRes.users || [];
             const contactsMap = new Map();
             const unreadCountsFromServer = currentUser.unreadCounts || {};
 
@@ -2234,7 +2237,6 @@
                 }
             });
 
-            // используем пользователей из ответа сервера
             const contacts = usersFromServer.map(u => {
                 const contactInfo = contactsMap.get(u.id) || { lastMessage: '', lastTime: new Date(0).toISOString() };
                 const unread = unreadCountsFromServer[u.id] || 0;
@@ -2267,7 +2269,6 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ userId: currentUser.id, fromUserId: userId })
             });
-            // Обновляем локальный счётчик
             if (currentUser.unreadCounts && currentUser.unreadCounts[userId]) {
                 delete currentUser.unreadCounts[userId];
             }
