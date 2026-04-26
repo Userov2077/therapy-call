@@ -1026,56 +1026,56 @@
             });
             
             socket.on('new_message', async (msg) => {
-            // Определяем превью сразу — не ждём refreshUser
-                let preview = '';
-                if (msg.text) preview = msg.text.substring(0, 50);
-                else if (msg.image) preview = '📷 Фото';
-                else if (msg.voice) preview = '🎤 Голосовое';
-                else preview = 'Вложение';
+    // Определяем превью сразу — не ждём refreshUser
+    let preview = '';
+    if (msg.text) preview = msg.text.substring(0, 50);
+    else if (msg.image) preview = '📷 Фото';
+    else if (msg.voice) preview = '🎤 Голосовое';
+    else preview = 'Вложение';
 
-                // Если мы ВНУТРИ чата с этим отправителем — просто добавляем сообщение
-                if (currentChatPartner && msg.from === currentChatPartner.id) {
-                    appendMessageToChat(msg);
-                    scrollToBottom();
+    // Если мы ВНУТРИ чата с этим отправителем — просто добавляем сообщение
+    if (currentChatPartner && msg.from === currentChatPartner.id) {
+        appendMessageToChat(msg);
+        scrollToBottom();
 
-                    // Читаем сообщения в фоне — не ждём результата
-                    fetch('/api/messages/read', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ userId: currentUser.id, fromUserId: msg.from })
-                    }).catch(console.error);
+        // Читаем сообщения в фоне — не ждём результата
+        fetch('/api/messages/read', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId: currentUser.id, fromUserId: msg.from })
+        }).catch(console.error);
 
-                    // Убираем бейдж если список чатов виден за открытым диалогом
-                    updateChatListUnread(msg.from, 0);
-                    return; // выходим — больше ничего не делаем
-                }
+        // Убираем бейдж если список чатов виден за открытым диалогом
+        updateChatListUnread(msg.from, 0);
+        return; // выходим — больше ничего не делаем
+    }
 
-                // Сообщение от кого-то другого — обновляем счётчик локально
-                if (currentUser && currentUser.unreadCounts) {
-                    currentUser.unreadCounts[msg.from] = (currentUser.unreadCounts[msg.from] || 0) + 1;
-                }
+    // Сообщение от кого-то другого — обновляем счётчик локально
+    if (currentUser && currentUser.unreadCounts) {
+        currentUser.unreadCounts[msg.from] = (currentUser.unreadCounts[msg.from] || 0) + 1;
+    }
 
-                // Получаем имя отправителя в фоне
-                fetch(`/api/user/${msg.from}`)
-                .then(r => r.json())
-                .then(userData => {
-                    const senderName = userData.success ? userData.user.fullName : 'Новое сообщение';
+    // Получаем имя отправителя в фоне
+    fetch(`/api/user/${msg.from}`)
+        .then(r => r.json())
+        .then(userData => {
+            const senderName = userData.success ? userData.user.fullName : 'Новое сообщение';
 
-                    // Показываем уведомление
-                    showFloatingNotification('Новое сообщение', `${senderName}: ${preview}`);
-                    if ('Notification' in window && Notification.permission === 'granted') {
-                        new Notification('Новое сообщение', { body: `${senderName}: ${preview}` });
-                    }
+            // Показываем уведомление
+            showFloatingNotification('Новое сообщение', `${senderName}: ${preview}`);
+            if ('Notification' in window && Notification.permission === 'granted') {
+                new Notification('Новое сообщение', { body: `${senderName}: ${preview}` });
+            }
 
-                    // Обновляем список чатов если он открыт
-                    const chatListExists = document.querySelector('.chat-list');
-                    if (chatListExists) {
-                        updateChatListItem(msg, senderName, preview);
-                    }
-                })
-                .catch(console.error);
-            });
-
+            // Обновляем список чатов если он открыт
+            const chatListExists = document.querySelector('.chat-list');
+            if (chatListExists) {
+                updateChatListItem(msg, senderName, preview);
+            }
+        })
+        .catch(console.error);
+});
+            
             socket.on('notification', (notif) => {
                 showFloatingNotification(notif.title, notif.message);
                 if (currentUser) window.refreshUser();
@@ -1086,10 +1086,12 @@
                 if (currentUser && data.from && data.count !== undefined) {
                     if (!currentUser.unreadCounts) currentUser.unreadCounts = {};
                     currentUser.unreadCounts[data.from] = data.count;
-                    // Обновляем только бейдж — не перерисовываем всю страницу
-                    updateChatListUnread(data.from, data.count);
+                    if (currentTab === 'chats') {
+                        renderChats();
+                    }
                 }
             });
+        }
 
         // ======================= ЛЕНТА =======================
         async function renderFeed() {
@@ -2148,6 +2150,7 @@
         // ======================= ЧАТЫ =======================
         async function renderChats() {
             // БАГ 2: сбрасываем currentChatPartner при входе в список чатов
+            currentChatPartner = null;
             if (!currentUser) { showToast('Войдите в аккаунт', true); return; }
             await window.refreshUser();
             document.getElementById('mainContent').innerHTML = `<div class="container"><div class="empty-state"><i class="fas fa-circle-notch fa-spin"></i></div></div>`;
@@ -2236,7 +2239,7 @@
                 <div class="chat-page">
                     <div class="chat-messages-container">
                         <div class="chat-messages-header">
-                            <button class="back-btn" onclick="currentChatPartner = null; renderChats()"><i class="fas fa-arrow-left"></i></button>
+                            <button class="back-btn" onclick="renderChats()"><i class="fas fa-arrow-left"></i></button>
                             <img src="" id="chatPartnerAvatar" style="width:36px;height:36px;border-radius:50%;object-fit:cover;border:2px solid var(--green-border);" onerror="this.style.display='none'">
                             <div style="flex:1">
                                 <div style="font-weight:600;font-size:15px;">${escapeHtml(userName)}</div>
