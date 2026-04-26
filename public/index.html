@@ -7,7 +7,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        /* ------------------- БАЗОВЫЕ ПЕРЕМЕННЫЕ (без изменений) ------------------- */
+        /* ------------------- БАЗОВЫЕ ПЕРЕМЕННЫЕ ------------------- */
         :root {
             --green: #8bca8b;
             --green-dark: #5a9e5a;
@@ -728,15 +728,12 @@
         let currentTab = 'feed';
         let socket = null;
         let allPsychologists = [];
-        let currentChatPartner = null;
+        let currentChatPartner = null;  // { id, name }
         let currentCalendarDate = new Date();
         let isLoading = false;
         let audioAllowed = false;
         let isPosting = false;
         let videoObserver = null;
-
-        // Хранилище для избежания глобальных переменных в модалках
-        let modalResolvers = new Map();
 
         // ======================= ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ =======================
         function showToast(msg, isErr = false) {
@@ -960,7 +957,7 @@
             parent.insertBefore(contactDiv, parent.firstChild);
         }
 
-        // ======================= КОММЕНТАРИИ - ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ =======================
+        // ======================= КОММЕНТАРИИ =======================
         function appendCommentToPost(postId, text) {
             const commentsDiv = document.getElementById(`comments-${postId}`);
             if (!commentsDiv) return;
@@ -995,7 +992,7 @@
             }
         }
 
-        // ======================= ОБНОВЛЕНИЕ ДАННЫХ ПОЛЬЗОВАТЕЛЯ =======================
+        // ======================= ОБНОВЛЕНИЕ ПОЛЬЗОВАТЕЛЯ =======================
         window.refreshUser = async function() {
             if (!currentUser) return;
             const r = await fetch(`/api/user/${currentUser.id}`);
@@ -1006,7 +1003,7 @@
             }
         };
 
-        // ======================= ИНИЦИАЛИЗАЦИЯ СОКЕТА С REAL-TIME ОБРАБОТЧИКАМИ =======================
+        // ======================= ИНИЦИАЛИЗАЦИЯ СОКЕТА (FIXED) =======================
         function initSocket() {
             if (socket) {
                 socket.disconnect();
@@ -1026,22 +1023,19 @@
                 showToast('Ошибка соединения с сервером', true);
             });
             
-            // === ОБРАБОТЧИК REAL-TIME ДЛЯ ПОСТОВ ===
+            // Посты и комментарии
             socket.on('post_created', (newPost) => {
                 if (currentTab === 'feed') renderFeed();
                 else if (currentTab === 'profile' && currentUser?.role === 'psychologist') renderProfile();
             });
-            
             socket.on('post_updated', (data) => {
                 if (currentTab === 'feed') renderFeed();
                 else if (currentTab === 'profile') renderProfile();
             });
-            
             socket.on('post_deleted', (postId) => {
                 if (currentTab === 'feed') renderFeed();
                 else if (currentTab === 'profile') renderProfile();
             });
-            
             socket.on('comment_created', ({ postId, comment }) => {
                 const commentsDiv = document.getElementById(`comments-${postId}`);
                 if (commentsDiv) {
@@ -1066,7 +1060,6 @@
                     if (currentTab === 'feed') renderFeed();
                 }
             });
-            
             socket.on('post_liked', ({ postId, likesCount, userId, liked }) => {
                 const likeBtn = document.querySelector(`.like-btn[data-id="${postId}"]`);
                 if (likeBtn) {
@@ -1088,14 +1081,13 @@
                 if (currentTab === 'profile') renderProfile();
                 if (currentTab === 'notifications') renderNotifications();
             });
-            
             socket.on('appointment_completed', (appointmentId) => {
                 if (currentTab === 'profile') renderProfile();
                 if (currentTab === 'notifications') renderNotifications();
                 showFloatingNotification('Сеанс завершён', 'Запись отмечена как завершённая', 'info');
             });
             
-            // === ИСПРАВЛЕННЫЙ ОБРАБОТЧИК НОВЫХ СООБЩЕНИЙ (БЕЗ ВЫБРОСА ИЗ ЧАТА) ===
+            // ========== ИСПРАВЛЕННЫЙ ОБРАБОТЧИК new_message ==========
             socket.on('new_message', async (msg) => {
                 let preview = '';
                 if (msg.text) preview = msg.text.substring(0, 50);
@@ -1103,26 +1095,28 @@
                 else if (msg.voice) preview = '🎤 Голосовое';
                 else preview = 'Вложение';
 
-                // Если мы в чате с этим отправителем — добавляем сообщение и помечаем прочитанным
+                // 1. Если мы в чате с этим отправителем – просто добавляем сообщение
                 if (currentChatPartner && msg.from === currentChatPartner.id) {
                     appendMessageToChat(msg);
                     scrollToBottom();
-                    fetch('/api/messages/read', {
+                    // помечаем прочитанным
+                    await fetch('/api/messages/read', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ userId: currentUser.id, fromUserId: msg.from })
                     }).catch(console.error);
-                    updateChatListUnread(msg.from, 0);
+                    // обновляем бейдж (убираем)
                     if (currentUser.unreadCounts) delete currentUser.unreadCounts[msg.from];
+                    updateChatListUnread(msg.from, 0);
                     return;
                 }
 
-                // Сообщение от другого пользователя
+                // 2. Сообщение от другого пользователя – обновляем счётчик
                 if (currentUser && currentUser.unreadCounts) {
                     currentUser.unreadCounts[msg.from] = (currentUser.unreadCounts[msg.from] || 0) + 1;
                 }
 
-                // Получаем имя отправителя
+                // 3. Показываем уведомление и обновляем список чатов (но не трогаем текущий диалог)
                 fetch(`/api/user/${msg.from}`)
                     .then(r => r.json())
                     .then(userData => {
@@ -1131,13 +1125,10 @@
                         if ('Notification' in window && Notification.permission === 'granted') {
                             new Notification('Новое сообщение', { body: `${senderName}: ${preview}` });
                         }
-
-                        // Обновляем список чатов ТОЛЬКО если мы не внутри диалога
-                        // Иначе перерисовка уничтожит текущий чат
-                        const isInsideChat = currentChatPartner !== null;
-                        if (!isInsideChat && currentTab === 'chats') {
+                        // Если мы не внутри диалога и вкладка чатов – перерисовываем список
+                        if (!currentChatPartner && currentTab === 'chats') {
                             renderChats();
-                        } else if (!isInsideChat) {
+                        } else if (!currentChatPartner) {
                             const chatListExists = document.querySelector('.chat-list');
                             if (chatListExists) {
                                 updateChatListItem(msg, senderName, preview);
@@ -1153,12 +1144,20 @@
                 if (currentTab === 'notifications') renderNotifications();
             });
             
+            // ========== ИСПРАВЛЕННЫЙ ОБРАБОТЧИК unread_update ==========
             socket.on('unread_update', (data) => {
                 if (currentUser && data.from && data.count !== undefined) {
                     if (!currentUser.unreadCounts) currentUser.unreadCounts = {};
                     currentUser.unreadCounts[data.from] = data.count;
-                    if (currentTab === 'chats') {
+                    // Если мы НЕ внутри диалога с этим пользователем – обновляем список чатов
+                    if (!currentChatPartner && currentTab === 'chats') {
                         renderChats();
+                    } else if (currentChatPartner && currentChatPartner.id === data.from) {
+                        // Мы в диалоге с тем же пользователем, значит счётчик должен быть 0 (это сообщение от нас, но обработано выше)
+                        // Ничего не делаем, чтобы не вылететь
+                    } else if (!currentChatPartner) {
+                        // Просто обновляем бейдж в существующем списке
+                        updateChatListUnread(data.from, data.count);
                     }
                 }
             });
@@ -1357,7 +1356,7 @@
             initVideoObservers();
         }
 
-        // ======================= ПРОФИЛЬ =======================
+        // ======================= ПРОФИЛЬ (сокращён для краткости, но полный функционал) =======================
         async function renderProfile() {
             if (!currentUser) { showToast('Войдите в аккаунт', true); return; }
             const isPsych = currentUser.role === 'psychologist';
@@ -1378,40 +1377,7 @@
             let appointmentsHtml = '';
             if (!isPsych && currentUser.appointments && currentUser.appointments.length > 0) {
                 const appointments = currentUser.appointments.filter(a => a.status === 'confirmed' || a.status === 'completed');
-                appointmentsHtml = `<div class="profile-sections">
-                    <div class="collapsible-section open">
-                        <div class="collapsible-header" onclick="toggleSection(this)">
-                            <div class="collapsible-header-left">
-                                <div class="collapsible-icon">📅</div>
-                                <div>
-                                    <div class="collapsible-title">Мои записи</div>
-                                    <div class="collapsible-subtitle">${appointments.length} сеансов</div>
-                                </div>
-                            </div>
-                            <i class="fas fa-chevron-down collapsible-chevron"></i>
-                        </div>
-                        <div class="collapsible-body">
-                            ${appointments.map(apt => {
-                                const aptDateTime = new Date(`${apt.date}T${apt.time}`);
-                                const isCompleted = apt.status === 'completed' || aptDateTime < new Date();
-                                const statusText = isCompleted ? '✅ Завершён' : (apt.status === 'confirmed' ? '✅ Подтверждён' : '⏳ Ожидает');
-                                return `
-                                <div class="appointment-item">
-                                    <div class="appt-info">
-                                        <div class="appt-name">${escapeHtml(apt.psychologistName)}</div>
-                                        <div class="appt-time">📅 ${apt.date} в ${apt.time}</div>
-                                        <div class="appt-status ${isCompleted ? 'status-completed' : (apt.status === 'confirmed' ? 'status-confirmed' : 'status-pending')}">${statusText}</div>
-                                    </div>
-                                    <div class="appt-actions">
-                                        ${!isCompleted && apt.status === 'confirmed' ? `<button class="btn-sm" onclick="startCall('${apt.roomId}', 'client')"><i class="fas fa-video"></i> Войти</button>` : ''}
-                                        ${isCompleted ? '<i class="fas fa-check-circle" style="color:var(--green); font-size:20px;"></i>' : ''}
-                                    </div>
-                                </div>`;
-                            }).join('')}
-                            ${appointments.length === 0 ? '<div class="empty-state" style="padding:16px;"><i class="fas fa-calendar-times"></i><div>Нет записей</div></div>' : ''}
-                        </div>
-                    </div>
-                </div>`;
+                appointmentsHtml = `<div class="profile-sections"><div class="collapsible-section open"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">📅</div><div><div class="collapsible-title">Мои записи</div><div class="collapsible-subtitle">${appointments.length} сеансов</div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body">${appointments.map(apt => { const isCompleted = apt.status === 'completed' || new Date(`${apt.date}T${apt.time}`) < new Date(); return `<div class="appointment-item"><div class="appt-info"><div class="appt-name">${escapeHtml(apt.psychologistName)}</div><div class="appt-time">📅 ${apt.date} в ${apt.time}</div><div class="appt-status ${isCompleted ? 'status-completed' : (apt.status === 'confirmed' ? 'status-confirmed' : 'status-pending')}">${isCompleted ? '✅ Завершён' : (apt.status === 'confirmed' ? '✅ Подтверждён' : '⏳ Ожидает')}</div></div><div class="appt-actions">${!isCompleted && apt.status === 'confirmed' ? `<button class="btn-sm" onclick="startCall('${apt.roomId}', 'client')"><i class="fas fa-video"></i> Войти</button>` : ''}${isCompleted ? '<i class="fas fa-check-circle" style="color:var(--green); font-size:20px;"></i>' : ''}</div></div>`; }).join('')}${appointments.length === 0 ? '<div class="empty-state" style="padding:16px;"><i class="fas fa-calendar-times"></i><div>Нет записей</div></div>' : ''}</div></div></div>`;
             }
 
             let psychSections = '';
@@ -1423,163 +1389,12 @@
 
                 psychSections = `
                 <div class="profile-sections">
-                    <div class="collapsible-section" id="sec-tasks">
-                        <div class="collapsible-header" onclick="toggleSection(this)">
-                            <div class="collapsible-header-left">
-                                <div class="collapsible-icon">📋</div>
-                                <div>
-                                    <div class="collapsible-title">Задачи</div>
-                                    <div class="collapsible-subtitle">${undoneTasks > 0 ? `${undoneTasks} не выполнено` : 'Все выполнены'}</div>
-                                </div>
-                            </div>
-                            <i class="fas fa-chevron-down collapsible-chevron"></i>
-                        </div>
-                        <div class="collapsible-body">
-                            ${tasks.map(t => `
-                                <div class="task-item">
-                                    <input type="checkbox" class="task-checkbox task-cb" data-id="${t.id}" ${t.completed ? 'checked' : ''}>
-                                    <div style="flex:1">
-                                        <div class="task-text ${t.completed ? 'task-completed' : ''}">${escapeHtml(t.text)}</div>
-                                        ${t.dueDate ? `<div class="task-due">📅 ${t.dueDate}</div>` : ''}
-                                    </div>
-                                    <button class="task-delete" onclick="deleteTask('${t.id}')"><i class="fas fa-times"></i></button>
-                                </div>
-                            `).join('')}
-                            ${tasks.length === 0 ? '<div class="empty-state" style="padding:16px;"><i class="fas fa-check-circle"></i><div>Нет задач</div></div>' : ''}
-                            <button class="section-add-btn" onclick="addTaskWithDate()"><i class="fas fa-plus"></i> Добавить задачу</button>
-                        </div>
-                    </div>
-
-                    <div class="collapsible-section" id="sec-calendar">
-                        <div class="collapsible-header" onclick="toggleSection(this)">
-                            <div class="collapsible-header-left">
-                                <div class="collapsible-icon">📅</div>
-                                <div>
-                                    <div class="collapsible-title">Календарь</div>
-                                    <div class="collapsible-subtitle">События</div>
-                                </div>
-                            </div>
-                            <i class="fas fa-chevron-down collapsible-chevron"></i>
-                        </div>
-                        <div class="collapsible-body">
-                            <div id="profileCalendar"></div>
-                        </div>
-                    </div>
-
-                    <div class="collapsible-section" id="sec-appointments">
-                        <div class="collapsible-header" onclick="toggleSection(this)">
-                            <div class="collapsible-header-left">
-                                <div class="collapsible-icon">📞</div>
-                                <div>
-                                    <div class="collapsible-title">Записи клиентов</div>
-                                    <div class="collapsible-subtitle">${pendingCount > 0 ? `${pendingCount} ожидает подтверждения` : confirmedCount > 0 ? `${confirmedCount} подтверждено` : 'Нет записей'}</div>
-                                </div>
-                            </div>
-                            <i class="fas fa-chevron-down collapsible-chevron"></i>
-                        </div>
-                        <div class="collapsible-body">
-                            ${(currentUser.clients || []).map(apt => {
-                                const aptDateTime = new Date(`${apt.date}T${apt.time}`);
-                                const isCompleted = apt.status === 'completed' || aptDateTime < new Date();
-                                return `
-                                <div class="appointment-item">
-                                    <div class="appt-info">
-                                        <div class="appt-name">${escapeHtml(apt.clientName)}</div>
-                                        <div class="appt-time">📅 ${apt.date} в ${apt.time}</div>
-                                        <div class="appt-status ${apt.status === 'confirmed' ? 'status-confirmed' : 'status-pending'}">
-                                            ${apt.status === 'confirmed' ? (isCompleted ? '✅ Завершён' : '✅ Подтверждено') : '⏳ Ожидает'}
-                                        </div>
-                                    </div>
-                                    <div class="appt-actions">
-                                        ${apt.status === 'pending' ? `<button class="btn-sm" onclick="confirmAppointment('${apt.appointmentId}','${apt.clientId}')">Подтвердить</button>` : ''}
-                                        ${apt.status === 'confirmed' && !isCompleted ? `<button class="btn-sm" onclick="startCall('${apt.roomId}', 'psychologist')"><i class="fas fa-video"></i> Начать</button>` : ''}
-                                        ${isCompleted ? '<i class="fas fa-check-circle" style="color:var(--green); font-size:20px;"></i>' : ''}
-                                    </div>
-                                </div>`;
-                            }).join('')}
-                            ${(currentUser.clients || []).length === 0 ? '<div class="empty-state" style="padding:16px;"><i class="fas fa-calendar-times"></i><div>Нет записей</div></div>' : ''}
-                        </div>
-                    </div>
-
-                    <div class="collapsible-section" id="sec-clients">
-                        <div class="collapsible-header" onclick="toggleSection(this)">
-                            <div class="collapsible-header-left">
-                                <div class="collapsible-icon">👥</div>
-                                <div>
-                                    <div class="collapsible-title">Клиенты</div>
-                                    <div class="collapsible-subtitle">${confirmedCount} завершённых звонков</div>
-                                </div>
-                            </div>
-                            <i class="fas fa-chevron-down collapsible-chevron"></i>
-                        </div>
-                        <div class="collapsible-body">
-                            ${(currentUser.clients || []).filter(a => a.status === 'confirmed').map(apt => `
-                                <div class="client-item">
-                                    <div>
-                                        <div class="client-name">${escapeHtml(apt.clientName)}</div>
-                                        <div class="client-time">${apt.date} в ${apt.time}</div>
-                                    </div>
-                                    <button class="btn-sm" onclick="startChatWith('${apt.clientId}','${escapeHtml(apt.clientName)}')">
-                                        <i class="fas fa-comment-dots"></i> Написать
-                                    </button>
-                                </div>
-                            `).join('')}
-                            ${(currentUser.clients || []).filter(a => a.status === 'confirmed').length === 0 ? '<div class="empty-state" style="padding:16px;"><i class="fas fa-users-slash"></i><div>Нет завершённых звонков</div></div>' : ''}
-                        </div>
-                    </div>
-
-                    <div class="collapsible-section" id="sec-notes">
-                        <div class="collapsible-header" onclick="toggleSection(this)">
-                            <div class="collapsible-header-left">
-                                <div class="collapsible-icon">📝</div>
-                                <div>
-                                    <div class="collapsible-title">Заметки</div>
-                                    <div class="collapsible-subtitle">${notes.length} заметок</div>
-                                </div>
-                            </div>
-                            <i class="fas fa-chevron-down collapsible-chevron"></i>
-                        </div>
-                        <div class="collapsible-body">
-                            <div class="notes-grid">
-                                ${notes.map(n => `
-                                    <div class="note-card" onclick="openNoteModal('${n.id}','${escapeHtml(n.title)}','${escapeHtml(n.content)}','${n.attachment || ''}')">
-                                        <div class="note-title">${escapeHtml(n.title)}</div>
-                                        <div class="note-preview">${escapeHtml((n.content || '').substring(0, 70))}${(n.content || '').length > 70 ? '…' : ''}</div>
-                                    </div>
-                                `).join('')}
-                                ${notes.length === 0 ? '<div class="empty-state" style="padding:16px;"><i class="fas fa-sticky-note"></i><div>Нет заметок</div></div>' : ''}
-                            </div>
-                            <button class="section-add-btn" onclick="openAddNoteModal()"><i class="fas fa-plus"></i> Добавить заметку</button>
-                        </div>
-                    </div>
-
-                    <div class="collapsible-section" id="sec-certs">
-                        <div class="collapsible-header" onclick="toggleSection(this)">
-                            <div class="collapsible-header-left">
-                                <div class="collapsible-icon">📜</div>
-                                <div>
-                                    <div class="collapsible-title">Сертификаты и дипломы</div>
-                                    <div class="collapsible-subtitle">${certificates.length} документов</div>
-                                </div>
-                            </div>
-                            <i class="fas fa-chevron-down collapsible-chevron"></i>
-                        </div>
-                        <div class="collapsible-body">
-                            <div class="certificates-grid" id="certsGridProfile">
-                                ${certificates.map(c => `
-                                    <div class="certificate-card">
-                                        <img src="${escapeHtml(c.image)}" onerror="this.src='https://placehold.co/100x80/1a2e1a/8bca8b?text=📜'">
-                                        <div class="certificate-title">${escapeHtml(c.title)}</div>
-                                        <button class="delete-cert-btn" onclick="deleteCertificateProfile('${c.id}')"><i class="fas fa-times"></i></button>
-                                    </div>
-                                `).join('')}
-                                <div class="certificate-card add-cert-card" onclick="addCertificateProfile()">
-                                    <i class="fas fa-plus"></i>
-                                    <span>Добавить</span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
+                    <div class="collapsible-section" id="sec-tasks"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">📋</div><div><div class="collapsible-title">Задачи</div><div class="collapsible-subtitle">${undoneTasks > 0 ? `${undoneTasks} не выполнено` : 'Все выполнены'}</div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body">${tasks.map(t => `<div class="task-item"><input type="checkbox" class="task-checkbox task-cb" data-id="${t.id}" ${t.completed ? 'checked' : ''}><div style="flex:1"><div class="task-text ${t.completed ? 'task-completed' : ''}">${escapeHtml(t.text)}</div>${t.dueDate ? `<div class="task-due">📅 ${t.dueDate}</div>` : ''}</div><button class="task-delete" onclick="deleteTask('${t.id}')"><i class="fas fa-times"></i></button></div>`).join('')}${tasks.length === 0 ? '<div class="empty-state" style="padding:16px;"><i class="fas fa-check-circle"></i><div>Нет задач</div></div>' : ''}<button class="section-add-btn" onclick="addTaskWithDate()"><i class="fas fa-plus"></i> Добавить задачу</button></div></div>
+                    <div class="collapsible-section" id="sec-calendar"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">📅</div><div><div class="collapsible-title">Календарь</div><div class="collapsible-subtitle">События</div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body"><div id="profileCalendar"></div></div></div>
+                    <div class="collapsible-section" id="sec-appointments"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">📞</div><div><div class="collapsible-title">Записи клиентов</div><div class="collapsible-subtitle">${pendingCount > 0 ? `${pendingCount} ожидает подтверждения` : confirmedCount > 0 ? `${confirmedCount} подтверждено` : 'Нет записей'}</div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body">${(currentUser.clients || []).map(apt => { const isCompleted = apt.status === 'completed' || new Date(`${apt.date}T${apt.time}`) < new Date(); return `<div class="appointment-item"><div class="appt-info"><div class="appt-name">${escapeHtml(apt.clientName)}</div><div class="appt-time">📅 ${apt.date} в ${apt.time}</div><div class="appt-status ${apt.status === 'confirmed' ? 'status-confirmed' : 'status-pending'}">${apt.status === 'confirmed' ? (isCompleted ? '✅ Завершён' : '✅ Подтверждено') : '⏳ Ожидает'}</div></div><div class="appt-actions">${apt.status === 'pending' ? `<button class="btn-sm" onclick="confirmAppointment('${apt.appointmentId}','${apt.clientId}')">Подтвердить</button>` : ''}${apt.status === 'confirmed' && !isCompleted ? `<button class="btn-sm" onclick="startCall('${apt.roomId}', 'psychologist')"><i class="fas fa-video"></i> Начать</button>` : ''}${isCompleted ? '<i class="fas fa-check-circle" style="color:var(--green); font-size:20px;"></i>' : ''}</div></div>`; }).join('')}${(currentUser.clients || []).length === 0 ? '<div class="empty-state" style="padding:16px;"><i class="fas fa-calendar-times"></i><div>Нет записей</div></div>' : ''}</div></div>
+                    <div class="collapsible-section" id="sec-clients"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">👥</div><div><div class="collapsible-title">Клиенты</div><div class="collapsible-subtitle">${confirmedCount} завершённых звонков</div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body">${(currentUser.clients || []).filter(a => a.status === 'confirmed').map(apt => `<div class="client-item"><div><div class="client-name">${escapeHtml(apt.clientName)}</div><div class="client-time">${apt.date} в ${apt.time}</div></div><button class="btn-sm" onclick="startChatWith('${apt.clientId}','${escapeHtml(apt.clientName)}')"><i class="fas fa-comment-dots"></i> Написать</button></div>`).join('')}${(currentUser.clients || []).filter(a => a.status === 'confirmed').length === 0 ? '<div class="empty-state" style="padding:16px;"><i class="fas fa-users-slash"></i><div>Нет завершённых звонков</div></div>' : ''}</div></div>
+                    <div class="collapsible-section" id="sec-notes"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">📝</div><div><div class="collapsible-title">Заметки</div><div class="collapsible-subtitle">${notes.length} заметок</div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body"><div class="notes-grid">${notes.map(n => `<div class="note-card" onclick="openNoteModal('${n.id}','${escapeHtml(n.title)}','${escapeHtml(n.content)}','${n.attachment || ''}')"><div class="note-title">${escapeHtml(n.title)}</div><div class="note-preview">${escapeHtml((n.content || '').substring(0, 70))}${(n.content || '').length > 70 ? '…' : ''}</div></div>`).join('')}${notes.length === 0 ? '<div class="empty-state" style="padding:16px;"><i class="fas fa-sticky-note"></i><div>Нет заметок</div></div>' : ''}</div><button class="section-add-btn" onclick="openAddNoteModal()"><i class="fas fa-plus"></i> Добавить заметку</button></div></div>
+                    <div class="collapsible-section" id="sec-certs"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">📜</div><div><div class="collapsible-title">Сертификаты и дипломы</div><div class="collapsible-subtitle">${certificates.length} документов</div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body"><div class="certificates-grid" id="certsGridProfile">${certificates.map(c => `<div class="certificate-card"><img src="${escapeHtml(c.image)}" onerror="this.src='https://placehold.co/100x80/1a2e1a/8bca8b?text=📜'"><div class="certificate-title">${escapeHtml(c.title)}</div><button class="delete-cert-btn" onclick="deleteCertificateProfile('${c.id}')"><i class="fas fa-times"></i></button></div>`).join('')}<div class="certificate-card add-cert-card" onclick="addCertificateProfile()"><i class="fas fa-plus"></i><span>Добавить</span></div></div></div></div>
                 </div>`;
             }
 
@@ -1601,64 +1416,19 @@
                         </div>
                         <div class="profile-actions">
                             <button class="btn-sm btn-outline" onclick="editProfileModal()"><i class="fas fa-pen"></i> Редактировать</button>
-                            ${isPsych ? `
-                                <button class="btn-sm btn-outline" onclick="showScheduleEditor()"><i class="fas fa-clock"></i> Расписание</button>
-                                <button class="btn-sm" onclick="createPostModal()"><i class="fas fa-plus"></i> Пост</button>
-                            ` : ''}
+                            ${isPsych ? `<button class="btn-sm btn-outline" onclick="showScheduleEditor()"><i class="fas fa-clock"></i> Расписание</button><button class="btn-sm" onclick="createPostModal()"><i class="fas fa-plus"></i> Пост</button>` : ''}
                         </div>
                     </div>
-
                     ${!isPsych ? appointmentsHtml : ''}
-
-                    ${isPsych ? `
-                    <div style="margin-bottom: 16px;">
-                        <div class="section-header-row">
-                            <h3>Мои посты</h3>
-                            <button class="btn-sm" onclick="createPostModal()"><i class="fas fa-plus"></i> Новый</button>
-                        </div>
-                        <div class="posts-grid">
-                            ${myPosts.map(p => `
-                                <div class="post-card glass-card">
-                                    <div class="post-text">${escapeHtml(p.text)}</div>
-                                    ${p.image ? `<img class="post-image" src="${escapeHtml(p.image)}" onclick="openImageModal('${escapeHtml(p.image)}')">` : ''}
-                                    ${p.video ? `<video class="post-video" controls preload="metadata"><source src="${escapeHtml(p.video)}" type="video/mp4"></video>` : ''}
-                                    <div class="post-stats">
-                                        <span style="color:var(--text-muted);font-size:13px;display:flex;gap:6px;align-items:center;"><i class="fa-regular fa-heart"></i> ${p.likesCount||0}</span>
-                                        <span style="color:var(--text-muted);font-size:13px;display:flex;gap:6px;align-items:center;"><i class="fa-regular fa-comment"></i> ${p.commentsCount||0}</span>
-                                    </div>
-                                    <div class="post-actions">
-                                        <button class="profile-edit-post" data-id="${p.id}" data-text="${escapeHtml(p.text)}"><i class="fas fa-pen"></i> Ред.</button>
-                                        <button class="profile-delete-post" data-id="${p.id}"><i class="fas fa-trash-alt"></i> Удалить</button>
-                                    </div>
-                                </div>
-                            `).join('')}
-                            ${myPosts.length === 0 ? '<div class="empty-state glass-card" style="padding:24px;"><i class="fas fa-newspaper"></i><div>Нет постов</div></div>' : ''}
-                        </div>
-                    </div>
-                    ` : ''}
-
+                    ${isPsych ? `<div style="margin-bottom: 16px;"><div class="section-header-row"><h3>Мои посты</h3><button class="btn-sm" onclick="createPostModal()"><i class="fas fa-plus"></i> Новый</button></div><div class="posts-grid">${myPosts.map(p => `<div class="post-card glass-card"><div class="post-text">${escapeHtml(p.text)}</div>${p.image ? `<img class="post-image" src="${escapeHtml(p.image)}" onclick="openImageModal('${escapeHtml(p.image)}')">` : ''}${p.video ? `<video class="post-video" controls preload="metadata"><source src="${escapeHtml(p.video)}" type="video/mp4"></video>` : ''}<div class="post-stats"><span style="color:var(--text-muted);font-size:13px;display:flex;gap:6px;align-items:center;"><i class="fa-regular fa-heart"></i> ${p.likesCount||0}</span><span style="color:var(--text-muted);font-size:13px;display:flex;gap:6px;align-items:center;"><i class="fa-regular fa-comment"></i> ${p.commentsCount||0}</span></div><div class="post-actions"><button class="profile-edit-post" data-id="${p.id}" data-text="${escapeHtml(p.text)}"><i class="fas fa-pen"></i> Ред.</button><button class="profile-delete-post" data-id="${p.id}"><i class="fas fa-trash-alt"></i> Удалить</button></div></div>`).join('')}${myPosts.length === 0 ? '<div class="empty-state glass-card" style="padding:24px;"><i class="fas fa-newspaper"></i><div>Нет постов</div></div>' : ''}</div></div>` : ''}
                     ${psychSections}
                 </div>
             `;
             document.getElementById('mainContent').innerHTML = html;
-
             if (isPsych) {
-                document.querySelectorAll('.profile-edit-post').forEach(b => {
-                    b.onclick = () => openEditPostModal(b.dataset.id, b.dataset.text);
-                });
-                document.querySelectorAll('.profile-delete-post').forEach(b => {
-                    b.onclick = () => openConfirmModal('Удалить пост?', 'Это действие нельзя отменить.', async () => {
-                        await fetch(`/api/posts/${b.dataset.id}`, { method:'DELETE', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ authorId: currentUser.id }) });
-                        renderProfile();
-                    });
-                });
-                document.querySelectorAll('.task-cb').forEach(cb => {
-                    cb.onchange = async () => {
-                        await fetch(`/api/tasks/${cb.dataset.id}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ completed: cb.checked }) });
-                        const label = cb.closest('.task-item').querySelector('.task-text');
-                        if (label) label.classList.toggle('task-completed', cb.checked);
-                    };
-                });
+                document.querySelectorAll('.profile-edit-post').forEach(b => { b.onclick = () => openEditPostModal(b.dataset.id, b.dataset.text); });
+                document.querySelectorAll('.profile-delete-post').forEach(b => { b.onclick = () => openConfirmModal('Удалить пост?', 'Это действие нельзя отменить.', async () => { await fetch(`/api/posts/${b.dataset.id}`, { method:'DELETE', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ authorId: currentUser.id }) }); renderProfile(); }); });
+                document.querySelectorAll('.task-cb').forEach(cb => { cb.onchange = async () => { await fetch(`/api/tasks/${cb.dataset.id}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ completed: cb.checked }) }); const label = cb.closest('.task-item').querySelector('.task-text'); if (label) label.classList.toggle('task-completed', cb.checked); }; });
             }
             checkUpcomingEvents();
         }
@@ -1681,70 +1451,33 @@
             appointments.filter(a => a.status === 'confirmed').forEach(a => { events.push({ date: a.date, title: `Запись с ${a.clientName} в ${a.time}`, type: 'appointment', roomId: a.roomId }); });
 
             let daysHtml = '';
-            for (let i = 0; i < startDay; i++) {
-                daysHtml += `<div class="apple-day other-month">${prevDays - startDay + i + 1}</div>`;
-            }
+            for (let i = 0; i < startDay; i++) { daysHtml += `<div class="apple-day other-month">${prevDays - startDay + i + 1}</div>`; }
             for (let d = 1; d <= daysInMonth; d++) {
                 const dateStr = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
                 const dayEvents = events.filter(e => e.date === dateStr);
                 const isToday = dateStr === new Date().toISOString().split('T')[0];
-                daysHtml += `<div class="apple-day${dayEvents.length ? ' has-event' : ''}${isToday ? ' today' : ''}" data-date="${dateStr}" data-events='${JSON.stringify(dayEvents).replace(/'/g, "&#39;")}'>
-                    ${d}${dayEvents.length && !isToday ? '<div class="event-dot-apple"></div>' : ''}
-                </div>`;
+                daysHtml += `<div class="apple-day${dayEvents.length ? ' has-event' : ''}${isToday ? ' today' : ''}" data-date="${dateStr}" data-events='${JSON.stringify(dayEvents).replace(/'/g, "&#39;")}'>${d}${dayEvents.length && !isToday ? '<div class="event-dot-apple"></div>' : ''}</div>`;
             }
             const monthNames = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
-            container.innerHTML = `
-                <div class="apple-calendar">
-                    <div class="apple-calendar-header">
-                        <button class="apple-calendar-nav-btn" onclick="changeProfileMonth(-1)"><i class="fas fa-chevron-left"></i></button>
-                        <h3>${monthNames[month]} ${year}</h3>
-                        <button class="apple-calendar-nav-btn" onclick="changeProfileMonth(1)"><i class="fas fa-chevron-right"></i></button>
-                    </div>
-                    <div class="apple-weekdays"><span>Пн</span><span>Вт</span><span>Ср</span><span>Чт</span><span>Пт</span><span>Сб</span><span>Вс</span></div>
-                    <div class="apple-days" id="appleDaysContainer">${daysHtml}</div>
-                </div>
-            `;
-            document.querySelectorAll('.apple-day').forEach(day => {
-                day.onclick = () => {
-                    const evs = JSON.parse(day.getAttribute('data-events') || '[]');
-                    if (evs.length) showDayEventsApple(day.getAttribute('data-date'), evs);
-                    else showToast('Нет событий на эту дату');
-                };
-            });
+            container.innerHTML = `<div class="apple-calendar"><div class="apple-calendar-header"><button class="apple-calendar-nav-btn" onclick="changeProfileMonth(-1)"><i class="fas fa-chevron-left"></i></button><h3>${monthNames[month]} ${year}</h3><button class="apple-calendar-nav-btn" onclick="changeProfileMonth(1)"><i class="fas fa-chevron-right"></i></button></div><div class="apple-weekdays"><span>Пн</span><span>Вт</span><span>Ср</span><span>Чт</span><span>Пт</span><span>Сб</span><span>Вс</span></div><div class="apple-days" id="appleDaysContainer">${daysHtml}</div></div>`;
+            document.querySelectorAll('.apple-day').forEach(day => { day.onclick = () => { const evs = JSON.parse(day.getAttribute('data-events') || '[]'); if (evs.length) showDayEventsApple(day.getAttribute('data-date'), evs); else showToast('Нет событий на эту дату'); }; });
         }
 
         function showDayEventsApple(date, events) {
             let content = `<div style="margin-bottom: 16px;"><i class="fas fa-calendar-day"></i> <strong>${date}</strong></div>`;
             events.forEach(ev => {
                 if (ev.type === 'appointment') {
-                    content += `
-                        <div style="background: var(--green-dim); border-radius: 16px; padding: 14px; margin-bottom: 12px;">
-                            <div><i class="fas fa-phone-alt"></i> ${escapeHtml(ev.title)}</div>
-                            <button class="btn-sm" style="margin-top: 12px;" onclick="startCall('${ev.roomId}', 'psychologist'); closeModal('dayEventsModal')">
-                                <i class="fas fa-video"></i> Войти в звонок
-                            </button>
-                        </div>`;
+                    content += `<div style="background: var(--green-dim); border-radius: 16px; padding: 14px; margin-bottom: 12px;"><div><i class="fas fa-phone-alt"></i> ${escapeHtml(ev.title)}</div><button class="btn-sm" style="margin-top: 12px;" onclick="startCall('${ev.roomId}', 'psychologist'); closeModal('dayEventsModal')"><i class="fas fa-video"></i> Войти в звонок</button></div>`;
                 } else {
                     content += `<div style="background: rgba(255,255,255,0.05); border-radius: 16px; padding: 14px; margin-bottom: 12px;"><i class="fas fa-tasks"></i> ${escapeHtml(ev.title)}</div>`;
                 }
             });
-            const html = `
-                <div class="modal" id="dayEventsModal">
-                    <div class="modal-content">
-                        <div class="modal-handle"></div>
-                        <h3>События на ${date}</h3>
-                        ${content}
-                        <div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('dayEventsModal')">Закрыть</button></div>
-                    </div>
-                </div>`;
+            const html = `<div class="modal" id="dayEventsModal"><div class="modal-content"><div class="modal-handle"></div><h3>События на ${date}</h3>${content}<div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('dayEventsModal')">Закрыть</button></div></div></div>`;
             document.body.insertAdjacentHTML('beforeend', html);
             setTimeout(() => document.getElementById('dayEventsModal').classList.add('active'), 10);
         }
 
-        window.changeProfileMonth = (delta) => {
-            currentCalendarDate.setMonth(currentCalendarDate.getMonth() + delta);
-            renderProfileCalendar();
-        };
+        window.changeProfileMonth = (delta) => { currentCalendarDate.setMonth(currentCalendarDate.getMonth() + delta); renderProfileCalendar(); };
 
         // ======================= СЕРТИФИКАТЫ =======================
         async function addCertificateProfile() {

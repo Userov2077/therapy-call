@@ -285,7 +285,7 @@ async function updateUser(user) {
 }
 
 // ======================================================================
-// РЕГИСТРАЦИЯ / ЛОГИН
+// РЕГИСТРАЦИЯ / ЛОГИН (без изменений)
 // ======================================================================
 app.post('/api/register', async (req, res) => {
     try {
@@ -486,7 +486,7 @@ app.delete('/api/certificates/:userId/:certId', async (req, res) => {
 });
 
 // ======================================================================
-// ПОСТЫ — ОПТИМИЗИРОВАННЫЙ JOIN, С ПОДДЕРЖКОЙ REAL-TIME
+// ПОСТЫ (оптимизированные)
 // ======================================================================
 app.post('/api/posts', upload.fields([{ name: 'image', maxCount: 1 }, { name: 'video', maxCount: 1 }]), async (req, res) => {
     try {
@@ -509,7 +509,6 @@ app.post('/api/posts', upload.fields([{ name: 'image', maxCount: 1 }, { name: 'v
             `INSERT INTO posts (id,author_id,text,image,video,created_at) VALUES ($1,$2,$3,$4,$5,$6)`,
             [newPost.id, newPost.author_id, newPost.text, newPost.image, newPost.video, newPost.created_at]
         );
-        // Эмитируем событие всем (можно только подписчикам, но для простоты всем)
         io.emit('post_created', newPost);
         res.json({ success: true, post: newPost });
     } catch (err) {
@@ -521,7 +520,6 @@ app.post('/api/posts', upload.fields([{ name: 'image', maxCount: 1 }, { name: 'v
 app.get('/api/posts', async (req, res) => {
     try {
         const userId = req.query.userId || null;
-
         const postsRes = await pool.query(`
             SELECT
                 p.id, p.text, p.image, p.video, p.created_at,
@@ -535,10 +533,8 @@ app.get('/api/posts', async (req, res) => {
                      u.id, u.full_name, u.avatar, u.rating
             ORDER BY p.created_at DESC
         `);
-
         const postIds = postsRes.rows.map(p => p.id);
         if (postIds.length === 0) return res.json({ success: true, posts: [] });
-
         const commentsRes = await pool.query(`
             SELECT c.id, c.post_id, c.text, c.created_at,
                    u.id AS author_id, u.full_name AS author_name, u.avatar AS author_avatar
@@ -547,7 +543,6 @@ app.get('/api/posts', async (req, res) => {
             WHERE c.post_id = ANY($1::text[])
             ORDER BY c.created_at ASC
         `, [postIds]);
-
         let userLikedSet = new Set();
         if (userId) {
             const likedRes = await pool.query(
@@ -556,7 +551,6 @@ app.get('/api/posts', async (req, res) => {
             );
             likedRes.rows.forEach(r => userLikedSet.add(r.post_id));
         }
-
         const commentsByPost = {};
         commentsRes.rows.forEach(c => {
             if (!commentsByPost[c.post_id]) commentsByPost[c.post_id] = [];
@@ -567,7 +561,6 @@ app.get('/api/posts', async (req, res) => {
                 author: { id: c.author_id, fullName: c.author_name, avatar: c.author_avatar }
             });
         });
-
         const posts = postsRes.rows.map(p => ({
             id: p.id,
             text: p.text,
@@ -585,7 +578,6 @@ app.get('/api/posts', async (req, res) => {
             comments: commentsByPost[p.id] || [],
             userLiked: userLikedSet.has(p.id)
         }));
-
         res.json({ success: true, posts });
     } catch (err) {
         console.error('Get posts error:', err);
@@ -1112,7 +1104,7 @@ app.post('/api/subscriptions', async (req, res) => {
 });
 
 // ======================================================================
-// ЧАТ — С ПОДДЕРЖКОЙ КОНТАКТОВ И UNREAD COUNTS
+// ЧАТ (исправлен: возвращаем users)
 // ======================================================================
 app.get('/api/messages/:userId', async (req, res) => {
     try {
