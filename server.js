@@ -65,7 +65,6 @@ const imageStorage = new CloudinaryStorage({
     }
 });
 
-// Для остальных файлов (аватарки, сертификаты, вложения) используем diskStorage или memory -> base64
 const diskStorage = multer.diskStorage({
     destination: (req, file, cb) => {
         if (file.fieldname === 'avatar') cb(null, 'public/uploads/images/');
@@ -639,7 +638,7 @@ app.post('/api/upload-image', uploadImage.single('image'), (req, res) => {
     res.json({ success: true, imageUrl: req.file.path });
 });
 
-// ========== ПОСТЫ ==========
+// ========== ПОСТЫ (с пагинацией и отдельным маршрутом для комментариев) ==========
 app.post('/api/posts', async (req, res) => {
     try {
         const { authorId, text, image, video } = req.body;
@@ -669,6 +668,8 @@ app.post('/api/posts', async (req, res) => {
 
 app.get('/api/posts', async (req, res) => {
     try {
+        const limit = Math.min(parseInt(req.query.limit) || 15, 50);
+        const offset = parseInt(req.query.offset) || 0;
         const userId = req.query.userId || null;
         const postsRes = await pool.query(`
             SELECT
@@ -682,56 +683,62 @@ app.get('/api/posts', async (req, res) => {
             GROUP BY p.id, p.text, p.image, p.video, p.created_at,
                      u.id, u.full_name, u.avatar, u.rating
             ORDER BY p.created_at DESC
-        `);
+            LIMIT $1 OFFSET $2
+        `, [limit, offset]);
         const postIds = postsRes.rows.map(p => p.id);
-        if (postIds.length === 0) return res.json({ success: true, posts: [] });
-        const commentsRes = await pool.query(`
-            SELECT c.id, c.post_id, c.text, c.created_at,
-                   u.id AS author_id, u.full_name AS author_name, u.avatar AS author_avatar
-            FROM comments c
-            JOIN users u ON c.author_id = u.id
-            WHERE c.post_id = ANY($1::text[])
-            ORDER BY c.created_at ASC
-        `, [postIds]);
+        let commentsCountMap = {};
         let userLikedSet = new Set();
-        if (userId) {
-            const likedRes = await pool.query(
-                `SELECT post_id FROM likes WHERE user_id=$1 AND post_id=ANY($2::text[])`,
-                [userId, postIds]
-            );
-            likedRes.rows.forEach(r => userLikedSet.add(r.post_id));
+        if (postIds.length > 0) {
+            const countRes = await pool.query(`
+                SELECT post_id, COUNT(*)::int as cnt FROM comments WHERE post_id = ANY($1::text[]) GROUP BY post_id
+            `, [postIds]);
+            countRes.rows.forEach(r => { commentsCountMap[r.post_id] = r.cnt; });
+            if (userId) {
+                const likedRes = await pool.query(
+                    `SELECT post_id FROM likes WHERE user_id=$1 AND post_id=ANY($2::text[])`,
+                    [userId, postIds]
+                );
+                likedRes.rows.forEach(r => userLikedSet.add(r.post_id));
+            }
         }
-        const commentsByPost = {};
-        commentsRes.rows.forEach(c => {
-            if (!commentsByPost[c.post_id]) commentsByPost[c.post_id] = [];
-            commentsByPost[c.post_id].push({
-                id: c.id,
-                text: c.text,
-                createdAt: c.created_at,
-                author: { id: c.author_id, fullName: c.author_name, avatar: c.author_avatar }
-            });
-        });
         const posts = postsRes.rows.map(p => ({
-            id: p.id,
-            text: p.text,
-            image: p.image,
-            video: p.video,
-            createdAt: p.created_at,
-            author: {
-                id: p.author_id,
-                fullName: p.author_name,
-                avatar: p.author_avatar,
-                rating: p.author_rating || 0
-            },
+            id: p.id, text: p.text, image: p.image, video: p.video, createdAt: p.created_at,
+            author: { id: p.author_id, fullName: p.author_name, avatar: p.author_avatar, rating: p.author_rating || 0 },
             likesCount: p.likes_count || 0,
-            commentsCount: (commentsByPost[p.id] || []).length,
-            comments: commentsByPost[p.id] || [],
+            commentsCount: commentsCountMap[p.id] || 0,
+            comments: [], // не загружаем комментарии
             userLiked: userLikedSet.has(p.id)
         }));
-        res.json({ success: true, posts });
+        res.json({ success: true, posts, hasMore: postsRes.rows.length === limit });
     } catch (err) {
         console.error('Get posts error:', err);
         res.json({ success: false, error: 'Ошибка сервера' });
+    }
+});
+
+app.get('/api/posts/:id/comments', async (req, res) => {
+    const postId = req.params.id;
+    try {
+        const result = await pool.query(`
+            SELECT c.id, c.text, c.created_at,
+                   u.id AS author_id, u.full_name AS author_name, u.avatar AS author_avatar
+            FROM comments c
+            JOIN users u ON c.author_id = u.id
+            WHERE c.post_id = $1
+            ORDER BY c.created_at ASC
+        `, [postId]);
+        const comments = result.rows.map(c => ({
+            id: c.id,
+            text: c.text,
+            created_at: c.created_at,
+            author_id: c.author_id,
+            author_name: c.author_name,
+            author_avatar: c.author_avatar
+        }));
+        res.json({ success: true, comments });
+    } catch (err) {
+        console.error('Get comments error:', err);
+        res.json({ success: false });
     }
 });
 
@@ -771,7 +778,7 @@ app.delete('/api/posts/:id', async (req, res) => {
     }
 });
 
-// ========== КОММЕНТАРИИ ==========
+// ========== КОММЕНТАРИИ (добавление) ==========
 app.post('/api/posts/:id/comment', async (req, res) => {
     try {
         const postId = req.params.id;
