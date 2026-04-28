@@ -8,6 +8,8 @@ const { Pool } = require('pg');
 const { nanoid } = require('nanoid');
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
+const cloudinary = require('cloudinary').v2;
+const { CloudinaryStorage } = require('multer-storage-cloudinary');
 require('dotenv').config();
 
 const app = express();
@@ -31,26 +33,45 @@ const pool = new Pool({
     ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
     max: 30,
     idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 5000
+    connectionTimeoutMillis: 5000,
+    statement_timeout: 10000
 });
 
 pool.on('error', (err) => console.error('Unexpected DB error', err));
 
-// ========== Multer для временного хранения в памяти (чтобы получить буфер) ==========
-const storage = multer.memoryStorage();
-const upload = multer({
-    storage,
-    limits: { fileSize: 100 * 1024 * 1024, files: 1 },
-    fileFilter: (req, file, cb) => {
-        if (file.fieldname === 'voice') {
-            const allowed = ['audio/mpeg', 'audio/mp3', 'audio/webm', 'audio/ogg', 'audio/wav'];
-            if (!allowed.includes(file.mimetype)) return cb(new Error('Неподдерживаемый формат аудио'), false);
-        }
-        cb(null, true);
+// ========== Cloudinary конфигурация ==========
+cloudinary.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key: process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET
+});
+
+// Настройки хранилищ для Multer (Cloudinary для видео и изображений)
+const videoStorage = new CloudinaryStorage({
+    cloudinary: cloudinary,
+    params: {
+        folder: 'therapy_call_videos',
+        resource_type: 'video',
+        allowed_formats: ['mp4', 'mov', 'avi', 'webm', 'mkv']
     }
 });
 
-// ========== Хеширование паролей ==========
+const imageStorage = new CloudinaryStorage({
+    cloudinary: cloudinary,
+    params: {
+        folder: 'therapy_call_images',
+        resource_type: 'image',
+        allowed_formats: ['jpg', 'jpeg', 'png', 'gif', 'webp']
+    }
+});
+
+// Для остальных файлов (сертификаты, аватарки, вложения заметок) используем memory storage -> base64 в БД
+const memoryStorage = multer.memoryStorage();
+const upload = multer({ storage: memoryStorage, limits: { fileSize: 100 * 1024 * 1024 } });
+const uploadVideo = multer({ storage: videoStorage, limits: { fileSize: 100 * 1024 * 1024 } });
+const uploadImage = multer({ storage: imageStorage, limits: { fileSize: 20 * 1024 * 1024 } });
+
+// ========== Хеширование паролей (crypto) ==========
 function hashPassword(password) {
     const salt = crypto.randomBytes(16).toString('hex');
     const hash = crypto.pbkdf2Sync(password, salt, 100000, 64, 'sha512').toString('hex');
@@ -63,24 +84,36 @@ function verifyPassword(password, stored) {
     return verifyHash === hash;
 }
 
-// ========== JWT ==========
+// ========== JWT (Access + Refresh) ==========
 const JWT_SECRET = process.env.JWT_SECRET || 'therapy_call_secret_change_me';
-function generateToken(userId) {
-    return jwt.sign({ userId }, JWT_SECRET, { expiresIn: '30d' });
+function generateAccessToken(userId) {
+    return jwt.sign({ userId }, JWT_SECRET, { expiresIn: '15m' }); // короткий срок
+}
+function generateRefreshToken() {
+    return nanoid(64);
+}
+// Хранилище refresh токенов (в реальном проекте – БД)
+const refreshTokens = new Map(); // key: refreshToken, value: userId
+
+function verifyAccessToken(token) {
+    try {
+        return jwt.verify(token, JWT_SECRET);
+    } catch (err) {
+        return null;
+    }
 }
 
 function authenticateToken(req, res, next) {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
     if (!token) return res.status(401).json({ success: false, error: 'Требуется авторизация' });
-    jwt.verify(token, JWT_SECRET, (err, decoded) => {
-        if (err) return res.status(403).json({ success: false, error: 'Недействительный токен' });
-        req.userId = decoded.userId;
-        next();
-    });
+    const decoded = verifyAccessToken(token);
+    if (!decoded) return res.status(403).json({ success: false, error: 'Недействительный токен' });
+    req.userId = decoded.userId;
+    next();
 }
 
-// ========== Инициализация таблиц ==========
+// ========== Инициализация таблиц (без изменений, как в предыдущей версии) ==========
 async function initDatabase() {
     const queries = [
         `CREATE TABLE IF NOT EXISTS users (
@@ -280,7 +313,6 @@ async function updateUser(user) {
     );
 }
 
-// ========== Конвертация файлов в base64 (временное решение ==========
 function fileToBase64(file) {
     if (!file) return null;
     const mime = file.mimetype;
@@ -288,7 +320,7 @@ function fileToBase64(file) {
     return `data:${mime};base64,${b64}`;
 }
 
-// ========== Регистрация и логин ==========
+// ========== Маршруты регистрации / логина / рефреша / me ==========
 app.post('/api/register', async (req, res) => {
     try {
         const { fullName, email, phone, password, role, specialization, experience, about } = req.body;
@@ -307,8 +339,16 @@ app.post('/api/register', async (req, res) => {
             [id, fullName, email, phone || '', hashed, role, specialization || '', experience || '', about || '', 0,
              '[]', '{}', '[]', 0, avatar, '[]', '[]', '[]', new Date().toISOString()]
         );
-        const token = generateToken(id);
-        res.json({ success: true, token, userId: id, role });
+        const accessToken = generateAccessToken(id);
+        const refreshToken = generateRefreshToken();
+        refreshTokens.set(refreshToken, id);
+        res.cookie('refreshToken', refreshToken, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'strict',
+            maxAge: 7 * 24 * 60 * 60 * 1000 // 7 дней
+        });
+        res.json({ success: true, accessToken, userId: id, role });
     } catch (err) {
         console.error('Register error:', err);
         res.json({ success: false, error: 'Ошибка сервера' });
@@ -323,12 +363,30 @@ app.post('/api/login', async (req, res) => {
         const user = result.rows[0];
         const valid = verifyPassword(password, user.password);
         if (!valid) return res.json({ success: false, error: 'Неверный email или пароль' });
-        const token = generateToken(user.id);
-        res.json({ success: true, token, userId: user.id, role: user.role, fullName: user.full_name });
+        const accessToken = generateAccessToken(user.id);
+        const refreshToken = generateRefreshToken();
+        refreshTokens.set(refreshToken, user.id);
+        res.cookie('refreshToken', refreshToken, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'strict',
+            maxAge: 7 * 24 * 60 * 60 * 1000
+        });
+        res.json({ success: true, accessToken, userId: user.id, role: user.role, fullName: user.full_name });
     } catch (err) {
         console.error('Login error:', err);
         res.json({ success: false, error: 'Ошибка сервера' });
     }
+});
+
+app.post('/api/refresh', (req, res) => {
+    const refreshToken = req.cookies?.refreshToken;
+    if (!refreshToken || !refreshTokens.has(refreshToken)) {
+        return res.status(401).json({ success: false, error: 'Refresh token invalid' });
+    }
+    const userId = refreshTokens.get(refreshToken);
+    const newAccessToken = generateAccessToken(userId);
+    res.json({ success: true, accessToken: newAccessToken });
 });
 
 app.get('/api/me', authenticateToken, async (req, res) => {
@@ -343,7 +401,7 @@ app.get('/api/me', authenticateToken, async (req, res) => {
     }
 });
 
-// ========== Пользователи ==========
+// ========== Профиль пользователя ==========
 app.get('/api/user/:id', async (req, res) => {
     try {
         const user = await getUser(req.params.id);
@@ -372,7 +430,7 @@ app.put('/api/user/profile', authenticateToken, upload.single('avatar'), async (
         } else if (avatar && avatar.startsWith('data:image')) {
             user.avatar = avatar;
         } else if (avatar && !avatar.startsWith('data:image')) {
-            user.avatar = avatar; // URL
+            user.avatar = avatar;
         }
         await updateUser(user);
         const { password, ...safeUser } = user;
@@ -574,19 +632,14 @@ app.post('/api/appointment/complete', authenticateToken, async (req, res) => {
 });
 
 // ========== Посты ==========
-app.post('/api/posts', authenticateToken, upload.fields([{ name: 'image', maxCount: 1 }, { name: 'video', maxCount: 1 }]), async (req, res) => {
+app.post('/api/posts', authenticateToken, async (req, res) => {
     try {
         const author = await getUser(req.userId);
         if (!author || author.role !== 'psychologist') return res.json({ success: false, error: 'Только психологи могут создавать посты' });
-        const { text } = req.body;
-        const imageFile = req.files?.image?.[0];
-        const videoFile = req.files?.video?.[0];
-        let imageBase64 = null, videoBase64 = null;
-        if (imageFile) imageBase64 = fileToBase64(imageFile);
-        if (videoFile) videoBase64 = fileToBase64(videoFile);
+        const { text, image, video } = req.body; // URL от Cloudinary или null
         const newPost = {
             id: nanoid(12), author_id: req.userId, text,
-            image: imageBase64, video: videoBase64,
+            image: image || null, video: video || null,
             created_at: new Date().toISOString()
         };
         await pool.query(`INSERT INTO posts (id,author_id,text,image,video,created_at) VALUES ($1,$2,$3,$4,$5,$6)`,
@@ -647,17 +700,15 @@ app.get('/api/posts', async (req, res) => {
     } catch (err) { console.error('Get posts error:', err); res.json({ success: false }); }
 });
 
-app.put('/api/posts/:id', authenticateToken, upload.single('image'), async (req, res) => {
+app.put('/api/posts/:id', authenticateToken, async (req, res) => {
     try {
         const postId = req.params.id;
         const { text } = req.body;
         const postRes = await pool.query('SELECT * FROM posts WHERE id=$1', [postId]);
         if (postRes.rows.length === 0) return res.json({ success: false, error: 'Пост не найден' });
         if (postRes.rows[0].author_id !== req.userId) return res.json({ success: false, error: 'Нет прав' });
-        let newImage = postRes.rows[0].image;
-        if (req.file) newImage = fileToBase64(req.file);
-        await pool.query('UPDATE posts SET text=$1,image=$2 WHERE id=$3', [text, newImage, postId]);
-        io.emit('post_updated', { id: postId, text, image: newImage });
+        await pool.query('UPDATE posts SET text=$1 WHERE id=$2', [text, postId]);
+        io.emit('post_updated', { id: postId, text });
         res.json({ success: true });
     } catch (err) { console.error('Update post error:', err); res.json({ success: false }); }
 });
@@ -714,7 +765,56 @@ app.post('/api/posts/:id/like', authenticateToken, async (req, res) => {
     } catch (err) { console.error('Like error:', err); res.json({ success: false }); }
 });
 
-// ========== Задачи ==========
+// ========== Загрузка медиа через Cloudinary ==========
+app.post('/api/upload-video', authenticateToken, uploadVideo.single('video'), (req, res) => {
+    if (!req.file) return res.status(400).json({ success: false, error: 'Видео не загружено' });
+    res.json({ success: true, videoUrl: req.file.path });
+});
+
+app.post('/api/upload-image', authenticateToken, uploadImage.single('image'), (req, res) => {
+    if (!req.file) return res.status(400).json({ success: false, error: 'Изображение не загружено' });
+    res.json({ success: true, imageUrl: req.file.path });
+});
+
+// ========== Остальные загрузки (через base64) ==========
+app.post('/api/upload-avatar', authenticateToken, upload.single('avatar'), (req, res) => {
+    if (!req.file) return res.json({ success: false, error: 'Файл не загружен' });
+    const avatarBase64 = fileToBase64(req.file);
+    res.json({ success: true, avatarUrl: avatarBase64 });
+});
+
+app.post('/api/upload', authenticateToken, upload.single('file'), (req, res) => {
+    if (!req.file) return res.json({ success: false, error: 'Файл не загружен' });
+    const fileBase64 = fileToBase64(req.file);
+    res.json({ success: true, fileUrl: fileBase64 });
+});
+
+app.post('/api/upload-chat-image', authenticateToken, upload.single('image'), (req, res) => {
+    if (!req.file) return res.json({ success: false, error: 'Файл не загружен' });
+    const imageBase64 = fileToBase64(req.file);
+    res.json({ success: true, imageUrl: imageBase64 });
+});
+
+app.post('/api/upload-voice', authenticateToken, upload.single('voice'), (req, res) => {
+    if (!req.file) return res.json({ success: false, error: 'Файл не загружен' });
+    if (req.file.size > 5 * 1024 * 1024) {
+        return res.json({ success: false, error: 'Размер голосового сообщения не должен превышать 5 МБ' });
+    }
+    const voiceBase64 = fileToBase64(req.file);
+    res.json({ success: true, voiceUrl: voiceBase64 });
+});
+
+app.post('/api/upload-recording', authenticateToken, upload.single('recording'), async (req, res) => {
+    if (!req.file) return res.json({ success: false, error: 'Файл не загружен' });
+    const recordingBase64 = fileToBase64(req.file);
+    const recording = { id: nanoid(12), url: recordingBase64, from_user: req.userId, to_user: req.body.to, room_id: req.body.roomId, created_at: new Date().toISOString() };
+    await pool.query(`INSERT INTO recordings (id,url,from_user,to_user,room_id,created_at) VALUES ($1,$2,$3,$4,$5,$6)`,
+        [recording.id, recording.url, recording.from_user, recording.to_user, recording.room_id, recording.created_at]);
+    res.json({ success: true, recordingUrl: recording.url });
+});
+
+// ========== Задачи, заметки, сертификаты, отзывы, подписки, поиск, психологи ==========
+// (большинство маршрутов аналогичны предыдущей версии, но с authenticateToken и проверкой прав)
 app.get('/api/tasks/:psychologistId', authenticateToken, async (req, res) => {
     if (req.params.psychologistId !== req.userId) return res.json({ success: false, error: 'Нет прав' });
     try {
@@ -750,7 +850,6 @@ app.delete('/api/tasks/:taskId', authenticateToken, async (req, res) => {
     } catch (err) { console.error('Delete task error:', err); res.json({ success: false }); }
 });
 
-// ========== Заметки ==========
 app.get('/api/notes/:psychologistId', authenticateToken, async (req, res) => {
     if (req.params.psychologistId !== req.userId) return res.json({ success: false, error: 'Нет прав' });
     try {
@@ -777,7 +876,6 @@ app.delete('/api/notes/:noteId', authenticateToken, async (req, res) => {
     } catch (err) { console.error('Delete note error:', err); res.json({ success: false }); }
 });
 
-// ========== Отзывы ==========
 app.post('/api/reviews', authenticateToken, async (req, res) => {
     try {
         const { psychologistId, rating, text } = req.body;
@@ -816,7 +914,6 @@ app.get('/api/reviews/:psychologistId', async (req, res) => {
     } catch (err) { console.error('Get reviews error:', err); res.json({ success: false }); }
 });
 
-// ========== Сертификаты ==========
 app.post('/api/certificates', authenticateToken, upload.single('certificate'), async (req, res) => {
     try {
         const user = await getUser(req.userId);
@@ -847,7 +944,6 @@ app.delete('/api/certificates/:certId', authenticateToken, async (req, res) => {
     } catch (err) { res.json({ success: false, error: err.message }); }
 });
 
-// ========== Подписки ==========
 app.get('/api/subscriptions/:userId', async (req, res) => {
     try {
         const followingRes = await pool.query('SELECT following_id FROM subscriptions WHERE follower_id=$1', [req.params.userId]);
@@ -869,6 +965,23 @@ app.post('/api/subscriptions', authenticateToken, async (req, res) => {
             res.json({ success: true, subscribed: true });
         }
     } catch (err) { console.error('Subscription error:', err); res.json({ success: false }); }
+});
+
+app.get('/api/psychologists', async (req, res) => {
+    try {
+        const result = await pool.query(`SELECT id,full_name,avatar,specialization,rating,price FROM users WHERE role='psychologist'`);
+        const psychologists = result.rows.map(p => ({ id: p.id, full_name: p.full_name, avatar: p.avatar, specialization: p.specialization, rating: p.rating, price: p.price }));
+        res.json({ success: true, psychologists });
+    } catch (err) { console.error('Get psychologists error:', err); res.json({ success: false }); }
+});
+
+app.get('/api/search/psychologists', async (req, res) => {
+    try {
+        const query = req.query.q?.toLowerCase() || '';
+        const result = await pool.query(`SELECT id,full_name,avatar,specialization,rating FROM users WHERE role='psychologist' AND LOWER(full_name) LIKE $1`, [`%${query}%`]);
+        const psychologists = result.rows.map(p => ({ id: p.id, full_name: p.full_name, avatar: p.avatar, specialization: p.specialization, rating: p.rating }));
+        res.json({ success: true, psychologists });
+    } catch (err) { console.error('Search error:', err); res.json({ success: false }); }
 });
 
 // ========== Чат ==========
@@ -930,61 +1043,6 @@ app.post('/api/messages/read', authenticateToken, async (req, res) => {
         console.error('Mark read error:', err);
         res.json({ success: false });
     } finally { client.release(); }
-});
-
-// ========== Психологи, поиск ==========
-app.get('/api/psychologists', async (req, res) => {
-    try {
-        const result = await pool.query(`SELECT id,full_name,avatar,specialization,rating,price FROM users WHERE role='psychologist'`);
-        const psychologists = result.rows.map(p => ({ id: p.id, full_name: p.full_name, avatar: p.avatar, specialization: p.specialization, rating: p.rating, price: p.price }));
-        res.json({ success: true, psychologists });
-    } catch (err) { console.error('Get psychologists error:', err); res.json({ success: false }); }
-});
-
-app.get('/api/search/psychologists', async (req, res) => {
-    try {
-        const query = req.query.q?.toLowerCase() || '';
-        const result = await pool.query(`SELECT id,full_name,avatar,specialization,rating FROM users WHERE role='psychologist' AND LOWER(full_name) LIKE $1`, [`%${query}%`]);
-        const psychologists = result.rows.map(p => ({ id: p.id, full_name: p.full_name, avatar: p.avatar, specialization: p.specialization, rating: p.rating }));
-        res.json({ success: true, psychologists });
-    } catch (err) { console.error('Search error:', err); res.json({ success: false }); }
-});
-
-// ========== Загрузка файлов (возвращаем base64) ==========
-app.post('/api/upload-avatar', authenticateToken, upload.single('avatar'), (req, res) => {
-    if (!req.file) return res.json({ success: false, error: 'Файл не загружен' });
-    const avatarBase64 = fileToBase64(req.file);
-    res.json({ success: true, avatarUrl: avatarBase64 });
-});
-
-app.post('/api/upload', authenticateToken, upload.single('file'), (req, res) => {
-    if (!req.file) return res.json({ success: false, error: 'Файл не загружен' });
-    const fileBase64 = fileToBase64(req.file);
-    res.json({ success: true, fileUrl: fileBase64 });
-});
-
-app.post('/api/upload-chat-image', authenticateToken, upload.single('image'), (req, res) => {
-    if (!req.file) return res.json({ success: false, error: 'Файл не загружен' });
-    const imageBase64 = fileToBase64(req.file);
-    res.json({ success: true, imageUrl: imageBase64 });
-});
-
-app.post('/api/upload-voice', authenticateToken, upload.single('voice'), (req, res) => {
-    if (!req.file) return res.json({ success: false, error: 'Файл не загружен' });
-    if (req.file.size > 5 * 1024 * 1024) {
-        return res.json({ success: false, error: 'Размер голосового сообщения не должен превышать 5 МБ' });
-    }
-    const voiceBase64 = fileToBase64(req.file);
-    res.json({ success: true, voiceUrl: voiceBase64 });
-});
-
-app.post('/api/upload-recording', authenticateToken, upload.single('recording'), async (req, res) => {
-    if (!req.file) return res.json({ success: false, error: 'Файл не загружен' });
-    const recordingBase64 = fileToBase64(req.file);
-    const recording = { id: nanoid(12), url: recordingBase64, from_user: req.userId, to_user: req.body.to, room_id: req.body.roomId, created_at: new Date().toISOString() };
-    await pool.query(`INSERT INTO recordings (id,url,from_user,to_user,room_id,created_at) VALUES ($1,$2,$3,$4,$5,$6)`,
-        [recording.id, recording.url, recording.from_user, recording.to_user, recording.room_id, recording.created_at]);
-    res.json({ success: true, recordingUrl: recording.url });
 });
 
 // ========== WebRTC / Socket.IO ==========
@@ -1078,7 +1136,11 @@ io.on('connection', (socket) => {
     });
 });
 
-// ========== Запуск ==========
+// ========== Cookie парсер (express не обрабатывает куки по умолчанию, добавим middleware) ==========
+const cookieParser = require('cookie-parser');
+app.use(cookieParser());
+
+// ========== Запуск сервера ==========
 app.get('/health', (req, res) => res.status(200).send('OK'));
 const PORT = process.env.PORT || 3000;
 
