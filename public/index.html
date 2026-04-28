@@ -2245,8 +2245,13 @@
 
         function startChatWith(userId, name) {
             if (!currentUser) { showToast('Войдите в аккаунт', true); return; }
-            switchTab('chats');
-            setTimeout(() => openChat(userId, name), 400);
+            // Устанавливаем текущую вкладку в 'chats' без перерисовки содержимого
+            currentTab = 'chats';
+            document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+            const chatNav = document.querySelector('.nav-item[data-tab="chats"]');
+            if (chatNav) chatNav.classList.add('active');
+            // Сразу открываем чат – он сам перерисует mainContent
+            openChat(userId, name);
         }
 
         // ========== УВЕДОМЛЕНИЯ ==========
