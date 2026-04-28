@@ -46,7 +46,6 @@ cloudinary.config({
     api_secret: process.env.CLOUDINARY_API_SECRET
 });
 
-// Настройки хранилищ для Multer (Cloudinary для видео и изображений)
 const videoStorage = new CloudinaryStorage({
     cloudinary: cloudinary,
     params: {
@@ -65,13 +64,12 @@ const imageStorage = new CloudinaryStorage({
     }
 });
 
-// Для остальных файлов (сертификаты, аватарки, вложения заметок) используем memory storage -> base64 в БД
 const memoryStorage = multer.memoryStorage();
 const upload = multer({ storage: memoryStorage, limits: { fileSize: 100 * 1024 * 1024 } });
 const uploadVideo = multer({ storage: videoStorage, limits: { fileSize: 100 * 1024 * 1024 } });
 const uploadImage = multer({ storage: imageStorage, limits: { fileSize: 20 * 1024 * 1024 } });
 
-// ========== Хеширование паролей (crypto) ==========
+// ========== Хеширование паролей ==========
 function hashPassword(password) {
     const salt = crypto.randomBytes(16).toString('hex');
     const hash = crypto.pbkdf2Sync(password, salt, 100000, 64, 'sha512').toString('hex');
@@ -84,16 +82,11 @@ function verifyPassword(password, stored) {
     return verifyHash === hash;
 }
 
-// ========== JWT (Access + Refresh) ==========
+// ========== JWT (долгий токен 90 дней) ==========
 const JWT_SECRET = process.env.JWT_SECRET || 'therapy_call_secret_change_me';
 function generateAccessToken(userId) {
-    return jwt.sign({ userId }, JWT_SECRET, { expiresIn: '15m' }); // короткий срок
+    return jwt.sign({ userId }, JWT_SECRET, { expiresIn: '90d' });
 }
-function generateRefreshToken() {
-    return nanoid(64);
-}
-// Хранилище refresh токенов (в реальном проекте – БД)
-const refreshTokens = new Map(); // key: refreshToken, value: userId
 
 function verifyAccessToken(token) {
     try {
@@ -113,7 +106,7 @@ function authenticateToken(req, res, next) {
     next();
 }
 
-// ========== Инициализация таблиц (без изменений, как в предыдущей версии) ==========
+// ========== Инициализация таблиц ==========
 async function initDatabase() {
     const queries = [
         `CREATE TABLE IF NOT EXISTS users (
@@ -320,7 +313,7 @@ function fileToBase64(file) {
     return `data:${mime};base64,${b64}`;
 }
 
-// ========== Маршруты регистрации / логина / рефреша / me ==========
+// ========== Маршруты регистрации / логина ==========
 app.post('/api/register', async (req, res) => {
     try {
         const { fullName, email, phone, password, role, specialization, experience, about } = req.body;
@@ -339,16 +332,8 @@ app.post('/api/register', async (req, res) => {
             [id, fullName, email, phone || '', hashed, role, specialization || '', experience || '', about || '', 0,
              '[]', '{}', '[]', 0, avatar, '[]', '[]', '[]', new Date().toISOString()]
         );
-        const accessToken = generateAccessToken(id);
-        const refreshToken = generateRefreshToken();
-        refreshTokens.set(refreshToken, id);
-        res.cookie('refreshToken', refreshToken, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: 'strict',
-            maxAge: 7 * 24 * 60 * 60 * 1000 // 7 дней
-        });
-        res.json({ success: true, accessToken, userId: id, role });
+        const token = generateAccessToken(id);
+        res.json({ success: true, accessToken: token, userId: id, role });
     } catch (err) {
         console.error('Register error:', err);
         res.json({ success: false, error: 'Ошибка сервера' });
@@ -363,30 +348,12 @@ app.post('/api/login', async (req, res) => {
         const user = result.rows[0];
         const valid = verifyPassword(password, user.password);
         if (!valid) return res.json({ success: false, error: 'Неверный email или пароль' });
-        const accessToken = generateAccessToken(user.id);
-        const refreshToken = generateRefreshToken();
-        refreshTokens.set(refreshToken, user.id);
-        res.cookie('refreshToken', refreshToken, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: 'strict',
-            maxAge: 7 * 24 * 60 * 60 * 1000
-        });
-        res.json({ success: true, accessToken, userId: user.id, role: user.role, fullName: user.full_name });
+        const token = generateAccessToken(user.id);
+        res.json({ success: true, accessToken: token, userId: user.id, role: user.role, fullName: user.full_name });
     } catch (err) {
         console.error('Login error:', err);
         res.json({ success: false, error: 'Ошибка сервера' });
     }
-});
-
-app.post('/api/refresh', (req, res) => {
-    const refreshToken = req.cookies?.refreshToken;
-    if (!refreshToken || !refreshTokens.has(refreshToken)) {
-        return res.status(401).json({ success: false, error: 'Refresh token invalid' });
-    }
-    const userId = refreshTokens.get(refreshToken);
-    const newAccessToken = generateAccessToken(userId);
-    res.json({ success: true, accessToken: newAccessToken });
 });
 
 app.get('/api/me', authenticateToken, async (req, res) => {
@@ -401,7 +368,7 @@ app.get('/api/me', authenticateToken, async (req, res) => {
     }
 });
 
-// ========== Профиль пользователя ==========
+// ========== Пользователи ==========
 app.get('/api/user/:id', async (req, res) => {
     try {
         const user = await getUser(req.params.id);
@@ -429,8 +396,6 @@ app.put('/api/user/profile', authenticateToken, upload.single('avatar'), async (
             user.avatar = fileToBase64(req.file);
         } else if (avatar && avatar.startsWith('data:image')) {
             user.avatar = avatar;
-        } else if (avatar && !avatar.startsWith('data:image')) {
-            user.avatar = avatar;
         }
         await updateUser(user);
         const { password, ...safeUser } = user;
@@ -441,7 +406,7 @@ app.put('/api/user/profile', authenticateToken, upload.single('avatar'), async (
     }
 });
 
-// ========== Расписание (слоты) ==========
+// ========== Расписание ==========
 app.get('/api/schedule/:psychologistId', async (req, res) => {
     try {
         const slots = await pool.query(
@@ -636,7 +601,7 @@ app.post('/api/posts', authenticateToken, async (req, res) => {
     try {
         const author = await getUser(req.userId);
         if (!author || author.role !== 'psychologist') return res.json({ success: false, error: 'Только психологи могут создавать посты' });
-        const { text, image, video } = req.body; // URL от Cloudinary или null
+        const { text, image, video } = req.body;
         const newPost = {
             id: nanoid(12), author_id: req.userId, text,
             image: image || null, video: video || null,
@@ -776,23 +741,20 @@ app.post('/api/upload-image', authenticateToken, uploadImage.single('image'), (r
     res.json({ success: true, imageUrl: req.file.path });
 });
 
-// ========== Остальные загрузки (через base64) ==========
+// ========== Остальные загрузки (base64) ==========
 app.post('/api/upload-avatar', authenticateToken, upload.single('avatar'), (req, res) => {
     if (!req.file) return res.json({ success: false, error: 'Файл не загружен' });
-    const avatarBase64 = fileToBase64(req.file);
-    res.json({ success: true, avatarUrl: avatarBase64 });
+    res.json({ success: true, avatarUrl: fileToBase64(req.file) });
 });
 
 app.post('/api/upload', authenticateToken, upload.single('file'), (req, res) => {
     if (!req.file) return res.json({ success: false, error: 'Файл не загружен' });
-    const fileBase64 = fileToBase64(req.file);
-    res.json({ success: true, fileUrl: fileBase64 });
+    res.json({ success: true, fileUrl: fileToBase64(req.file) });
 });
 
 app.post('/api/upload-chat-image', authenticateToken, upload.single('image'), (req, res) => {
     if (!req.file) return res.json({ success: false, error: 'Файл не загружен' });
-    const imageBase64 = fileToBase64(req.file);
-    res.json({ success: true, imageUrl: imageBase64 });
+    res.json({ success: true, imageUrl: fileToBase64(req.file) });
 });
 
 app.post('/api/upload-voice', authenticateToken, upload.single('voice'), (req, res) => {
@@ -800,21 +762,18 @@ app.post('/api/upload-voice', authenticateToken, upload.single('voice'), (req, r
     if (req.file.size > 5 * 1024 * 1024) {
         return res.json({ success: false, error: 'Размер голосового сообщения не должен превышать 5 МБ' });
     }
-    const voiceBase64 = fileToBase64(req.file);
-    res.json({ success: true, voiceUrl: voiceBase64 });
+    res.json({ success: true, voiceUrl: fileToBase64(req.file) });
 });
 
 app.post('/api/upload-recording', authenticateToken, upload.single('recording'), async (req, res) => {
     if (!req.file) return res.json({ success: false, error: 'Файл не загружен' });
-    const recordingBase64 = fileToBase64(req.file);
-    const recording = { id: nanoid(12), url: recordingBase64, from_user: req.userId, to_user: req.body.to, room_id: req.body.roomId, created_at: new Date().toISOString() };
+    const recording = { id: nanoid(12), url: fileToBase64(req.file), from_user: req.userId, to_user: req.body.to, room_id: req.body.roomId, created_at: new Date().toISOString() };
     await pool.query(`INSERT INTO recordings (id,url,from_user,to_user,room_id,created_at) VALUES ($1,$2,$3,$4,$5,$6)`,
         [recording.id, recording.url, recording.from_user, recording.to_user, recording.room_id, recording.created_at]);
     res.json({ success: true, recordingUrl: recording.url });
 });
 
-// ========== Задачи, заметки, сертификаты, отзывы, подписки, поиск, психологи ==========
-// (большинство маршрутов аналогичны предыдущей версии, но с authenticateToken и проверкой прав)
+// ========== Задачи ==========
 app.get('/api/tasks/:psychologistId', authenticateToken, async (req, res) => {
     if (req.params.psychologistId !== req.userId) return res.json({ success: false, error: 'Нет прав' });
     try {
@@ -850,6 +809,7 @@ app.delete('/api/tasks/:taskId', authenticateToken, async (req, res) => {
     } catch (err) { console.error('Delete task error:', err); res.json({ success: false }); }
 });
 
+// ========== Заметки ==========
 app.get('/api/notes/:psychologistId', authenticateToken, async (req, res) => {
     if (req.params.psychologistId !== req.userId) return res.json({ success: false, error: 'Нет прав' });
     try {
@@ -876,6 +836,7 @@ app.delete('/api/notes/:noteId', authenticateToken, async (req, res) => {
     } catch (err) { console.error('Delete note error:', err); res.json({ success: false }); }
 });
 
+// ========== Отзывы ==========
 app.post('/api/reviews', authenticateToken, async (req, res) => {
     try {
         const { psychologistId, rating, text } = req.body;
@@ -914,6 +875,7 @@ app.get('/api/reviews/:psychologistId', async (req, res) => {
     } catch (err) { console.error('Get reviews error:', err); res.json({ success: false }); }
 });
 
+// ========== Сертификаты ==========
 app.post('/api/certificates', authenticateToken, upload.single('certificate'), async (req, res) => {
     try {
         const user = await getUser(req.userId);
@@ -944,6 +906,7 @@ app.delete('/api/certificates/:certId', authenticateToken, async (req, res) => {
     } catch (err) { res.json({ success: false, error: err.message }); }
 });
 
+// ========== Подписки ==========
 app.get('/api/subscriptions/:userId', async (req, res) => {
     try {
         const followingRes = await pool.query('SELECT following_id FROM subscriptions WHERE follower_id=$1', [req.params.userId]);
@@ -967,6 +930,7 @@ app.post('/api/subscriptions', authenticateToken, async (req, res) => {
     } catch (err) { console.error('Subscription error:', err); res.json({ success: false }); }
 });
 
+// ========== Психологи, поиск ==========
 app.get('/api/psychologists', async (req, res) => {
     try {
         const result = await pool.query(`SELECT id,full_name,avatar,specialization,rating,price FROM users WHERE role='psychologist'`);
@@ -1135,10 +1099,6 @@ io.on('connection', (socket) => {
         }
     });
 });
-
-// ========== Cookie парсер (express не обрабатывает куки по умолчанию, добавим middleware) ==========
-const cookieParser = require('cookie-parser');
-app.use(cookieParser());
 
 // ========== Запуск сервера ==========
 app.get('/health', (req, res) => res.status(200).send('OK'));
