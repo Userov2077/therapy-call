@@ -25,7 +25,7 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/uploads', express.static(path.join(__dirname, 'public/uploads')));
 
-// ========== PostgreSQL ==========
+// ========== PostgreSQL подключение ==========
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
     ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
@@ -40,7 +40,7 @@ pool.connect((err) => {
     else console.log('✅ PostgreSQL подключена');
 });
 
-// ========== Cloudinary ==========
+// ========== Cloudinary настройка ==========
 cloudinary.config({
     cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
     api_key: process.env.CLOUDINARY_API_KEY,
@@ -55,7 +55,6 @@ const videoStorage = new CloudinaryStorage({
         allowed_formats: ['mp4', 'mov', 'avi', 'webm', 'mkv']
     }
 });
-const uploadVideo = multer({ storage: videoStorage, limits: { fileSize: 100 * 1024 * 1024 } });
 
 const imageStorage = new CloudinaryStorage({
     cloudinary: cloudinary,
@@ -65,26 +64,28 @@ const imageStorage = new CloudinaryStorage({
         allowed_formats: ['jpg', 'jpeg', 'png', 'gif', 'webp']
     }
 });
-const uploadImage = multer({ storage: imageStorage, limits: { fileSize: 20 * 1024 * 1024 } });
 
-// Для остальных файлов (аватарки, сертификаты, вложения) используем обычный диск
+// Для остальных файлов (аватарки, сертификаты, вложения) используем diskStorage или memory -> base64
 const diskStorage = multer.diskStorage({
     destination: (req, file, cb) => {
         if (file.fieldname === 'avatar') cb(null, 'public/uploads/images/');
         else if (file.fieldname === 'certificate') cb(null, 'public/uploads/certificates/');
         else if (file.fieldname === 'file') cb(null, 'public/uploads/files/');
+        else if (file.fieldname === 'voice') cb(null, 'public/uploads/audio/');
+        else if (file.fieldname === 'recording') cb(null, 'public/uploads/recordings/');
         else cb(null, 'public/uploads/');
     },
     filename: (req, file, cb) => {
-        cb(null, nanoid(12) + path.extname(file.originalname));
+        const unique = nanoid(12);
+        cb(null, unique + path.extname(file.originalname));
     }
 });
-const uploadDisk = multer({ storage: diskStorage, limits: { fileSize: 20 * 1024 * 1024 } });
 
-// Общий upload для multipart (кроме видео и изображений, которые идут в Cloudinary)
-const upload = multer({ storage: diskStorage, limits: { fileSize: 20 * 1024 * 1024 } });
+const upload = multer({ storage: diskStorage, limits: { fileSize: 100 * 1024 * 1024 } });
+const uploadVideo = multer({ storage: videoStorage, limits: { fileSize: 100 * 1024 * 1024 } });
+const uploadImage = multer({ storage: imageStorage, limits: { fileSize: 20 * 1024 * 1024 } });
 
-// ========== Папки для загрузок (локальные) ==========
+// ========== Создание папок ==========
 const uploadDirs = [
     'public/uploads',
     'public/uploads/images',
@@ -98,7 +99,7 @@ uploadDirs.forEach(dir => {
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 });
 
-// ========== Инициализация таблиц (без JWT, всё как в первом коде) ==========
+// ========== Инициализация таблиц ==========
 async function initDatabase() {
     const queries = [
         `CREATE TABLE IF NOT EXISTS users (
@@ -233,12 +234,14 @@ async function initDatabase() {
         `CREATE INDEX IF NOT EXISTS idx_messages_from_user ON messages(from_user)`,
         `CREATE INDEX IF NOT EXISTS idx_messages_to_user ON messages(to_user)`,
         `CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at)`,
+        `CREATE INDEX IF NOT EXISTS idx_messages_users ON messages(from_user, to_user, created_at)`,
         `CREATE INDEX IF NOT EXISTS idx_likes_post_id ON likes(post_id)`,
         `CREATE INDEX IF NOT EXISTS idx_comments_post_id ON comments(post_id)`,
         `CREATE INDEX IF NOT EXISTS idx_appointments_psychologist ON appointments(psychologist_id)`,
         `CREATE INDEX IF NOT EXISTS idx_appointments_client ON appointments(client_id)`,
         `CREATE INDEX IF NOT EXISTS idx_users_role ON users(role)`,
-        `CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)`
+        `CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)`,
+        `CREATE INDEX IF NOT EXISTS idx_time_slots_psychologist ON time_slots(psychologist_id)`
     ];
     for (const q of queries) {
         try { await pool.query(q); } catch (err) { console.error('Ошибка создания таблицы:', err.message); }
@@ -258,9 +261,14 @@ async function getUser(id) {
         const result = await pool.query('SELECT * FROM users WHERE id = $1', [id]);
         if (result.rows.length === 0) return null;
         const r = result.rows[0];
-        const unreadsRes = await pool.query('SELECT from_user_id, count FROM user_unreads WHERE user_id = $1', [id]);
+        const unreadsRes = await pool.query(
+            'SELECT from_user_id, count FROM user_unreads WHERE user_id = $1',
+            [id]
+        );
         const unreadCounts = {};
-        unreadsRes.rows.forEach(row => { unreadCounts[row.from_user_id] = row.count; });
+        unreadsRes.rows.forEach(row => {
+            unreadCounts[row.from_user_id] = row.count;
+        });
         return {
             id: r.id,
             fullName: r.full_name,
@@ -320,7 +328,7 @@ async function updateUser(user) {
     );
 }
 
-// ========== Регистрация / логин (без JWT, просто userId) ==========
+// ========== РЕГИСТРАЦИЯ / ЛОГИН ==========
 app.post('/api/register', async (req, res) => {
     try {
         const { fullName, email, phone, password, role, specialization, experience, about } = req.body;
@@ -341,7 +349,7 @@ app.post('/api/register', async (req, res) => {
                 '[]', '[]', '[]', new Date().toISOString()
             ]
         );
-        res.json({ success: true, userId: id });
+        res.json({ success: true, userId: id, role });
     } catch (err) {
         console.error('Register error:', err);
         res.json({ success: false, error: 'Ошибка сервера' });
@@ -352,7 +360,7 @@ app.post('/api/login', async (req, res) => {
     try {
         const { email, password } = req.body;
         const result = await pool.query(
-            'SELECT id, role, full_name FROM users WHERE email=$1 AND password=$2',
+            'SELECT id,role,full_name FROM users WHERE email=$1 AND password=$2',
             [email, password]
         );
         if (result.rows.length > 0) {
@@ -367,7 +375,7 @@ app.post('/api/login', async (req, res) => {
     }
 });
 
-// ========== Получение данных пользователя (без токена, просто по id) ==========
+// ========== ПОЛЬЗОВАТЕЛИ ==========
 app.get('/api/user/:id', async (req, res) => {
     try {
         const user = await getUser(req.params.id);
@@ -380,7 +388,7 @@ app.get('/api/user/:id', async (req, res) => {
     }
 });
 
-app.put('/api/user/profile', uploadDisk.single('avatar'), async (req, res) => {
+app.put('/api/user/profile', upload.single('avatar'), async (req, res) => {
     try {
         const { userId, fullName, phone, about, specialization, experience, price, avatar } = req.body;
         const user = await getUser(userId);
@@ -402,14 +410,23 @@ app.put('/api/user/profile', uploadDisk.single('avatar'), async (req, res) => {
     }
 });
 
-// ========== Расписание ==========
+// ========== РАСПИСАНИЕ (слоты) ==========
 app.get('/api/schedule/:psychologistId', async (req, res) => {
     try {
         const psychologist = await getUser(req.params.psychologistId);
         if (!psychologist || psychologist.role !== 'psychologist') {
             return res.json({ success: false, error: 'Психолог не найден' });
         }
-        res.json({ success: true, schedule: psychologist.schedule || {} });
+        const slots = await pool.query(
+            `SELECT date, time FROM time_slots WHERE psychologist_id=$1 AND status='free' ORDER BY date, time`,
+            [req.params.psychologistId]
+        );
+        const schedule = {};
+        slots.rows.forEach(s => {
+            if (!schedule[s.date]) schedule[s.date] = [];
+            schedule[s.date].push(s.time);
+        });
+        res.json({ success: true, schedule });
     } catch (err) {
         console.error('Get schedule error:', err);
         res.json({ success: false, error: 'Ошибка сервера' });
@@ -421,26 +438,25 @@ app.put('/api/schedule', async (req, res) => {
         const { userId, schedule } = req.body;
         const user = await getUser(userId);
         if (!user || user.role !== 'psychologist') return res.json({ success: false, error: 'Нет прав' });
-        user.schedule = schedule;
-        await updateUser(user);
-        // синхронизируем time_slots
-        await pool.query(`DELETE FROM time_slots WHERE psychologist_id=$1 AND status='free'`, [userId]);
+        await pool.query(`DELETE FROM time_slots WHERE psychologist_id=$1 AND status='free'`, [user.id]);
         for (const [date, times] of Object.entries(schedule)) {
             for (const time of times) {
                 await pool.query(
                     `INSERT INTO time_slots (id, psychologist_id, date, time, status) VALUES ($1,$2,$3,$4,'free')`,
-                    [nanoid(12), userId, date, time]
+                    [nanoid(12), user.id, date, time]
                 );
             }
         }
-        res.json({ success: true, schedule: user.schedule });
+        user.schedule = schedule;
+        await updateUser(user);
+        res.json({ success: true, schedule });
     } catch (err) {
         console.error('Schedule update error:', err);
         res.json({ success: false, error: 'Ошибка сервера' });
     }
 });
 
-// ========== Запись на приём ==========
+// ========== ЗАПИСЬ НА ПРИЁМ ==========
 app.post('/api/appointment', async (req, res) => {
     const client = await pool.connect();
     try {
@@ -452,8 +468,6 @@ app.post('/api/appointment', async (req, res) => {
             await client.query('ROLLBACK');
             return res.json({ success: false, error: 'Пользователь не найден' });
         }
-
-        // Проверяем слот в time_slots
         const slotRes = await client.query(
             `SELECT id FROM time_slots WHERE psychologist_id=$1 AND date=$2 AND time=$3 AND status='free' FOR UPDATE`,
             [psychologistId, date, time]
@@ -463,51 +477,35 @@ app.post('/api/appointment', async (req, res) => {
             return res.json({ success: false, error: 'Это время уже занято или не входит в расписание' });
         }
         const slotId = slotRes.rows[0].id;
-
         const roomId = nanoid(8).toUpperCase();
         const appointmentId = nanoid(12);
-        const createdAt = new Date().toISOString();
-
+        await client.query(`UPDATE time_slots SET status='pending', appointment_id=$1 WHERE id=$2`, [appointmentId, slotId]);
         await client.query(
             `INSERT INTO appointments (id,psychologist_id,client_id,psychologist_name,client_name,date,time,room_id,status,created_at)
              VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-            [appointmentId, psychologistId, clientId, psychologist.fullName, clientUser.fullName, date, time, roomId, 'pending', createdAt]
+            [appointmentId, psychologistId, clientId, psychologist.fullName, clientUser.fullName, date, time, roomId, 'pending', new Date().toISOString()]
         );
-
-        // Обновляем JSON-поля
         if (!clientUser.appointments) clientUser.appointments = [];
         clientUser.appointments.push({
-            id: appointmentId,
-            psychologistId,
-            psychologistName: psychologist.fullName,
-            clientId,
-            clientName: clientUser.fullName,
-            date, time, roomId, status: 'pending', createdAt
+            id: appointmentId, psychologistId, psychologistName: psychologist.fullName,
+            clientId, clientName: clientUser.fullName, date, time, roomId, status: 'pending'
         });
-
         if (!psychologist.clients) psychologist.clients = [];
         psychologist.clients.push({
             clientId, clientName: clientUser.fullName,
             appointmentId, date, time, status: 'pending', roomId
         });
-
         const notification = {
-            id: nanoid(12),
-            type: 'new_appointment',
+            id: nanoid(12), type: 'new_appointment',
             title: 'Новая заявка',
             message: `${clientUser.fullName} хочет записаться на ${date} в ${time}`,
-            appointmentId, roomId, read: false, createdAt: new Date().toISOString()
+            appointmentId, roomId, createdAt: new Date().toISOString()
         };
         if (!psychologist.notifications) psychologist.notifications = [];
         psychologist.notifications.unshift(notification);
-
-        // Обновляем слот на pending
-        await client.query(`UPDATE time_slots SET status='pending', appointment_id=$1 WHERE id=$2`, [appointmentId, slotId]);
-
         await updateUser(psychologist);
         await updateUser(clientUser);
         await client.query('COMMIT');
-
         io.to(psychologistId).emit('notification', notification);
         io.to(psychologistId).emit('appointment_created', { id: appointmentId, psychologist_id: psychologistId, client_id: clientId, date, time, room_id: roomId, status: 'pending' });
         res.json({ success: true, appointment: { id: appointmentId, roomId, date, time, status: 'pending' } });
@@ -524,10 +522,8 @@ app.post('/api/appointment/confirm', async (req, res) => {
     try {
         const { appointmentId, psychologistId, clientId } = req.body;
         await pool.query('UPDATE appointments SET status=$1 WHERE id=$2', ['confirmed', appointmentId]);
-
         const psychologist = await getUser(psychologistId);
         const client = await getUser(clientId);
-
         if (psychologist) {
             const c = (psychologist.clients || []).find(c => c.appointmentId === appointmentId);
             if (c) c.status = 'confirmed';
@@ -539,23 +535,19 @@ app.post('/api/appointment/confirm', async (req, res) => {
             if (a) a.status = 'confirmed';
             await updateUser(client);
         }
-
         const aptRes = await pool.query('SELECT * FROM appointments WHERE id=$1', [appointmentId]);
         const apt = aptRes.rows[0];
-
         const clientNotif = {
-            id: nanoid(12),
-            type: 'appointment_confirmed',
+            id: nanoid(12), type: 'appointment_confirmed',
             title: 'Запись подтверждена!',
             message: `${psychologist.fullName} подтвердил запись на ${apt.date} в ${apt.time}`,
-            appointmentId, roomId: apt.room_id, read: false, createdAt: new Date().toISOString()
+            appointmentId, roomId: apt.room_id, createdAt: new Date().toISOString()
         };
         if (client) {
             if (!client.notifications) client.notifications = [];
             client.notifications.unshift(clientNotif);
             await updateUser(client);
         }
-
         io.to(clientId).emit('notification', clientNotif);
         io.to(clientId).emit('appointment_updated', apt);
         io.to(psychologistId).emit('appointment_updated', apt);
@@ -573,7 +565,6 @@ app.post('/api/appointment/complete', async (req, res) => {
         const aptRes = await pool.query('SELECT * FROM appointments WHERE id=$1', [appointmentId]);
         const apt = aptRes.rows[0];
         if (!apt) return res.json({ success: false });
-
         const psychologist = await getUser(apt.psychologist_id);
         const client = await getUser(apt.client_id);
         if (psychologist) {
@@ -595,36 +586,73 @@ app.post('/api/appointment/complete', async (req, res) => {
     }
 });
 
-// ========== Посты (с Cloudinary для видео и изображений) ==========
-app.post('/api/posts', uploadDisk.fields([{ name: 'image', maxCount: 1 }, { name: 'video', maxCount: 1 }]), async (req, res) => {
+// ========== ЗАГРУЗКА ФАЙЛОВ (Cloudinary для видео и изображений) ==========
+app.post('/api/upload-avatar', upload.single('avatar'), (req, res) => {
+    if (!req.file) return res.json({ success: false, error: 'Файл не загружен' });
+    res.json({ success: true, avatarUrl: `/uploads/images/${req.file.filename}` });
+});
+
+app.post('/api/upload', upload.single('file'), (req, res) => {
+    if (!req.file) return res.json({ success: false, error: 'Файл не загружен' });
+    res.json({ success: true, fileUrl: `/uploads/files/${req.file.filename}` });
+});
+
+app.post('/api/upload-chat-image', upload.single('image'), (req, res) => {
+    if (!req.file) return res.json({ success: false, error: 'Файл не загружен' });
+    res.json({ success: true, imageUrl: `/uploads/images/${req.file.filename}` });
+});
+
+app.post('/api/upload-voice', upload.single('voice'), (req, res) => {
+    if (!req.file) return res.json({ success: false, error: 'Файл не загружен' });
+    if (req.file.size > 5 * 1024 * 1024) {
+        fs.unlinkSync(req.file.path);
+        return res.json({ success: false, error: 'Размер голосового сообщения не должен превышать 5 МБ' });
+    }
+    res.json({ success: true, voiceUrl: `/uploads/audio/${req.file.filename}` });
+});
+
+app.post('/api/upload-recording', upload.single('recording'), async (req, res) => {
+    if (!req.file) return res.json({ success: false, error: 'Файл не загружен' });
+    const recording = {
+        id: nanoid(12),
+        url: `/uploads/recordings/${req.file.filename}`,
+        from_user: req.body.from,
+        to_user: req.body.to,
+        room_id: req.body.roomId,
+        created_at: new Date().toISOString()
+    };
+    await pool.query(
+        `INSERT INTO recordings (id,url,from_user,to_user,room_id,created_at) VALUES ($1,$2,$3,$4,$5,$6)`,
+        [recording.id, recording.url, recording.from_user, recording.to_user, recording.room_id, recording.created_at]
+    );
+    res.json({ success: true, recordingUrl: recording.url });
+});
+
+// Cloudinary загрузка видео и изображений для постов
+app.post('/api/upload-video', uploadVideo.single('video'), (req, res) => {
+    if (!req.file) return res.status(400).json({ success: false, error: 'Видео не загружено' });
+    res.json({ success: true, videoUrl: req.file.path });
+});
+
+app.post('/api/upload-image', uploadImage.single('image'), (req, res) => {
+    if (!req.file) return res.status(400).json({ success: false, error: 'Изображение не загружено' });
+    res.json({ success: true, imageUrl: req.file.path });
+});
+
+// ========== ПОСТЫ ==========
+app.post('/api/posts', async (req, res) => {
     try {
-        const { authorId, text } = req.body;
+        const { authorId, text, image, video } = req.body;
         const author = await getUser(authorId);
         if (!author || author.role !== 'psychologist') {
             return res.json({ success: false, error: 'Только психологи могут создавать посты' });
         }
-        let imageUrl = null, videoUrl = null;
-        const imageFile = req.files?.image?.[0];
-        const videoFile = req.files?.video?.[0];
-
-        if (imageFile) {
-            // Загружаем в Cloudinary
-            const result = await cloudinary.uploader.upload(imageFile.path, { folder: 'therapy_call_images' });
-            imageUrl = result.secure_url;
-            fs.unlinkSync(imageFile.path); // удаляем локальный временный файл
-        }
-        if (videoFile) {
-            const result = await cloudinary.uploader.upload(videoFile.path, { folder: 'therapy_call_videos', resource_type: 'video' });
-            videoUrl = result.secure_url;
-            fs.unlinkSync(videoFile.path);
-        }
-
         const newPost = {
             id: nanoid(12),
             author_id: authorId,
             text,
-            image: imageUrl,
-            video: videoUrl,
+            image: image || null,
+            video: video || null,
             created_at: new Date().toISOString()
         };
         await pool.query(
@@ -715,11 +743,7 @@ app.put('/api/posts/:id', upload.single('image'), async (req, res) => {
         if (postRes.rows.length === 0) return res.json({ success: false, error: 'Пост не найден' });
         if (postRes.rows[0].author_id !== authorId) return res.json({ success: false, error: 'Нет прав' });
         let newImage = postRes.rows[0].image;
-        if (req.file) {
-            const result = await cloudinary.uploader.upload(req.file.path, { folder: 'therapy_call_images' });
-            newImage = result.secure_url;
-            fs.unlinkSync(req.file.path);
-        }
+        if (req.file) newImage = `/uploads/images/${req.file.filename}`;
         await pool.query('UPDATE posts SET text=$1,image=$2 WHERE id=$3', [text, newImage, postId]);
         io.emit('post_updated', { id: postId, text, image: newImage });
         res.json({ success: true });
@@ -747,11 +771,11 @@ app.delete('/api/posts/:id', async (req, res) => {
     }
 });
 
-// ========== Комментарии ==========
+// ========== КОММЕНТАРИИ ==========
 app.post('/api/posts/:id/comment', async (req, res) => {
     try {
-        const { userId, text } = req.body;
         const postId = req.params.id;
+        const { userId, text } = req.body;
         const newComment = {
             id: nanoid(12),
             post_id: postId,
@@ -778,11 +802,11 @@ app.post('/api/posts/:id/comment', async (req, res) => {
     }
 });
 
-// ========== Лайки ==========
+// ========== ЛАЙКИ ==========
 app.post('/api/posts/:id/like', async (req, res) => {
     try {
-        const { userId } = req.body;
         const postId = req.params.id;
+        const { userId } = req.body;
         const existing = await pool.query('SELECT 1 FROM likes WHERE post_id=$1 AND user_id=$2', [postId, userId]);
         if (existing.rows.length > 0) {
             await pool.query('DELETE FROM likes WHERE post_id=$1 AND user_id=$2', [postId, userId]);
@@ -803,7 +827,7 @@ app.post('/api/posts/:id/like', async (req, res) => {
     }
 });
 
-// ========== Задачи ==========
+// ========== ЗАДАЧИ ==========
 app.get('/api/tasks/:psychologistId', async (req, res) => {
     try {
         const result = await pool.query(
@@ -871,7 +895,7 @@ app.delete('/api/tasks/:taskId', async (req, res) => {
     }
 });
 
-// ========== Заметки ==========
+// ========== ЗАМЕТКИ ==========
 app.get('/api/notes/:psychologistId', async (req, res) => {
     try {
         const result = await pool.query(
@@ -926,21 +950,19 @@ app.delete('/api/notes/:noteId', async (req, res) => {
     }
 });
 
-// ========== Отзывы ==========
+// ========== ОТЗЫВЫ ==========
 app.post('/api/reviews', async (req, res) => {
     try {
         const { psychologistId, clientId, rating, text } = req.body;
         const client = await getUser(clientId);
         const psychologist = await getUser(psychologistId);
         if (!client || !psychologist) return res.json({ success: false, error: 'Пользователь не найден' });
-
         const hasAppointment = (client.appointments || []).some(
             a => a.psychologistId === psychologistId && a.status === 'confirmed'
         );
         if (!hasAppointment) {
             return res.json({ success: false, error: 'Вы можете оставить отзыв только после подтверждённого звонка' });
         }
-
         const existing = await pool.query(
             'SELECT 1 FROM reviews WHERE psychologist_id=$1 AND client_id=$2',
             [psychologistId, clientId]
@@ -948,7 +970,6 @@ app.post('/api/reviews', async (req, res) => {
         if (existing.rows.length > 0) {
             return res.json({ success: false, error: 'Вы уже оставляли отзыв этому психологу' });
         }
-
         const newReview = {
             id: nanoid(12),
             psychologist_id: psychologistId,
@@ -962,11 +983,9 @@ app.post('/api/reviews', async (req, res) => {
             `INSERT INTO reviews (id,psychologist_id,client_id,client_name,rating,text,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
             [newReview.id, newReview.psychologist_id, newReview.client_id, newReview.client_name, newReview.rating, newReview.text, newReview.created_at]
         );
-
         const reviewsRes = await pool.query('SELECT rating FROM reviews WHERE psychologist_id=$1', [psychologistId]);
         const sum = reviewsRes.rows.reduce((s, r) => s + r.rating, 0);
         const avgRating = reviewsRes.rows.length ? sum / reviewsRes.rows.length : 0;
-
         const postsRes = await pool.query('SELECT id FROM posts WHERE author_id=$1', [psychologistId]);
         let totalLikes = 0;
         if (postsRes.rows.length > 0) {
@@ -980,7 +999,6 @@ app.post('/api/reviews', async (req, res) => {
         const bonus = Math.min(1, totalLikes * 0.01);
         psychologist.rating = Math.min(5, avgRating + bonus);
         await updateUser(psychologist);
-
         res.json({ success: true, review: newReview, newRating: psychologist.rating });
     } catch (err) {
         console.error('Review error:', err);
@@ -1010,8 +1028,8 @@ app.get('/api/reviews/:psychologistId', async (req, res) => {
     }
 });
 
-// ========== Сертификаты ==========
-app.post('/api/certificates', uploadDisk.single('certificate'), async (req, res) => {
+// ========== СЕРТИФИКАТЫ ==========
+app.post('/api/certificates', upload.single('certificate'), async (req, res) => {
     try {
         const { userId, title } = req.body;
         const user = await getUser(userId);
@@ -1053,7 +1071,7 @@ app.delete('/api/certificates/:userId/:certId', async (req, res) => {
     }
 });
 
-// ========== Подписки ==========
+// ========== ПОДПИСКИ ==========
 app.get('/api/subscriptions/:userId', async (req, res) => {
     try {
         const followingRes = await pool.query('SELECT following_id FROM subscriptions WHERE follower_id=$1', [req.params.userId]);
@@ -1092,7 +1110,7 @@ app.post('/api/subscriptions', async (req, res) => {
     }
 });
 
-// ========== Чат ==========
+// ========== ЧАТ ==========
 app.get('/api/messages/:userId', async (req, res) => {
     try {
         const userId = req.params.userId;
@@ -1134,6 +1152,10 @@ app.post('/api/messages', async (req, res) => {
     try {
         await client.query('BEGIN');
         const { from, to, text, image, voice } = req.body;
+        if (from === to) {
+            await client.query('ROLLBACK');
+            return res.json({ success: false, error: 'Нельзя отправить сообщение самому себе' });
+        }
         const newMsg = {
             id: nanoid(12),
             from_user: from,
@@ -1198,6 +1220,7 @@ app.post('/api/messages/read', async (req, res) => {
             [userId, fromUserId]
         );
         await client.query('COMMIT');
+        io.to(userId).emit('unread_update', { from: fromUserId, count: 0 });
         res.json({ success: true });
     } catch (err) {
         await client.query('ROLLBACK');
@@ -1208,7 +1231,7 @@ app.post('/api/messages/read', async (req, res) => {
     }
 });
 
-// ========== Психологи ==========
+// ========== ПСИХОЛОГИ ==========
 app.get('/api/psychologists', async (req, res) => {
     try {
         const result = await pool.query(
@@ -1229,7 +1252,6 @@ app.get('/api/psychologists', async (req, res) => {
     }
 });
 
-// ========== Поиск ==========
 app.get('/api/search/psychologists', async (req, res) => {
     try {
         const query = req.query.q?.toLowerCase() || '';
@@ -1251,55 +1273,15 @@ app.get('/api/search/psychologists', async (req, res) => {
     }
 });
 
-// ========== Загрузка файлов (общие) ==========
-app.post('/api/upload-avatar', uploadDisk.single('avatar'), (req, res) => {
-    if (!req.file) return res.json({ success: false, error: 'Файл не загружен' });
-    res.json({ success: true, avatarUrl: `/uploads/images/${req.file.filename}` });
-});
-
-app.post('/api/upload', uploadDisk.single('file'), (req, res) => {
-    if (!req.file) return res.json({ success: false, error: 'Файл не загружен' });
-    res.json({ success: true, fileUrl: `/uploads/files/${req.file.filename}` });
-});
-
-app.post('/api/upload-chat-image', uploadDisk.single('image'), (req, res) => {
-    if (!req.file) return res.json({ success: false, error: 'Файл не загружен' });
-    res.json({ success: true, imageUrl: `/uploads/images/${req.file.filename}` });
-});
-
-app.post('/api/upload-voice', uploadDisk.single('voice'), async (req, res) => {
-    if (!req.file) return res.json({ success: false, error: 'Файл не загружен' });
-    if (req.file.size > 5 * 1024 * 1024) {
-        fs.unlinkSync(req.file.path);
-        return res.json({ success: false, error: 'Размер голосового сообщения не должен превышать 5 МБ' });
-    }
-    res.json({ success: true, voiceUrl: `/uploads/audio/${req.file.filename}` });
-});
-
-app.post('/api/upload-recording', uploadDisk.single('recording'), async (req, res) => {
-    if (!req.file) return res.json({ success: false, error: 'Файл не загружен' });
-    const recording = {
-        id: nanoid(12),
-        url: `/uploads/recordings/${req.file.filename}`,
-        from_user: req.body.from,
-        to_user: req.body.to,
-        room_id: req.body.roomId,
-        created_at: new Date().toISOString()
-    };
-    await pool.query(
-        `INSERT INTO recordings (id,url,from_user,to_user,room_id,created_at) VALUES ($1,$2,$3,$4,$5,$6)`,
-        [recording.id, recording.url, recording.from_user, recording.to_user, recording.room_id, recording.created_at]
-    );
-    res.json({ success: true, recordingUrl: recording.url });
-});
-
-// ========== WebRTC / Socket.IO ==========
+// ========== WEBRTC / SOCKET.IO ==========
 const activeRooms = new Map();
+
 io.on('connection', (socket) => {
-    console.log('Socket connected:', socket.id);
+    console.log('🔌 WebSocket connected:', socket.id);
     socket.on('register_user', (userId) => {
         socket.userId = userId;
         if (userId) socket.join(userId);
+        console.log(`User ${userId} registered`);
     });
     socket.on('join-call-room', (roomId, userId, userType) => {
         try {
@@ -1347,9 +1329,15 @@ io.on('connection', (socket) => {
             }
         }
     });
-    socket.on('offer', (data) => { socket.to(data.target).emit('offer', { sdp: data.sdp, from: socket.id }); });
-    socket.on('answer', (data) => { socket.to(data.target).emit('answer', { sdp: data.sdp, from: socket.id }); });
-    socket.on('ice-candidate', (data) => { socket.to(data.target).emit('ice-candidate', { candidate: data.candidate, from: socket.id }); });
+    socket.on('offer', (data) => {
+        socket.to(data.target).emit('offer', { sdp: data.sdp, from: socket.id });
+    });
+    socket.on('answer', (data) => {
+        socket.to(data.target).emit('answer', { sdp: data.sdp, from: socket.id });
+    });
+    socket.on('ice-candidate', (data) => {
+        socket.to(data.target).emit('ice-candidate', { candidate: data.candidate, from: socket.id });
+    });
     socket.on('end-call', async () => {
         if (socket.roomId) {
             socket.to(socket.roomId).emit('call-ended');
@@ -1375,7 +1363,9 @@ io.on('connection', (socket) => {
                         io.to(apt.psychologist_id).emit('appointment_completed', apt.id);
                         io.to(apt.client_id).emit('appointment_completed', apt.id);
                     }
-                } catch (err) { console.error('end-call DB error:', err); }
+                } catch (err) {
+                    console.error('end-call DB error:', err);
+                }
             }
             if (room) {
                 room.users.delete(socket.id);
@@ -1387,7 +1377,6 @@ io.on('connection', (socket) => {
         }
     });
     socket.on('disconnect', () => {
-        console.log('WebSocket disconnected:', socket.id);
         if (socket.roomId) {
             socket.to(socket.roomId).emit('partner-disconnected');
             const room = activeRooms.get(socket.roomId);
@@ -1403,10 +1392,11 @@ io.on('connection', (socket) => {
                 }
             }
         }
+        console.log('WebSocket disconnected:', socket.id);
     });
 });
 
-// ========== Запуск ==========
+// ========== ЗАПУСК ==========
 app.get('/health', (req, res) => res.status(200).send('OK'));
 const PORT = process.env.PORT || 3000;
 
