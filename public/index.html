@@ -899,7 +899,7 @@
             }
         }
 
-        // ======================= ЛЕНТА =======================
+        // ======================= ЛЕНТА (с пагинацией и ленивыми комментариями) =======================
         async function renderFeed() {
             feedOffset = 0;
             feedPosts = [];
@@ -917,7 +917,7 @@
                 feedOffset += newPosts.length;
                 feedHasMore = data.hasMore || false;
                 renderFeedPosts();
-                if (feedHasMore) {
+                                if (feedHasMore) {
                     let btn = document.getElementById('loadMoreBtn');
                     if (!btn) {
                         btn = document.createElement('button');
@@ -1190,11 +1190,11 @@
                 const certificates = currentUser.certificates || [];
                 psychSections = `
                 <div class="profile-sections">
-                    <div class="collapsible-section" id="sec-tasks"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">📋</div><div><div class="collapsible-title">Задачи</div><div class="collapsible-subtitle">${undoneTasks > 0 ? `${undoneTasks} не выполнено` : 'Все выполнены'}</div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body">${tasks.map(t => `<div class="task-item"><input type="checkbox" class="task-checkbox task-cb" data-id="${t.id}" ${t.completed ? 'checked' : ''}><div style="flex:1"><div class="task-text ${t.completed ? 'task-completed' : ''}">${escapeHtml(t.text)}</div>${t.dueDate ? `<div class="task-due">📅 ${t.dueDate}</div>` : ''}</div><button class="task-delete" onclick="deleteTask('${t.id}')"><i class="fas fa-times"></i></button></div>`).join('')}${tasks.length === 0 ? '<div class="empty-state" style="padding:16px;"><i class="fas fa-check-circle"></i><div>Нет задач</div></div>' : ''}<button class="section-add-btn" onclick="addTaskWithDate()"><i class="fas fa-plus"></i> Добавить задачу</button></div></div>
+                    <div class="collapsible-section" id="sec-tasks"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">📋</div><div><div class="collapsible-title">Задачи</div><div class="collapsible-subtitle">${undoneTasks > 0 ? `${undoneTasks} не выполнено` : 'Все выполнены'}</div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body"><div id="tasksList">${tasks.map(t => `<div class="task-item"><input type="checkbox" class="task-checkbox task-cb" data-id="${t.id}" ${t.completed ? 'checked' : ''}><div style="flex:1"><div class="task-text ${t.completed ? 'task-completed' : ''}">${escapeHtml(t.text)}</div>${t.dueDate ? `<div class="task-due">📅 ${t.dueDate}</div>` : ''}</div><button class="task-delete" onclick="deleteTask('${t.id}')"><i class="fas fa-times"></i></button></div>`).join('')}</div>${tasks.length === 0 ? '<div class="empty-state" style="padding:16px;"><i class="fas fa-check-circle"></i><div>Нет задач</div></div>' : ''}<button class="section-add-btn" onclick="addTaskWithDate()"><i class="fas fa-plus"></i> Добавить задачу</button></div></div>
                     <div class="collapsible-section" id="sec-calendar"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">📅</div><div><div class="collapsible-title">Календарь</div><div class="collapsible-subtitle">События</div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body"><div id="profileCalendar"></div></div></div>
-                    <div class="collapsible-section" id="sec-appointments"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">📞</div><div><div class="collapsible-title">Записи клиентов</div><div class="collapsible-subtitle">${pendingCount > 0 ? `${pendingCount} ожидает подтверждения` : confirmedCount > 0 ? `${confirmedCount} подтверждено` : 'Нет записей'}</div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body">${(currentUser.clients || []).map(apt => { const isCompleted = apt.status === 'completed' || new Date(`${apt.date}T${apt.time}`) < new Date(); return `<div class="appointment-item"><div class="appt-info"><div class="appt-name">${escapeHtml(apt.clientName)}</div><div class="appt-time">📅 ${apt.date} в ${apt.time}</div><div class="appt-status ${apt.status === 'confirmed' ? 'status-confirmed' : 'status-pending'}">${apt.status === 'confirmed' ? (isCompleted ? '✅ Завершён' : '✅ Подтверждено') : '⏳ Ожидает'}</div></div><div class="appt-actions">${apt.status === 'pending' ? `<button class="btn-sm" onclick="confirmAppointment('${apt.appointmentId}','${apt.clientId}')">Подтвердить</button>` : ''}${apt.status === 'confirmed' && !isCompleted ? `<button class="btn-sm" onclick="startCall('${apt.roomId}', 'psychologist')"><i class="fas fa-video"></i> Начать</button>` : ''}${isCompleted ? '<i class="fas fa-check-circle" style="color:var(--green); font-size:20px;"></i>' : ''}</div></div>`; }).join('')}${(currentUser.clients || []).length === 0 ? '<div class="empty-state" style="padding:16px;"><i class="fas fa-calendar-times"></i><div>Нет записей</div></div>' : ''}</div></div>
-                    <div class="collapsible-section" id="sec-clients"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">👥</div><div><div class="collapsible-title">Клиенты</div><div class="collapsible-subtitle">${confirmedCount} завершённых звонков</div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body">${(currentUser.clients || []).filter(a => a.status === 'confirmed').map(apt => `<div class="client-item"><div><div class="client-name">${escapeHtml(apt.clientName)}</div><div class="client-time">${apt.date} в ${apt.time}</div></div><button class="btn-sm" onclick="startChatWith('${apt.clientId}','${escapeHtml(apt.clientName)}')"><i class="fas fa-comment-dots"></i> Написать</button></div>`).join('')}${(currentUser.clients || []).filter(a => a.status === 'confirmed').length === 0 ? '<div class="empty-state" style="padding:16px;"><i class="fas fa-users-slash"></i><div>Нет завершённых звонков</div></div>' : ''}</div></div>
-                    <div class="collapsible-section" id="sec-notes"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">📝</div><div><div class="collapsible-title">Заметки</div><div class="collapsible-subtitle">${notes.length} заметок</div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body"><div class="notes-grid">${notes.map(n => `<div class="note-card" onclick="openNoteModal('${n.id}','${escapeHtml(n.title)}','${escapeHtml(n.content)}','${n.attachment || ''}')"><div class="note-title">${escapeHtml(n.title)}</div><div class="note-preview">${escapeHtml((n.content || '').substring(0, 70))}${(n.content || '').length > 70 ? '…' : ''}</div></div>`).join('')}${notes.length === 0 ? '<div class="empty-state" style="padding:16px;"><i class="fas fa-sticky-note"></i><div>Нет заметок</div></div>' : ''}</div><button class="section-add-btn" onclick="openAddNoteModal()"><i class="fas fa-plus"></i> Добавить заметку</button></div></div>
+                    <div class="collapsible-section" id="sec-appointments"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">📞</div><div><div class="collapsible-title">Записи клиентов</div><div class="collapsible-subtitle">${pendingCount > 0 ? `${pendingCount} ожидает подтверждения` : confirmedCount > 0 ? `${confirmedCount} подтверждено` : 'Нет записей'}</div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body"><div id="appointmentsList">${(currentUser.clients || []).map(apt => { const isCompleted = apt.status === 'completed' || new Date(`${apt.date}T${apt.time}`) < new Date(); return `<div class="appointment-item"><div class="appt-info"><div class="appt-name">${escapeHtml(apt.clientName)}</div><div class="appt-time">📅 ${apt.date} в ${apt.time}</div><div class="appt-status ${apt.status === 'confirmed' ? 'status-confirmed' : 'status-pending'}">${apt.status === 'confirmed' ? (isCompleted ? '✅ Завершён' : '✅ Подтверждено') : '⏳ Ожидает'}</div></div><div class="appt-actions">${apt.status === 'pending' ? `<button class="btn-sm" onclick="confirmAppointment('${apt.appointmentId}','${apt.clientId}')">Подтвердить</button>` : ''}${apt.status === 'confirmed' && !isCompleted ? `<button class="btn-sm" onclick="startCall('${apt.roomId}', 'psychologist')"><i class="fas fa-video"></i> Начать</button>` : ''}${isCompleted ? '<i class="fas fa-check-circle" style="color:var(--green); font-size:20px;"></i>' : ''}</div></div>`; }).join('')}</div>${(currentUser.clients || []).length === 0 ? '<div class="empty-state" style="padding:16px;"><i class="fas fa-calendar-times"></i><div>Нет записей</div></div>' : ''}</div></div>
+                    <div class="collapsible-section" id="sec-clients"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">👥</div><div><div class="collapsible-title">Клиенты</div><div class="collapsible-subtitle">${confirmedCount} завершённых звонков</div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body"><div id="clientsList">${(currentUser.clients || []).filter(a => a.status === 'confirmed').map(apt => `<div class="client-item"><div><div class="client-name">${escapeHtml(apt.clientName)}</div><div class="client-time">${apt.date} в ${apt.time}</div></div><button class="btn-sm" onclick="startChatWith('${apt.clientId}','${escapeHtml(apt.clientName)}')"><i class="fas fa-comment-dots"></i> Написать</button></div>`).join('')}</div>${(currentUser.clients || []).filter(a => a.status === 'confirmed').length === 0 ? '<div class="empty-state" style="padding:16px;"><i class="fas fa-users-slash"></i><div>Нет завершённых звонков</div></div>' : ''}</div></div>
+                    <div class="collapsible-section" id="sec-notes"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">📝</div><div><div class="collapsible-title">Заметки</div><div class="collapsible-subtitle">${notes.length} заметок</div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body"><div class="notes-grid" id="notesGridProfile">${notes.map(n => `<div class="note-card" onclick="openNoteModal('${n.id}','${escapeHtml(n.title)}','${escapeHtml(n.content)}','${n.attachment || ''}')"><div class="note-title">${escapeHtml(n.title)}</div><div class="note-preview">${escapeHtml((n.content || '').substring(0, 70))}${(n.content || '').length > 70 ? '…' : ''}</div></div>`).join('')}${notes.length === 0 ? '<div class="empty-state" style="padding:16px;"><i class="fas fa-sticky-note"></i><div>Нет заметок</div></div>' : ''}</div><button class="section-add-btn" onclick="openAddNoteModal()"><i class="fas fa-plus"></i> Добавить заметку</button></div></div>
                     <div class="collapsible-section" id="sec-certs"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">📜</div><div><div class="collapsible-title">Сертификаты и дипломы</div><div class="collapsible-subtitle">${certificates.length} документов</div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body"><div class="certificates-grid" id="certsGridProfile">${certificates.map(c => `<div class="certificate-card"><img src="${escapeHtml(c.image)}" onerror="this.src='https://placehold.co/100x80/1a2e1a/8bca8b?text=📜'"><div class="certificate-title">${escapeHtml(c.title)}</div><button class="delete-cert-btn" onclick="deleteCertificateProfile('${c.id}')"><i class="fas fa-times"></i></button></div>`).join('')}<div class="certificate-card add-cert-card" onclick="addCertificateProfile()"><i class="fas fa-plus"></i><span>Добавить</span></div></div></div></div>
                 </div>`;
             }
@@ -1220,7 +1220,7 @@
                         </div>
                     </div>
                     ${!isPsych ? appointmentsHtml : ''}
-                    ${isPsych ? `<div style="margin-bottom: 16px;"><div class="section-header-row"><h3>Мои посты</h3><button class="btn-sm" onclick="createPostModal()"><i class="fas fa-plus"></i> Новый</button></div><div class="posts-grid">${myPosts.map(p => `<div class="post-card glass-card"><div class="post-text">${escapeHtml(p.text)}</div>${p.image ? `<img class="post-image" src="${escapeHtml(p.image)}" onclick="openImageModal('${escapeHtml(p.image)}')">` : ''}${p.video ? `<video class="post-video" controls preload="metadata"><source src="${escapeHtml(p.video)}" type="video/mp4"></video>` : ''}<div class="post-stats"><span style="color:var(--text-muted);font-size:13px;display:flex;gap:6px;align-items:center;"><i class="fa-regular fa-heart"></i> ${p.likesCount||0}</span><span style="color:var(--text-muted);font-size:13px;display:flex;gap:6px;align-items:center;"><i class="fa-regular fa-comment"></i> ${p.commentsCount||0}</span></div><div class="post-actions"><button class="profile-edit-post" data-id="${p.id}" data-text="${escapeHtml(p.text)}"><i class="fas fa-pen"></i> Ред.</button><button class="profile-delete-post" data-id="${p.id}"><i class="fas fa-trash-alt"></i> Удалить</button></div></div>`).join('')}${myPosts.length === 0 ? '<div class="empty-state glass-card" style="padding:24px;"><i class="fas fa-newspaper"></i><div>Нет постов</div></div>' : ''}</div></div>` : ''}
+                    ${isPsych ? `<div style="margin-bottom: 16px;"><div class="section-header-row"><h3>Мои посты</h3><button class="btn-sm" onclick="createPostModal()"><i class="fas fa-plus"></i> Новый</button></div><div class="posts-grid" id="myPostsGridProfile">${myPosts.map(p => `<div class="post-card glass-card"><div class="post-text">${escapeHtml(p.text)}</div>${p.image ? `<img class="post-image" src="${escapeHtml(p.image)}" onclick="openImageModal('${escapeHtml(p.image)}')">` : ''}${p.video ? `<video class="post-video" controls preload="metadata"><source src="${escapeHtml(p.video)}" type="video/mp4"></video>` : ''}<div class="post-stats"><span style="color:var(--text-muted);font-size:13px;display:flex;gap:6px;align-items:center;"><i class="fa-regular fa-heart"></i> ${p.likesCount||0}</span><span style="color:var(--text-muted);font-size:13px;display:flex;gap:6px;align-items:center;"><i class="fa-regular fa-comment"></i> ${p.commentsCount||0}</span></div><div class="post-actions"><button class="profile-edit-post" data-id="${p.id}" data-text="${escapeHtml(p.text)}"><i class="fas fa-pen"></i> Ред.</button><button class="profile-delete-post" data-id="${p.id}"><i class="fas fa-trash-alt"></i> Удалить</button></div></div>`).join('')}${myPosts.length === 0 ? '<div class="empty-state glass-card" style="padding:24px;"><i class="fas fa-newspaper"></i><div>Нет постов</div></div>' : ''}</div></div>` : ''}
                     ${psychSections}
                 </div>
             `;
@@ -1233,7 +1233,7 @@
             checkUpcomingEvents();
         }
 
-        // ========== КАЛЕНДАРЬ ==========
+        // ======================= КАЛЕНДАРЬ =======================
         async function renderProfileCalendar() {
             const container = document.getElementById('profileCalendar');
             if (!container) return;
@@ -1278,7 +1278,7 @@
 
         window.changeProfileMonth = (delta) => { currentCalendarDate.setMonth(currentCalendarDate.getMonth() + delta); renderProfileCalendar(); };
 
-        // ========== ЗАДАЧИ ==========
+        // ======================= ЗАДАЧИ =======================
         async function addTaskWithDate() {
             return new Promise((resolve) => {
                 const modalId = 'addTaskModal_' + Date.now();
@@ -1330,10 +1330,11 @@
             });
         }
 
-        // ========== ЗАМЕТКИ ==========
+        // ======================= ЗАМЕТКИ =======================
         function openAddNoteModal() {
+            const modalId = 'noteModal';
             const html = `
-                <div class="modal" id="noteModal">
+                <div class="modal" id="${modalId}">
                     <div class="modal-content">
                         <div class="modal-handle"></div>
                         <h3>Новая заметка</h3>
@@ -1341,13 +1342,13 @@
                         <textarea id="noteContent" rows="4" placeholder="Текст заметки..."></textarea>
                         <input type="file" id="noteFile" style="font-size:12px;">
                         <div class="modal-buttons">
-                            <button class="btn-secondary" onclick="closeModal('noteModal')">Отмена</button>
+                            <button class="btn-secondary" onclick="closeModal('${modalId}')">Отмена</button>
                             <button class="btn-primary" onclick="saveNote()">Сохранить</button>
                         </div>
                     </div>
                 </div>`;
             document.body.insertAdjacentHTML('beforeend', html);
-            setTimeout(() => document.getElementById('noteModal').classList.add('active'), 10);
+            setTimeout(() => document.getElementById(modalId).classList.add('active'), 10);
         }
 
         async function saveNote() {
@@ -1408,7 +1409,7 @@
             });
         }
 
-        // ========== СЕРТИФИКАТЫ ==========
+        // ======================= СЕРТИФИКАТЫ =======================
         async function addCertificateProfile() {
             const title = await openPromptModal('Название сертификата или диплома:', 'Добавить');
             if (!title) return;
@@ -1484,7 +1485,7 @@
             });
         }
 
-        // ========== РЕДАКТИРОВАНИЕ ПРОФИЛЯ ==========
+        // ======================= РЕДАКТИРОВАНИЕ ПРОФИЛЯ =======================
         function editProfileModal() {
             const isPsych = currentUser.role === 'psychologist';
             const html = `
@@ -1554,7 +1555,7 @@
             input.click();
         }
 
-        // ========== РАСПИСАНИЕ ==========
+        // ======================= РАСПИСАНИЕ =======================
         function showScheduleEditor() {
             const schedule = currentUser.schedule || {};
             const renderSlots = () => {
@@ -1630,7 +1631,7 @@
             };
         }
 
-        // ========== ЗАПИСЬ НА ПРИЁМ И ПОДТВЕРЖДЕНИЕ ==========
+        // ======================= ЗАПИСЬ НА ПРИЁМ =======================
         async function confirmAppointment(appointmentId, clientId) {
             const res = await fetch('/api/appointment/confirm', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ appointmentId, psychologistId: currentUser.id, clientId }) });
             const data = await res.json();
@@ -1697,7 +1698,7 @@
             };
         }
 
-        // ========== ОТЗЫВЫ ==========
+        // ======================= ОТЗЫВЫ =======================
         function openReviewModal(id, name) {
             let rating = 0;
             const modalId = 'revModal';
@@ -1732,7 +1733,7 @@
             };
         }
 
-        // ========== НОВЫЙ ПОСТ (Cloudinary) ==========
+        // ======================= НОВЫЙ ПОСТ (Cloudinary) =======================
         function createPostModal() {
             const modalId = 'cpModal';
             const html = `
@@ -1838,7 +1839,7 @@
             };
         }
 
-        // ========== ПОИСК ==========
+        // ======================= ПОИСК =======================
         function openSearchModal() {
             const modalId = 'searchM';
             const html = `
@@ -1879,7 +1880,7 @@
             };
         }
 
-        // ========== НАПОМИНАНИЯ ==========
+        // ======================= НАПОМИНАНИЯ =======================
         function checkUpcomingEvents() {
             if (!currentUser) return;
             const now = new Date();
@@ -1914,7 +1915,7 @@
             }
         }
 
-        // ========== АВТОРИЗАЦИЯ ==========
+        // ======================= АВТОРИЗАЦИЯ =======================
         function openLoginModal() {
             const modalId = 'loginM';
             const html = `
@@ -2010,7 +2011,7 @@
             window.location.href = `/call.html?room=${roomId}&role=${role}`;
         }
 
-        // ========== ЧАТ ==========
+        // ======================= ЧАТ =======================
         async function renderChats() {
             currentChatPartner = null;
             if (!currentUser) { showToast('Войдите в аккаунт', true); return; }
@@ -2192,9 +2193,7 @@
                     if (count > 0) {
                         if (existingBadge) existingBadge.textContent = count;
                         else item.insertAdjacentHTML('beforeend', `<div class="unread-badge">${count}</div>`);
-                    } else {
-                        if (existingBadge) existingBadge.remove();
-                    }
+                    } else { if (existingBadge) existingBadge.remove(); }
                     break;
                 }
             }
@@ -2253,7 +2252,7 @@
             openChat(userId, name);
         }
 
-        // ========== УВЕДОМЛЕНИЯ ==========
+        // ======================= УВЕДОМЛЕНИЯ =======================
         async function renderNotifications() {
             if (!currentUser) { showToast('Войдите в аккаунт', true); return; }
             const notifs = currentUser.notifications || [];
@@ -2274,7 +2273,7 @@
             renderNotifications();
         }
 
-        // ========== СТРАНИЦА ПСИХОЛОГА ==========
+        // ======================= СТРАНИЦА ПСИХОЛОГА =======================
         async function viewPsychologistPage(psychologistId) {
             document.getElementById('mainContent').innerHTML = `<div class="container"><div class="empty-state"><i class="fas fa-circle-notch fa-spin"></i></div></div>`;
             const [userData, postsData, reviewsData] = await Promise.all([
@@ -2288,16 +2287,82 @@
             const reviews = reviewsData.reviews || [];
             const isOwn = currentUser && currentUser.id === psychologistId;
             const certificates = p.certificates || [];
-            const html = `<div class="container"><div class="psych-page-header"><button class="back-btn" onclick="switchTab('psychologists')"><i class="fas fa-arrow-left"></i></button><span style="font-size:14px;color:var(--text-muted);">Профиль</span></div><div class="profile-header"><img class="profile-avatar-lg" src="${escapeHtml(p.avatar)}" onerror="this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(p.fullName)}&background=8bca8b&color=fff'"><div class="profile-name">${escapeHtml(p.fullName)}</div><div class="profile-role-badge">🧠 Психолог</div>${p.about ? `<div class="profile-bio">${escapeHtml(p.about)}</div>` : ''}${renderStars(p.rating || 0)}<div class="psych-actions-row">${!isOwn && currentUser ? `<button class="btn-sm btn-outline" onclick="startChatWith('${psychologistId}','${escapeHtml(p.fullName)}')"><i class="fas fa-comment-dots"></i> Написать</button><button class="btn-sm" onclick="bookPsychologist('${psychologistId}','${escapeHtml(p.fullName)}')"><i class="fas fa-calendar-plus"></i> Записаться</button><button class="btn-sm btn-outline" onclick="openReviewModal('${psychologistId}','${escapeHtml(p.fullName)}')"><i class="fas fa-star"></i> Оценить</button>` : ''}${isOwn ? `<button class="btn-sm btn-outline" onclick="switchTab('profile')"><i class="fas fa-pen"></i> Редактировать</button>` : ''}</div></div>${p.specialization || p.experience || p.price ? `<div style="margin-bottom:16px;">${p.specialization ? `<div class="info-row"><i class="fas fa-brain"></i> ${escapeHtml(p.specialization)}</div>` : ''}${p.experience ? `<div class="info-row"><i class="fas fa-briefcase"></i> Опыт: ${escapeHtml(p.experience)}</div>` : ''}${p.price ? `<div class="info-row"><i class="fas fa-tag"></i> ${p.price} ₸ / час</div>` : ''}</div>` : ''}${certificates.length > 0 ? `<div style="margin-bottom:20px;"><div class="section-header-row"><h3>📜 Сертификаты</h3></div><div class="certificates-grid">${certificates.map(c => `<div class="certificate-card"><img src="${escapeHtml(c.image)}" onerror="this.src='https://placehold.co/100x80/1a2e1a/8bca8b?text=📜'"><div class="certificate-title">${escapeHtml(c.title)}</div></div>`).join('')}</div></div>` : ''}<div style="margin-bottom:20px;"><div class="section-header-row"><h3>📝 Посты</h3></div><div class="posts-grid">${psychPosts.map(pst => `<div class="post-card glass-card"><div class="post-text">${escapeHtml(pst.text)}</div>${pst.image ? `<img class="post-image" src="${escapeHtml(pst.image)}" onclick="openImageModal('${escapeHtml(pst.image)}')">` : ''}${pst.video ? `<video class="post-video" controls preload="metadata"><source src="${escapeHtml(pst.video)}" type="video/mp4"></video>` : ''}<div class="post-stats"><span style="color:var(--text-muted);font-size:13px;display:flex;gap:6px;align-items:center;"><i class="fa-regular fa-heart"></i> ${pst.likesCount||0}</span><span style="color:var(--text-muted);font-size:13px;display:flex;gap:6px;align-items:center;"><i class="fa-regular fa-comment"></i> ${pst.commentsCount||0}</span></div></div>`).join('')}${psychPosts.length === 0 ? '<div class="empty-state glass-card" style="padding:20px;"><i class="fas fa-newspaper"></i><div>Нет постов</div></div>' : ''}</div></div><div><div class="section-header-row"><h3>⭐ Отзывы (${reviews.length})</h3></div>${reviews.map(r => `<div class="review-card glass-card"><div class="review-header"><span class="review-name">${escapeHtml(r.clientName)}</span>${renderStars(r.rating)}</div><div class="review-text">${escapeHtml(r.text)}</div><div class="review-time">${new Date(r.createdAt).toLocaleString()}</div></div>`).join('')}${reviews.length === 0 ? '<div class="empty-state glass-card" style="padding:20px;"><i class="fas fa-star"></i><div>Нет отзывов</div></div>' : ''}</div></div>`;
+            const html = `<div class="container">
+                <div class="psych-page-header">
+                    <button class="back-btn" onclick="switchTab('psychologists')"><i class="fas fa-arrow-left"></i></button>
+                    <span style="font-size:14px;color:var(--text-muted);">Профиль</span>
+                </div>
+                <div class="profile-header">
+                    <img class="profile-avatar-lg" src="${escapeHtml(p.avatar)}" onerror="this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(p.fullName)}&background=8bca8b&color=fff'">
+                    <div class="profile-name">${escapeHtml(p.fullName)}</div>
+                    <div class="profile-role-badge">🧠 Психолог</div>
+                    ${p.about ? `<div class="profile-bio">${escapeHtml(p.about)}</div>` : ''}
+                    ${renderStars(p.rating || 0)}
+                    <div class="psych-actions-row">
+                        ${!isOwn && currentUser ? `
+                            <button class="btn-sm btn-outline" onclick="startChatWith('${psychologistId}','${escapeHtml(p.fullName)}')"><i class="fas fa-comment-dots"></i> Написать</button>
+                            <button class="btn-sm" onclick="bookPsychologist('${psychologistId}','${escapeHtml(p.fullName)}')"><i class="fas fa-calendar-plus"></i> Записаться</button>
+                            <button class="btn-sm btn-outline" onclick="openReviewModal('${psychologistId}','${escapeHtml(p.fullName)}')"><i class="fas fa-star"></i> Оценить</button>
+                        ` : ''}
+                        ${isOwn ? `<button class="btn-sm btn-outline" onclick="switchTab('profile')"><i class="fas fa-pen"></i> Редактировать</button>` : ''}
+                    </div>
+                </div>
+                ${p.specialization || p.experience || p.price ? `
+                <div style="margin-bottom:16px;">
+                    ${p.specialization ? `<div class="info-row"><i class="fas fa-brain"></i> ${escapeHtml(p.specialization)}</div>` : ''}
+                    ${p.experience ? `<div class="info-row"><i class="fas fa-briefcase"></i> Опыт: ${escapeHtml(p.experience)}</div>` : ''}
+                    ${p.price ? `<div class="info-row"><i class="fas fa-tag"></i> ${p.price} ₸ / час</div>` : ''}
+                </div>` : ''}
+                ${certificates.length > 0 ? `
+                <div style="margin-bottom:20px;">
+                    <div class="section-header-row"><h3>📜 Сертификаты</h3></div>
+                    <div class="certificates-grid">
+                        ${certificates.map(c => `
+                            <div class="certificate-card">
+                                <img src="${escapeHtml(c.image)}" onerror="this.src='https://placehold.co/100x80/1a2e1a/8bca8b?text=📜'">
+                                <div class="certificate-title">${escapeHtml(c.title)}</div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>` : ''}
+                <div style="margin-bottom:20px;">
+                    <div class="section-header-row"><h3>📝 Посты</h3></div>
+                    <div class="posts-grid">
+                        ${psychPosts.map(pst => `
+                            <div class="post-card glass-card">
+                                <div class="post-text">${escapeHtml(pst.text)}</div>
+                                ${pst.image ? `<img class="post-image" src="${escapeHtml(pst.image)}" onclick="openImageModal('${escapeHtml(pst.image)}')">` : ''}
+                                ${pst.video ? `<video class="post-video" controls preload="metadata"><source src="${escapeHtml(pst.video)}" type="video/mp4"></video>` : ''}
+                                <div class="post-stats">
+                                    <span style="color:var(--text-muted);font-size:13px;display:flex;gap:6px;align-items:center;"><i class="fa-regular fa-heart"></i> ${pst.likesCount||0}</span>
+                                    <span style="color:var(--text-muted);font-size:13px;display:flex;gap:6px;align-items:center;"><i class="fa-regular fa-comment"></i> ${pst.commentsCount||0}</span>
+                                </div>
+                            </div>
+                        `).join('')}
+                        ${psychPosts.length === 0 ? '<div class="empty-state glass-card" style="padding:20px;"><i class="fas fa-newspaper"></i><div>Нет постов</div></div>' : ''}
+                    </div>
+                </div>
+                <div>
+                    <div class="section-header-row"><h3>⭐ Отзывы (${reviews.length})</h3></div>
+                    ${reviews.map(r => `
+                        <div class="review-card glass-card">
+                            <div class="review-header">
+                                <span class="review-name">${escapeHtml(r.clientName)}</span>
+                                ${renderStars(r.rating)}
+                            </div>
+                            <div class="review-text">${escapeHtml(r.text)}</div>
+                            <div class="review-time">${new Date(r.createdAt).toLocaleString()}</div>
+                        </div>
+                    `).join('')}
+                    ${reviews.length === 0 ? '<div class="empty-state glass-card" style="padding:20px;"><i class="fas fa-star"></i><div>Нет отзывов</div></div>' : ''}
+                </div>
+            </div>`;
             document.getElementById('mainContent').innerHTML = html;
         }
 
-        // ========== СОКЕТ ==========
+        // ======================= СОКЕТ =======================
         function initSocket() {
-            if (socket) {
-                socket.disconnect();
-                socket = null;
-            }
+            if (socket) { socket.disconnect(); socket = null; }
             socket = io({
                 transports: ['websocket', 'polling'],
                 reconnection: true,
@@ -2305,20 +2370,8 @@
                 reconnectionDelay: 1000,
                 reconnectionDelayMax: 5000
             });
-            socket.on('connect', () => {
-                console.log('Socket connected');
-                if (currentUser) socket.emit('register_user', currentUser.id);
-            });
-            socket.on('connect_error', (err) => {
-                console.error('Socket connect error:', err.message);
-                showToast('Ошибка соединения с сервером', true);
-            });
-            socket.on('disconnect', (reason) => {
-                console.log('WebSocket disconnected:', socket.id, 'reason:', reason);
-                if (reason === 'io server disconnect') {
-                    socket.connect();
-                }
-            });
+            socket.on('connect', () => { console.log('Socket connected'); if (currentUser) socket.emit('register_user', currentUser.id); });
+            socket.on('connect_error', (err) => { console.error('Socket connect error:', err.message); showToast('Ошибка соединения с сервером', true); });
             socket.on('post_created', (newPost) => {
                 if (currentTab === 'feed') renderFeed();
                 else if (currentTab === 'profile' && currentUser?.role === 'psychologist') renderProfile();
@@ -2439,7 +2492,7 @@
             });
         }
 
-        // ========== ВИДЕО НАБЛЮДАТЕЛЬ ==========
+        // ======================= ВИДЕО НАБЛЮДАТЕЛЬ =======================
         function initVideoObservers() {
             if (videoObserver) videoObserver.disconnect();
             const videos = document.querySelectorAll('.post-video');
@@ -2458,7 +2511,7 @@
             videos.forEach(video => videoObserver.observe(video));
         }
 
-        // ========== НАВИГАЦИЯ ==========
+        // ======================= НАВИГАЦИЯ =======================
         function switchTab(tab) {
             currentTab = tab;
             document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
@@ -2473,14 +2526,14 @@
             else if (tab === 'profile') renderProfile();
         }
 
-        // ========== ЗАПРОС УВЕДОМЛЕНИЙ ==========
+        // ======================= ЗАПРОС УВЕДОМЛЕНИЙ =======================
         function requestNotificationPermission() {
             if ('Notification' in window && Notification.permission !== 'granted' && Notification.permission !== 'denied') {
                 Notification.requestPermission();
             }
         }
 
-        // ========== ИНИЦИАЛИЗАЦИЯ ==========
+        // ======================= ИНИЦИАЛИЗАЦИЯ =======================
         async function init() {
             const uid = localStorage.getItem('userId');
             if (uid) {
@@ -2496,12 +2549,14 @@
                         document.getElementById('searchNavBtn').onclick = openSearchModal;
                         initSocket();
                         requestNotificationPermission();
-                    }
-                } catch(e) { localStorage.clear(); }
+                        checkUpcomingEvents();
+                        setInterval(checkUpcomingEvents, 900000);
+                    } else { localStorage.clear(); renderFeed(); }
+                } catch(e) { localStorage.clear(); renderFeed(); }
+            } else {
+                renderFeed();
             }
             document.querySelectorAll('.nav-item').forEach(el => { el.onclick = () => switchTab(el.dataset.tab); });
-            if (currentUser) { switchTab('feed'); checkUpcomingEvents(); }
-            else { renderFeed(); }
         }
 
         // Глобальные привязки функций

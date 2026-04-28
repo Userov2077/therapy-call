@@ -25,7 +25,6 @@ const io = socketIo(server, {
 app.use(express.json({ limit: '100mb' }));
 app.use(express.urlencoded({ extended: true, limit: '100mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
-app.use('/uploads', express.static(path.join(__dirname, 'public/uploads')));
 
 // ========== PostgreSQL подключение ==========
 const pool = new Pool({
@@ -46,58 +45,30 @@ cloudinary.config({
     api_secret: process.env.CLOUDINARY_API_SECRET
 });
 
-const videoStorage = new CloudinaryStorage({
+// Общее хранилище для всех файлов (изображения, видео, аудио)
+const cloudinaryStorage = new CloudinaryStorage({
     cloudinary: cloudinary,
-    params: {
-        folder: 'therapy_call_videos',
-        resource_type: 'video',
-        allowed_formats: ['mp4', 'mov', 'avi', 'webm', 'mkv']
+    params: (req, file) => {
+        let folder = 'therapy_call_general';
+        let resource_type = 'auto';
+        if (file.fieldname === 'avatar') folder = 'therapy_call_avatars';
+        else if (file.fieldname === 'certificate') folder = 'therapy_call_certificates';
+        else if (file.fieldname === 'voice') folder = 'therapy_call_voice';
+        else if (file.fieldname === 'image' || file.fieldname === 'chat_image') folder = 'therapy_call_images';
+        else if (file.fieldname === 'video') folder = 'therapy_call_videos';
+        else if (file.fieldname === 'recording') folder = 'therapy_call_recordings';
+        else if (file.fieldname === 'file') folder = 'therapy_call_files';
+        return {
+            folder: folder,
+            resource_type: resource_type,
+            allowed_formats: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'mp4', 'mov', 'avi', 'webm', 'ogg', 'wav', 'mp3']
+        };
     }
 });
 
-const imageStorage = new CloudinaryStorage({
-    cloudinary: cloudinary,
-    params: {
-        folder: 'therapy_call_images',
-        resource_type: 'image',
-        allowed_formats: ['jpg', 'jpeg', 'png', 'gif', 'webp']
-    }
-});
+const upload = multer({ storage: cloudinaryStorage, limits: { fileSize: 50 * 1024 * 1024 } });
 
-const diskStorage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        if (file.fieldname === 'avatar') cb(null, 'public/uploads/images/');
-        else if (file.fieldname === 'certificate') cb(null, 'public/uploads/certificates/');
-        else if (file.fieldname === 'file') cb(null, 'public/uploads/files/');
-        else if (file.fieldname === 'voice') cb(null, 'public/uploads/audio/');
-        else if (file.fieldname === 'recording') cb(null, 'public/uploads/recordings/');
-        else cb(null, 'public/uploads/');
-    },
-    filename: (req, file, cb) => {
-        const unique = nanoid(12);
-        cb(null, unique + path.extname(file.originalname));
-    }
-});
-
-const upload = multer({ storage: diskStorage, limits: { fileSize: 100 * 1024 * 1024 } });
-const uploadVideo = multer({ storage: videoStorage, limits: { fileSize: 100 * 1024 * 1024 } });
-const uploadImage = multer({ storage: imageStorage, limits: { fileSize: 20 * 1024 * 1024 } });
-
-// ========== Создание папок ==========
-const uploadDirs = [
-    'public/uploads',
-    'public/uploads/images',
-    'public/uploads/audio',
-    'public/uploads/recordings',
-    'public/uploads/files',
-    'public/uploads/certificates',
-    'public/uploads/videos'
-];
-uploadDirs.forEach(dir => {
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-});
-
-// ========== Инициализация таблиц ==========
+// ========== Инициализация таблиц (без изменений) ==========
 async function initDatabase() {
     const queries = [
         `CREATE TABLE IF NOT EXISTS users (
@@ -373,7 +344,7 @@ app.get('/api/user/:id', async (req, res) => {
         res.json({ success: true, user: userData });
     } catch (err) {
         console.error('Get user error:', err);
-        res.json({ success: false, error: 'Ошибка сервера' });
+        res.json({ success: false });
     }
 });
 
@@ -388,14 +359,17 @@ app.put('/api/user/profile', upload.single('avatar'), async (req, res) => {
         if (specialization !== undefined) user.specialization = specialization;
         if (experience !== undefined) user.experience = experience;
         if (price !== undefined) user.price = parseInt(price) || 0;
-        if (req.file) user.avatar = `/uploads/images/${req.file.filename}`;
-        else if (avatar) user.avatar = avatar;
+        if (req.file) {
+            user.avatar = req.file.path; // Cloudinary URL
+        } else if (avatar && avatar.startsWith('http')) {
+            user.avatar = avatar;
+        }
         await updateUser(user);
         const { password, ...safeUser } = user;
         res.json({ success: true, user: safeUser });
     } catch (err) {
         console.error('Profile update error:', err);
-        res.json({ success: false, error: 'Ошибка сервера' });
+        res.json({ success: false });
     }
 });
 
@@ -571,36 +545,35 @@ app.post('/api/appointment/complete', async (req, res) => {
     }
 });
 
-// ========== ЗАГРУЗКА ФАЙЛОВ ==========
+// ========== ЗАГРУЗКА ФАЙЛОВ (все через Cloudinary) ==========
 app.post('/api/upload-avatar', upload.single('avatar'), (req, res) => {
     if (!req.file) return res.json({ success: false, error: 'Файл не загружен' });
-    res.json({ success: true, avatarUrl: `/uploads/images/${req.file.filename}` });
+    res.json({ success: true, avatarUrl: req.file.path });
 });
 
 app.post('/api/upload', upload.single('file'), (req, res) => {
     if (!req.file) return res.json({ success: false, error: 'Файл не загружен' });
-    res.json({ success: true, fileUrl: `/uploads/files/${req.file.filename}` });
+    res.json({ success: true, fileUrl: req.file.path });
 });
 
 app.post('/api/upload-chat-image', upload.single('image'), (req, res) => {
     if (!req.file) return res.json({ success: false, error: 'Файл не загружен' });
-    res.json({ success: true, imageUrl: `/uploads/images/${req.file.filename}` });
+    res.json({ success: true, imageUrl: req.file.path });
 });
 
 app.post('/api/upload-voice', upload.single('voice'), (req, res) => {
     if (!req.file) return res.json({ success: false, error: 'Файл не загружен' });
     if (req.file.size > 5 * 1024 * 1024) {
-        fs.unlinkSync(req.file.path);
         return res.json({ success: false, error: 'Размер голосового сообщения не должен превышать 5 МБ' });
     }
-    res.json({ success: true, voiceUrl: `/uploads/audio/${req.file.filename}` });
+    res.json({ success: true, voiceUrl: req.file.path });
 });
 
 app.post('/api/upload-recording', upload.single('recording'), async (req, res) => {
     if (!req.file) return res.json({ success: false, error: 'Файл не загружен' });
     const recording = {
         id: nanoid(12),
-        url: `/uploads/recordings/${req.file.filename}`,
+        url: req.file.path,
         from_user: req.body.from,
         to_user: req.body.to,
         room_id: req.body.roomId,
@@ -613,17 +586,17 @@ app.post('/api/upload-recording', upload.single('recording'), async (req, res) =
     res.json({ success: true, recordingUrl: recording.url });
 });
 
-app.post('/api/upload-video', uploadVideo.single('video'), (req, res) => {
+app.post('/api/upload-video', upload.single('video'), (req, res) => {
     if (!req.file) return res.status(400).json({ success: false, error: 'Видео не загружено' });
     res.json({ success: true, videoUrl: req.file.path });
 });
 
-app.post('/api/upload-image', uploadImage.single('image'), (req, res) => {
+app.post('/api/upload-image', upload.single('image'), (req, res) => {
     if (!req.file) return res.status(400).json({ success: false, error: 'Изображение не загружено' });
     res.json({ success: true, imageUrl: req.file.path });
 });
 
-// ========== ПОСТЫ (с пагинацией и отдельными комментариями) ==========
+// ========== ПОСТЫ ==========
 app.post('/api/posts', async (req, res) => {
     try {
         const { authorId, text, image, video } = req.body;
@@ -718,17 +691,15 @@ app.get('/api/posts/:id/comments', async (req, res) => {
     }
 });
 
-app.put('/api/posts/:id', upload.single('image'), async (req, res) => {
+app.put('/api/posts/:id', async (req, res) => {
     try {
         const postId = req.params.id;
         const { authorId, text } = req.body;
         const postRes = await pool.query('SELECT * FROM posts WHERE id=$1', [postId]);
         if (postRes.rows.length === 0) return res.json({ success: false, error: 'Пост не найден' });
         if (postRes.rows[0].author_id !== authorId) return res.json({ success: false, error: 'Нет прав' });
-        let newImage = postRes.rows[0].image;
-        if (req.file) newImage = `/uploads/images/${req.file.filename}`;
-        await pool.query('UPDATE posts SET text=$1,image=$2 WHERE id=$3', [text, newImage, postId]);
-        io.emit('post_updated', { id: postId, text, image: newImage });
+        await pool.query('UPDATE posts SET text=$1 WHERE id=$2', [text, postId]);
+        io.emit('post_updated', { id: postId, text });
         res.json({ success: true });
     } catch (err) {
         console.error('Update post error:', err);
@@ -990,7 +961,7 @@ app.post('/api/certificates', upload.single('certificate'), async (req, res) => 
             id: nanoid(12),
             user_id: userId,
             title: title || 'Сертификат',
-            image: `/uploads/certificates/${req.file.filename}`,
+            image: req.file.path,
             created_at: new Date().toISOString()
         };
         await pool.query(`INSERT INTO certificates (id,user_id,title,image,created_at) VALUES ($1,$2,$3,$4,$5)`,
@@ -1049,7 +1020,7 @@ app.post('/api/subscriptions', async (req, res) => {
     }
 });
 
-// ========== ЧАТ (с отправкой WebSocket уведомлений) ==========
+// ========== ЧАТ ==========
 app.get('/api/messages/:userId', async (req, res) => {
     try {
         const userId = req.params.userId;
