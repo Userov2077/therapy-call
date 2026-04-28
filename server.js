@@ -16,14 +16,14 @@ const io = socketIo(server, {
     cors: { origin: "*", methods: ["GET", "POST"], credentials: true },
     transports: ['websocket', 'polling'],
     allowUpgrades: true,
-    pingTimeout: 60000,
-    pingInterval: 25000
+    pingTimeout: 120000,
+    pingInterval: 25000,
+    upgradeTimeout: 30000
 });
 
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+app.use(express.json({ limit: '100mb' }));
+app.use(express.urlencoded({ extended: true, limit: '100mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
-app.use('/uploads', express.static(path.join(__dirname, 'public/uploads')));
 
 // ========== PostgreSQL ==========
 const pool = new Pool({
@@ -31,38 +31,13 @@ const pool = new Pool({
     ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
     max: 30,
     idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 5000,
-    statement_timeout: 10000
+    connectionTimeoutMillis: 5000
 });
 
 pool.on('error', (err) => console.error('Unexpected DB error', err));
 
-// ========== Папки для загрузок ==========
-const uploadDirs = [
-    'public/uploads', 'public/uploads/images', 'public/uploads/audio',
-    'public/uploads/recordings', 'public/uploads/files', 'public/uploads/certificates',
-    'public/uploads/videos'
-];
-uploadDirs.forEach(dir => {
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-});
-
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        if (file.fieldname === 'avatar') cb(null, 'public/uploads/images/');
-        else if (file.fieldname === 'image') cb(null, 'public/uploads/images/');
-        else if (file.fieldname === 'video') cb(null, 'public/uploads/videos/');
-        else if (file.fieldname === 'voice') cb(null, 'public/uploads/audio/');
-        else if (file.fieldname === 'recording') cb(null, 'public/uploads/recordings/');
-        else if (file.fieldname === 'certificate') cb(null, 'public/uploads/certificates/');
-        else if (file.fieldname === 'file') cb(null, 'public/uploads/files/');
-        else cb(null, 'public/uploads/');
-    },
-    filename: (req, file, cb) => {
-        cb(null, nanoid(12) + path.extname(file.originalname));
-    }
-});
-
+// ========== Multer для временного хранения в памяти (чтобы получить буфер) ==========
+const storage = multer.memoryStorage();
 const upload = multer({
     storage,
     limits: { fileSize: 100 * 1024 * 1024, files: 1 },
@@ -75,8 +50,7 @@ const upload = multer({
     }
 });
 
-// ========== Хеширование паролей (crypto) ==========
-const SALT_ROUNDS = 16; // iterations for pbkdf2
+// ========== Хеширование паролей ==========
 function hashPassword(password) {
     const salt = crypto.randomBytes(16).toString('hex');
     const hash = crypto.pbkdf2Sync(password, salt, 100000, 64, 'sha512').toString('hex');
@@ -306,6 +280,14 @@ async function updateUser(user) {
     );
 }
 
+// ========== Конвертация файлов в base64 (временное решение ==========
+function fileToBase64(file) {
+    if (!file) return null;
+    const mime = file.mimetype;
+    const b64 = file.buffer.toString('base64');
+    return `data:${mime};base64,${b64}`;
+}
+
 // ========== Регистрация и логин ==========
 app.post('/api/register', async (req, res) => {
     try {
@@ -361,7 +343,7 @@ app.get('/api/me', authenticateToken, async (req, res) => {
     }
 });
 
-// ========== Пользователи (только чтение) ==========
+// ========== Пользователи ==========
 app.get('/api/user/:id', async (req, res) => {
     try {
         const user = await getUser(req.params.id);
@@ -385,8 +367,13 @@ app.put('/api/user/profile', authenticateToken, upload.single('avatar'), async (
         if (specialization !== undefined) user.specialization = specialization;
         if (experience !== undefined) user.experience = experience;
         if (price !== undefined) user.price = parseInt(price) || 0;
-        if (req.file) user.avatar = `/uploads/images/${req.file.filename}`;
-        else if (avatar) user.avatar = avatar;
+        if (req.file) {
+            user.avatar = fileToBase64(req.file);
+        } else if (avatar && avatar.startsWith('data:image')) {
+            user.avatar = avatar;
+        } else if (avatar && !avatar.startsWith('data:image')) {
+            user.avatar = avatar; // URL
+        }
         await updateUser(user);
         const { password, ...safeUser } = user;
         res.json({ success: true, user: safeUser });
@@ -594,10 +581,12 @@ app.post('/api/posts', authenticateToken, upload.fields([{ name: 'image', maxCou
         const { text } = req.body;
         const imageFile = req.files?.image?.[0];
         const videoFile = req.files?.video?.[0];
+        let imageBase64 = null, videoBase64 = null;
+        if (imageFile) imageBase64 = fileToBase64(imageFile);
+        if (videoFile) videoBase64 = fileToBase64(videoFile);
         const newPost = {
             id: nanoid(12), author_id: req.userId, text,
-            image: imageFile ? `/uploads/images/${imageFile.filename}` : null,
-            video: videoFile ? `/uploads/videos/${videoFile.filename}` : null,
+            image: imageBase64, video: videoBase64,
             created_at: new Date().toISOString()
         };
         await pool.query(`INSERT INTO posts (id,author_id,text,image,video,created_at) VALUES ($1,$2,$3,$4,$5,$6)`,
@@ -666,7 +655,7 @@ app.put('/api/posts/:id', authenticateToken, upload.single('image'), async (req,
         if (postRes.rows.length === 0) return res.json({ success: false, error: 'Пост не найден' });
         if (postRes.rows[0].author_id !== req.userId) return res.json({ success: false, error: 'Нет прав' });
         let newImage = postRes.rows[0].image;
-        if (req.file) newImage = `/uploads/images/${req.file.filename}`;
+        if (req.file) newImage = fileToBase64(req.file);
         await pool.query('UPDATE posts SET text=$1,image=$2 WHERE id=$3', [text, newImage, postId]);
         io.emit('post_updated', { id: postId, text, image: newImage });
         res.json({ success: true });
@@ -834,7 +823,8 @@ app.post('/api/certificates', authenticateToken, upload.single('certificate'), a
         if (!user || user.role !== 'psychologist') return res.json({ success: false, error: 'Нет прав' });
         const { title } = req.body;
         if (!req.file) return res.json({ success: false, error: 'Файл не загружен' });
-        const newCert = { id: nanoid(12), user_id: req.userId, title: title || 'Сертификат', image: `/uploads/certificates/${req.file.filename}`, created_at: new Date().toISOString() };
+        const imageBase64 = fileToBase64(req.file);
+        const newCert = { id: nanoid(12), user_id: req.userId, title: title || 'Сертификат', image: imageBase64, created_at: new Date().toISOString() };
         await pool.query(`INSERT INTO certificates (id,user_id,title,image,created_at) VALUES ($1,$2,$3,$4,$5)`,
             [newCert.id, newCert.user_id, newCert.title, newCert.image, newCert.created_at]);
         if (!user.certificates) user.certificates = [];
@@ -960,34 +950,38 @@ app.get('/api/search/psychologists', async (req, res) => {
     } catch (err) { console.error('Search error:', err); res.json({ success: false }); }
 });
 
-// ========== Загрузка файлов ==========
+// ========== Загрузка файлов (возвращаем base64) ==========
 app.post('/api/upload-avatar', authenticateToken, upload.single('avatar'), (req, res) => {
     if (!req.file) return res.json({ success: false, error: 'Файл не загружен' });
-    res.json({ success: true, avatarUrl: `/uploads/images/${req.file.filename}` });
+    const avatarBase64 = fileToBase64(req.file);
+    res.json({ success: true, avatarUrl: avatarBase64 });
 });
 
 app.post('/api/upload', authenticateToken, upload.single('file'), (req, res) => {
     if (!req.file) return res.json({ success: false, error: 'Файл не загружен' });
-    res.json({ success: true, fileUrl: `/uploads/files/${req.file.filename}` });
+    const fileBase64 = fileToBase64(req.file);
+    res.json({ success: true, fileUrl: fileBase64 });
 });
 
 app.post('/api/upload-chat-image', authenticateToken, upload.single('image'), (req, res) => {
     if (!req.file) return res.json({ success: false, error: 'Файл не загружен' });
-    res.json({ success: true, imageUrl: `/uploads/images/${req.file.filename}` });
+    const imageBase64 = fileToBase64(req.file);
+    res.json({ success: true, imageUrl: imageBase64 });
 });
 
 app.post('/api/upload-voice', authenticateToken, upload.single('voice'), (req, res) => {
     if (!req.file) return res.json({ success: false, error: 'Файл не загружен' });
     if (req.file.size > 5 * 1024 * 1024) {
-        fs.unlinkSync(req.file.path);
         return res.json({ success: false, error: 'Размер голосового сообщения не должен превышать 5 МБ' });
     }
-    res.json({ success: true, voiceUrl: `/uploads/audio/${req.file.filename}` });
+    const voiceBase64 = fileToBase64(req.file);
+    res.json({ success: true, voiceUrl: voiceBase64 });
 });
 
 app.post('/api/upload-recording', authenticateToken, upload.single('recording'), async (req, res) => {
     if (!req.file) return res.json({ success: false, error: 'Файл не загружен' });
-    const recording = { id: nanoid(12), url: `/uploads/recordings/${req.file.filename}`, from_user: req.userId, to_user: req.body.to, room_id: req.body.roomId, created_at: new Date().toISOString() };
+    const recordingBase64 = fileToBase64(req.file);
+    const recording = { id: nanoid(12), url: recordingBase64, from_user: req.userId, to_user: req.body.to, room_id: req.body.roomId, created_at: new Date().toISOString() };
     await pool.query(`INSERT INTO recordings (id,url,from_user,to_user,room_id,created_at) VALUES ($1,$2,$3,$4,$5,$6)`,
         [recording.id, recording.url, recording.from_user, recording.to_user, recording.room_id, recording.created_at]);
     res.json({ success: true, recordingUrl: recording.url });
@@ -1070,6 +1064,7 @@ io.on('connection', (socket) => {
         }
     });
     socket.on('disconnect', () => {
+        console.log('WebSocket disconnected:', socket.id);
         if (socket.roomId) {
             socket.to(socket.roomId).emit('partner-disconnected');
             const room = activeRooms.get(socket.roomId);
@@ -1080,7 +1075,6 @@ io.on('connection', (socket) => {
                 if (room.users.size === 0) setTimeout(() => { const r = activeRooms.get(socket.roomId); if (r && r.users.size === 0) activeRooms.delete(socket.roomId); }, 10000);
             }
         }
-        console.log('WebSocket disconnected:', socket.id);
     });
 });
 
