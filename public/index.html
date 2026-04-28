@@ -7,7 +7,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        /* ========== Стили (без изменений, сохранены из вашего кода) ========== */
+        /* ========== ВСЕ СТИЛИ ОСТАЮТСЯ БЕЗ ИЗМЕНЕНИЙ ========== */
         :root {
             --green: #8bca8b;
             --green-dark: #5a9e5a;
@@ -298,10 +298,9 @@
     <script src="/socket.io/socket.io.js"></script>
     <script>
         // ============================================================
-        // НОВАЯ ВЕРСИЯ С ТОКЕН-АУТЕНТИФИКАЦИЕЙ, ИСПРАВЛЕННЫМИ ОШИБКАМИ
+        // ПОЛНЫЙ ФРОНТЕНД С АУТЕНТИФИКАЦИЕЙ ПО ТОКЕНУ
         // ============================================================
-        
-        // ----- Глобальные переменные -----
+        // Глобальные переменные
         let currentUser = null;
         let currentTab = 'feed';
         let socket = null;
@@ -314,7 +313,7 @@
         let videoObserver = null;
         const TOKEN_KEY = 'therapy_token';
 
-        // ----- API с авторизацией -----
+        // ========== API с авторизацией ==========
         async function apiRequest(endpoint, options = {}) {
             const token = localStorage.getItem(TOKEN_KEY);
             const headers = {
@@ -343,11 +342,11 @@
             }
         }
 
-        function uploadRequest(endpoint, formData) {
+        async function uploadRequest(endpoint, formData) {
             return apiRequest(endpoint, { method: 'POST', body: formData });
         }
 
-        // ----- Вспомогательные UI -----
+        // ========== Вспомогательные функции ==========
         function showToast(msg, isErr = false) {
             document.querySelectorAll('.toast').forEach(t => t.remove());
             const t = document.createElement('div');
@@ -465,7 +464,6 @@
             setTimeout(() => document.getElementById(modalId).classList.add('active'), 10);
         }
 
-        // ----- Обновление пользователя -----
         async function refreshUser() {
             if (!currentUser) return;
             try {
@@ -475,7 +473,7 @@
             } catch(e) { showToast('Не удалось обновить профиль', true); }
         }
 
-        // ----- Чат-функции -----
+        // ========== Чат-функции ==========
         function appendMessageToChat(msg) {
             const listDiv = document.getElementById('chatMessagesList');
             if (!listDiv) return;
@@ -556,7 +554,7 @@
             }
         }
 
-        // ----- Socket инициализация -----
+        // ========== Socket ==========
         function initSocket() {
             if (socket) { socket.disconnect(); socket = null; }
             socket = io({ transports: ['websocket', 'polling'] });
@@ -620,7 +618,7 @@
             socket.on('notification', (notif) => { showFloatingNotification(notif.title, notif.message); if (currentUser) refreshUser(); if (currentTab === 'notifications') renderNotifications(); });
         }
 
-        // ----- Лента (Feed) -----
+        // ========== Лента (Feed) ==========
         async function renderFeed() {
             document.getElementById('mainContent').innerHTML = `<div class="container"><div class="empty-state"><i class="fas fa-circle-notch fa-spin"></i></div></div>`;
             const data = await apiRequest(`/api/posts`);
@@ -722,7 +720,7 @@
             updateCommentCount(postId, 1);
         }
 
-        // ----- Список психологов -----
+        // ========== Психологи ==========
         async function renderPsychologistsList() {
             document.getElementById('mainContent').innerHTML = `<div class="container"><div class="empty-state"><i class="fas fa-circle-notch fa-spin"></i></div></div>`;
             const data = await apiRequest('/api/psychologists');
@@ -737,20 +735,22 @@
             initVideoObservers();
         }
 
-        // ----- Профиль (сокращён для краткости, но функционал полный) -----
+        // ========== Профиль (полный) ==========
         async function renderProfile() {
             if (!currentUser) { showToast('Войдите в аккаунт', true); return; }
             const isPsych = currentUser.role === 'psychologist';
             document.getElementById('mainContent').innerHTML = `<div class="container"><div class="empty-state"><i class="fas fa-circle-notch fa-spin"></i></div></div>`;
-            const [postsRes, tasksRes, notesRes] = await Promise.all([
+            const [postsRes, tasksRes, notesRes, subsRes] = await Promise.all([
                 apiRequest(`/api/posts?userId=${currentUser.id}`),
                 isPsych ? apiRequest(`/api/tasks/${currentUser.id}`) : Promise.resolve({ tasks: [] }),
-                isPsych ? apiRequest(`/api/notes/${currentUser.id}`) : Promise.resolve({ notes: [] })
+                isPsych ? apiRequest(`/api/notes/${currentUser.id}`) : Promise.resolve({ notes: [] }),
+                apiRequest(`/api/subscriptions/${currentUser.id}`)
             ]);
             const myPosts = (postsRes.posts || []).filter(p => p.author.id === currentUser.id);
             const tasks = tasksRes.tasks || [];
             const notes = notesRes.notes || [];
-            const followersCount = (currentUser.followersCount || 0);
+            const followersCount = subsRes.followers?.length || 0;
+
             let appointmentsHtml = '';
             if (!isPsych && currentUser.appointments && currentUser.appointments.length > 0) {
                 const appointments = currentUser.appointments.filter(a => a.status === 'confirmed' || a.status === 'completed');
@@ -762,7 +762,7 @@
                 const confirmedCount = (currentUser.clients || []).filter(a => a.status === 'confirmed').length;
                 const undoneTasks = tasks.filter(t => !t.completed).length;
                 const certificates = currentUser.certificates || [];
-                psychSections = `<div class="profile-sections"><div class="collapsible-section" id="sec-tasks"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">📋</div><div><div class="collapsible-title">Задачи</div><div class="collapsible-subtitle">${undoneTasks > 0 ? `${undoneTasks} не выполнено` : 'Все выполнены'}</div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body">${tasks.map(t => `<div class="task-item"><input type="checkbox" class="task-checkbox task-cb" data-id="${t.id}" ${t.completed ? 'checked' : ''}><div style="flex:1"><div class="task-text ${t.completed ? 'task-completed' : ''}">${escapeHtml(t.text)}</div>${t.dueDate ? `<div class="task-due">📅 ${t.dueDate}</div>` : ''}</div><button class="task-delete" onclick="deleteTask('${t.id}')"><i class="fas fa-times"></i></button></div>`).join('')}${tasks.length === 0 ? '<div class="empty-state" style="padding:16px;"><i class="fas fa-check-circle"></i><div>Нет задач</div></div>' : ''}<button class="section-add-btn" onclick="addTaskWithDate()"><i class="fas fa-plus"></i> Добавить задачу</button></div></div><div class="collapsible-section" id="sec-calendar"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">📅</div><div><div class="collapsible-title">Календарь</div><div class="collapsible-subtitle">События</div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body"><div id="profileCalendar"></div></div></div><div class="collapsible-section" id="sec-appointments"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">📞</div><div><div class="collapsible-title">Записи клиентов</div><div class="collapsible-subtitle">${pendingCount > 0 ? `${pendingCount} ожидает подтверждения` : confirmedCount > 0 ? `${confirmedCount} подтверждено` : 'Нет записей'}</div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body">${(currentUser.clients || []).map(apt => { const isCompleted = apt.status === 'completed' || new Date(`${apt.date}T${apt.time}`) < new Date(); return `<div class="appointment-item"><div class="appt-info"><div class="appt-name">${escapeHtml(apt.clientName)}</div><div class="appt-time">📅 ${apt.date} в ${apt.time}</div><div class="appt-status ${apt.status === 'confirmed' ? 'status-confirmed' : 'status-pending'}">${apt.status === 'confirmed' ? (isCompleted ? '✅ Завершён' : '✅ Подтверждено') : '⏳ Ожидает'}</div></div><div class="appt-actions">${apt.status === 'pending' ? `<button class="btn-sm" onclick="confirmAppointment('${apt.appointmentId}','${apt.clientId}')">Подтвердить</button>` : ''}${apt.status === 'confirmed' && !isCompleted ? `<button class="btn-sm" onclick="startCall('${apt.roomId}', 'psychologist')"><i class="fas fa-video"></i> Начать</button>` : ''}${isCompleted ? '<i class="fas fa-check-circle" style="color:var(--green); font-size:20px;"></i>' : ''}</div></div>`; }).join('')}${(currentUser.clients || []).length === 0 ? '<div class="empty-state" style="padding:16px;"><i class="fas fa-calendar-times"></i><div>Нет записей</div></div>' : ''}</div></div><div class="collapsible-section" id="sec-clients"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">👥</div><div><div class="collapsible-title">Клиенты</div><div class="collapsible-subtitle">${confirmedCount} завершённых звонков</div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body">${(currentUser.clients || []).filter(a => a.status === 'confirmed').map(apt => `<div class="client-item"><div><div class="client-name">${escapeHtml(apt.clientName)}</div><div class="client-time">${apt.date} в ${apt.time}</div></div><button class="btn-sm" onclick="startChatWith('${apt.clientId}','${escapeHtml(apt.clientName)}')"><i class="fas fa-comment-dots"></i> Написать</button></div>`).join('')}${(currentUser.clients || []).filter(a => a.status === 'confirmed').length === 0 ? '<div class="empty-state" style="padding:16px;"><i class="fas fa-users-slash"></i><div>Нет завершённых звонков</div></div>' : ''}</div></div><div class="collapsible-section" id="sec-notes"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">📝</div><div><div class="collapsible-title">Заметки</div><div class="collapsible-subtitle">${notes.length} заметок</div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body"><div class="notes-grid">${notes.map(n => `<div class="note-card" onclick="openNoteModal('${n.id}','${escapeHtml(n.title)}','${escapeHtml(n.content)}','${n.attachment || ''}')"><div class="note-title">${escapeHtml(n.title)}</div><div class="note-preview">${escapeHtml((n.content || '').substring(0, 70))}${(n.content || '').length > 70 ? '…' : ''}</div></div>`).join('')}${notes.length === 0 ? '<div class="empty-state" style="padding:16px;"><i class="fas fa-sticky-note"></i><div>Нет заметок</div></div>' : ''}</div><button class="section-add-btn" onclick="openAddNoteModal()"><i class="fas fa-plus"></i> Добавить заметку</button></div></div><div class="collapsible-section" id="sec-certs"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">📜</div><div><div class="collapsible-title">Сертификаты и дипломы</div><div class="collapsible-subtitle">${certificates.length} документов</div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body"><div class="certificates-grid" id="certsGridProfile">${certificates.map(c => `<div class="certificate-card"><img src="${escapeHtml(c.image)}" onerror="this.src='https://placehold.co/100x80/1a2e1a/8bca8b?text=📜'"><div class="certificate-title">${escapeHtml(c.title)}</div><button class="delete-cert-btn" onclick="deleteCertificateProfile('${c.id}')"><i class="fas fa-times"></i></button></div>`).join('')}<div class="certificate-card add-cert-card" onclick="addCertificateProfile()"><i class="fas fa-plus"></i><span>Добавить</span></div></div></div></div></div>`;
+                psychSections = `<div class="profile-sections"><div class="collapsible-section" id="sec-tasks"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">📋</div><div><div class="collapsible-title">Задачи</div><div class="collapsible-subtitle">${undoneTasks > 0 ? `${undoneTasks} не выполнено` : 'Все выполнены'}</div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body"><div id="tasksList">${tasks.map(t => `<div class="task-item"><input type="checkbox" class="task-checkbox task-cb" data-id="${t.id}" ${t.completed ? 'checked' : ''}><div style="flex:1"><div class="task-text ${t.completed ? 'task-completed' : ''}">${escapeHtml(t.text)}</div>${t.dueDate ? `<div class="task-due">📅 ${t.dueDate}</div>` : ''}</div><button class="task-delete" onclick="deleteTask('${t.id}')"><i class="fas fa-times"></i></button></div>`).join('')}</div><button class="section-add-btn" onclick="addTaskWithDate()"><i class="fas fa-plus"></i> Добавить задачу</button></div></div><div class="collapsible-section" id="sec-calendar"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">📅</div><div><div class="collapsible-title">Календарь</div><div class="collapsible-subtitle">События</div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body"><div id="profileCalendar"></div></div></div><div class="collapsible-section" id="sec-appointments"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">📞</div><div><div class="collapsible-title">Записи клиентов</div><div class="collapsible-subtitle">${pendingCount > 0 ? `${pendingCount} ожидает подтверждения` : confirmedCount > 0 ? `${confirmedCount} подтверждено` : 'Нет записей'}</div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body"><div id="appointmentsList">${(currentUser.clients || []).map(apt => { const isCompleted = apt.status === 'completed' || new Date(`${apt.date}T${apt.time}`) < new Date(); return `<div class="appointment-item"><div class="appt-info"><div class="appt-name">${escapeHtml(apt.clientName)}</div><div class="appt-time">📅 ${apt.date} в ${apt.time}</div><div class="appt-status ${apt.status === 'confirmed' ? 'status-confirmed' : 'status-pending'}">${apt.status === 'confirmed' ? (isCompleted ? '✅ Завершён' : '✅ Подтверждено') : '⏳ Ожидает'}</div></div><div class="appt-actions">${apt.status === 'pending' ? `<button class="btn-sm" onclick="confirmAppointment('${apt.appointmentId}','${apt.clientId}')">Подтвердить</button>` : ''}${apt.status === 'confirmed' && !isCompleted ? `<button class="btn-sm" onclick="startCall('${apt.roomId}', 'psychologist')"><i class="fas fa-video"></i> Начать</button>` : ''}${isCompleted ? '<i class="fas fa-check-circle" style="color:var(--green); font-size:20px;"></i>' : ''}</div></div>`; }).join('')}</div>${(currentUser.clients || []).length === 0 ? '<div class="empty-state" style="padding:16px;"><i class="fas fa-calendar-times"></i><div>Нет записей</div></div>' : ''}</div></div><div class="collapsible-section" id="sec-clients"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">👥</div><div><div class="collapsible-title">Клиенты</div><div class="collapsible-subtitle">${confirmedCount} завершённых звонков</div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body"><div id="clientsList">${(currentUser.clients || []).filter(a => a.status === 'confirmed').map(apt => `<div class="client-item"><div><div class="client-name">${escapeHtml(apt.clientName)}</div><div class="client-time">${apt.date} в ${apt.time}</div></div><button class="btn-sm" onclick="startChatWith('${apt.clientId}','${escapeHtml(apt.clientName)}')"><i class="fas fa-comment-dots"></i> Написать</button></div>`).join('')}</div>${(currentUser.clients || []).filter(a => a.status === 'confirmed').length === 0 ? '<div class="empty-state" style="padding:16px;"><i class="fas fa-users-slash"></i><div>Нет завершённых звонков</div></div>' : ''}</div></div><div class="collapsible-section" id="sec-notes"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">📝</div><div><div class="collapsible-title">Заметки</div><div class="collapsible-subtitle">${notes.length} заметок</div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body"><div class="notes-grid">${notes.map(n => `<div class="note-card" onclick="openNoteModal('${n.id}','${escapeHtml(n.title)}','${escapeHtml(n.content)}','${n.attachment || ''}')"><div class="note-title">${escapeHtml(n.title)}</div><div class="note-preview">${escapeHtml((n.content || '').substring(0, 70))}${(n.content || '').length > 70 ? '…' : ''}</div></div>`).join('')}${notes.length === 0 ? '<div class="empty-state" style="padding:16px;"><i class="fas fa-sticky-note"></i><div>Нет заметок</div></div>' : ''}</div><button class="section-add-btn" onclick="openAddNoteModal()"><i class="fas fa-plus"></i> Добавить заметку</button></div></div><div class="collapsible-section" id="sec-certs"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">📜</div><div><div class="collapsible-title">Сертификаты и дипломы</div><div class="collapsible-subtitle">${certificates.length} документов</div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body"><div class="certificates-grid" id="certsGridProfile">${certificates.map(c => `<div class="certificate-card"><img src="${escapeHtml(c.image)}" onerror="this.src='https://placehold.co/100x80/1a2e1a/8bca8b?text=📜'"><div class="certificate-title">${escapeHtml(c.title)}</div><button class="delete-cert-btn" onclick="deleteCertificateProfile('${c.id}')"><i class="fas fa-times"></i></button></div>`).join('')}<div class="certificate-card add-cert-card" onclick="addCertificateProfile()"><i class="fas fa-plus"></i><span>Добавить</span></div></div></div></div></div>`;
             }
             const html = `<div class="container"><div class="profile-header"><div class="profile-avatar-wrap"><img class="profile-avatar-lg" src="${escapeHtml(currentUser.avatar)}" id="profileAvatar" onerror="this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser.fullName)}&background=8bca8b&color=fff'"><button class="avatar-edit-btn" onclick="changeAvatar()"><i class="fas fa-pen"></i></button></div><div class="profile-name">${escapeHtml(currentUser.fullName)}</div><div class="profile-role-badge">${isPsych ? '🧠 Психолог' : '👤 Клиент'}</div>${currentUser.about ? `<div class="profile-bio">${escapeHtml(currentUser.about)}</div>` : ''}${isPsych ? renderStars(currentUser.rating || 0) : ''}<div class="profile-stats"><div class="profile-stat"><div class="number">${myPosts.length}</div><div class="label">постов</div></div><div class="profile-stat"><div class="number">${followersCount}</div><div class="label">подписчиков</div></div>${isPsych ? `<div class="profile-stat"><div class="number">${(currentUser.rating || 0).toFixed(1)}</div><div class="label">рейтинг</div></div>` : ''}</div><div class="profile-actions"><button class="btn-sm btn-outline" onclick="editProfileModal()"><i class="fas fa-pen"></i> Редактировать</button>${isPsych ? `<button class="btn-sm btn-outline" onclick="showScheduleEditor()"><i class="fas fa-clock"></i> Расписание</button><button class="btn-sm" onclick="createPostModal()"><i class="fas fa-plus"></i> Пост</button>` : ''}</div></div>${!isPsych ? appointmentsHtml : ''}${isPsych ? `<div style="margin-bottom: 16px;"><div class="section-header-row"><h3>Мои посты</h3><button class="btn-sm" onclick="createPostModal()"><i class="fas fa-plus"></i> Новый</button></div><div class="posts-grid">${myPosts.map(p => `<div class="post-card glass-card"><div class="post-text">${escapeHtml(p.text)}</div>${p.image ? `<img class="post-image" src="${escapeHtml(p.image)}" onclick="openImageModal('${escapeHtml(p.image)}')">` : ''}${p.video ? `<video class="post-video" controls preload="metadata"><source src="${escapeHtml(p.video)}" type="video/mp4"></video>` : ''}<div class="post-stats"><span style="color:var(--text-muted);font-size:13px;display:flex;gap:6px;align-items:center;"><i class="fa-regular fa-heart"></i> ${p.likesCount||0}</span><span style="color:var(--text-muted);font-size:13px;display:flex;gap:6px;align-items:center;"><i class="fa-regular fa-comment"></i> ${p.commentsCount||0}</span></div><div class="post-actions"><button class="profile-edit-post" data-id="${p.id}" data-text="${escapeHtml(p.text)}"><i class="fas fa-pen"></i> Ред.</button><button class="profile-delete-post" data-id="${p.id}"><i class="fas fa-trash-alt"></i> Удалить</button></div></div>`).join('')}${myPosts.length === 0 ? '<div class="empty-state glass-card" style="padding:24px;"><i class="fas fa-newspaper"></i><div>Нет постов</div></div>' : ''}</div></div>` : ''}${psychSections}</div>`;
             document.getElementById('mainContent').innerHTML = html;
@@ -818,24 +818,242 @@
 
         window.changeProfileMonth = (delta) => { currentCalendarDate.setMonth(currentCalendarDate.getMonth() + delta); renderProfileCalendar(); };
 
-        // ----- Задачи, заметки, сертификаты и прочее (сокращённо, но логика сохранена) -----
+        // ========== Задачи, заметки, сертификаты и прочее (полные функции) ==========
         async function addTaskWithDate() {
-            // ... (полная функция из старого кода, адаптированная под apiRequest)
+            return new Promise((resolve) => {
+                const modalId = 'addTaskModal_' + Date.now();
+                const html = `<div class="modal" id="${modalId}"><div class="modal-content"><div class="modal-handle"></div><h3>Новая задача</h3><label style="font-size:12px; color:var(--text-muted); display:block; margin-bottom:6px;">Дата выполнения (необязательно)</label><input type="date" id="taskDueDate_${modalId}" style="margin-bottom:16px; width:100%;"><input type="text" id="taskText_${modalId}" placeholder="Введите задачу..." style="margin-bottom:20px;"><div class="modal-buttons"><button class="btn-secondary" id="cancelTaskBtn_${modalId}">Отмена</button><button class="btn-primary" id="saveTaskBtn_${modalId}">Сохранить</button></div></div></div>`;
+                document.body.insertAdjacentHTML('beforeend', html);
+                const modal = document.getElementById(modalId);
+                const textInput = document.getElementById(`taskText_${modalId}`);
+                const dueDateInput = document.getElementById(`taskDueDate_${modalId}`);
+                const cancelBtn = document.getElementById(`cancelTaskBtn_${modalId}`);
+                const saveBtn = document.getElementById(`saveTaskBtn_${modalId}`);
+                const cleanup = () => { modal.classList.remove('active'); setTimeout(() => modal.remove(), 300); };
+                saveBtn.onclick = async () => {
+                    const text = textInput.value.trim();
+                    if (!text) { showToast('Введите текст задачи', true); return; }
+                    const dueDate = dueDateInput.value || null;
+                    await apiRequest('/api/tasks', { method: 'POST', body: JSON.stringify({ text, dueDate }) });
+                    showToast('Задача добавлена');
+                    cleanup();
+                    renderProfile();
+                    resolve();
+                };
+                cancelBtn.onclick = () => { cleanup(); resolve(); };
+                setTimeout(() => modal.classList.add('active'), 10);
+                textInput.focus();
+            });
         }
-        async function deleteTask(taskId) { await apiRequest(`/api/tasks/${taskId}`, { method: 'DELETE' }); renderProfile(); }
-        async function confirmAppointment(appointmentId, clientId) { await apiRequest('/api/appointment/confirm', { method: 'POST', body: JSON.stringify({ appointmentId, clientId }) }); await refreshUser(); renderProfile(); }
-        async function addCertificateProfile() { /* как в старом, с uploadRequest */ }
-        async function deleteCertificateProfile(certId) { await apiRequest(`/api/certificates/${certId}`, { method: 'DELETE' }); await refreshUser(); renderProfile(); }
-        function editProfileModal() { /* открывает модалку, сохраняет через apiRequest */ }
-        async function saveProfileEdit() { /* использует apiRequest */ }
-        async function changeAvatar() { /* uploadRequest */ }
-        function showScheduleEditor() { /* как было, но с apiRequest */ }
-        function openAddNoteModal() { /* модалка для заметок */ }
-        async function saveNote() { /* apiRequest */ }
-        async function openNoteModal(id, title, content, att) { /* ... */ }
-        async function updateNote(id) { /* ... */ }
-        async function deleteNote(id) { /* ... */ }
-        // ----- Просмотр страницы психолога -----
+
+        async function deleteTask(taskId) {
+            openConfirmModal('Удалить задачу?', '', async () => {
+                await apiRequest(`/api/tasks/${taskId}`, { method: 'DELETE' });
+                renderProfile();
+            });
+        }
+
+        async function confirmAppointment(appointmentId, clientId) {
+            await apiRequest('/api/appointment/confirm', { method: 'POST', body: JSON.stringify({ appointmentId, clientId }) });
+            showToast('Запись подтверждена');
+            await refreshUser();
+            renderProfile();
+        }
+
+        function openAddNoteModal() {
+            const modalId = 'noteModal';
+            const html = `<div class="modal" id="${modalId}"><div class="modal-content"><div class="modal-handle"></div><h3>Новая заметка</h3><input type="text" id="noteTitle" placeholder="Заголовок"><textarea id="noteContent" rows="4" placeholder="Текст заметки..."></textarea><input type="file" id="noteFile" style="font-size:12px;"><div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('${modalId}')">Отмена</button><button class="btn-primary" onclick="saveNote()">Сохранить</button></div></div></div>`;
+            document.body.insertAdjacentHTML('beforeend', html);
+            setTimeout(() => document.getElementById(modalId).classList.add('active'), 10);
+        }
+
+        async function saveNote() {
+            const title = document.getElementById('noteTitle').value;
+            const content = document.getElementById('noteContent').value;
+            if (!title || !content) { showToast('Заполните все поля', true); return; }
+            const file = document.getElementById('noteFile')?.files[0];
+            let att = null, attT = null;
+            if (file) {
+                const fd = new FormData(); fd.append('file', file);
+                const d = await uploadRequest('/api/upload', fd);
+                if (d.success) { att = d.fileUrl; attT = file.type.startsWith('image/') ? 'image' : 'file'; }
+            }
+            await apiRequest('/api/notes', { method: 'POST', body: JSON.stringify({ title, content, attachment: att, attachmentType: attT }) });
+            closeModal('noteModal');
+            showToast('Заметка сохранена');
+            renderProfile();
+        }
+
+        async function openNoteModal(id, title, content, att) {
+            const modalId = 'editNoteModal';
+            const html = `<div class="modal" id="${modalId}"><div class="modal-content"><div class="modal-handle"></div><h3>Заметка</h3><input type="text" id="editNoteTitle" value="${escapeHtml(title)}"><textarea id="editNoteContent" rows="6">${escapeHtml(content)}</textarea>${att ? `<div style="margin-bottom:12px;"><a href="${att}" target="_blank" style="color:var(--green);font-size:13px;"><i class="fas fa-paperclip"></i> Вложение</a></div>` : ''}<div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('${modalId}')">Закрыть</button><button class="btn-danger" style="background:rgba(220,38,38,0.2)!important;border:1px solid rgba(220,38,38,0.35)!important;color:#ff6b6b!important;" onclick="deleteNote('${id}')">Удалить</button><button class="btn-primary" onclick="updateNote('${id}')">Сохранить</button></div></div></div>`;
+            document.body.insertAdjacentHTML('beforeend', html);
+            setTimeout(() => document.getElementById(modalId).classList.add('active'), 10);
+        }
+
+        async function updateNote(id) {
+            const title = document.getElementById('editNoteTitle').value;
+            const content = document.getElementById('editNoteContent').value;
+            await apiRequest(`/api/notes/${id}`, { method: 'DELETE' });
+            await apiRequest('/api/notes', { method: 'POST', body: JSON.stringify({ title, content, attachment: null, attachmentType: null }) });
+            closeModal('editNoteModal');
+            showToast('Заметка обновлена');
+            renderProfile();
+        }
+
+        async function deleteNote(id) {
+            openConfirmModal('Удалить заметку?', '', async () => {
+                await apiRequest(`/api/notes/${id}`, { method: 'DELETE' });
+                closeModal('editNoteModal');
+                showToast('Заметка удалена');
+                renderProfile();
+            });
+        }
+
+        async function addCertificateProfile() {
+            const title = await openPromptModal('Название сертификата или диплома:', 'Добавить');
+            if (!title) return;
+            const input = document.createElement('input');
+            input.type = 'file'; input.accept = 'image/*';
+            input.onchange = async () => {
+                const file = input.files[0];
+                if (!file) return;
+                const fd = new FormData();
+                fd.append('title', title);
+                fd.append('certificate', file);
+                showToast('Загружаем...');
+                const data = await uploadRequest('/api/certificates', fd);
+                if (data.success) {
+                    if (data.user) currentUser = data.user;
+                    else await refreshUser();
+                    showToast('Сертификат добавлен');
+                    renderProfile();
+                    setTimeout(() => { const sec = document.getElementById('sec-certs'); if (sec && !sec.classList.contains('open')) sec.classList.add('open'); }, 100);
+                } else { showToast(data.error || 'Ошибка загрузки', true); }
+            };
+            input.click();
+        }
+
+        async function deleteCertificateProfile(certId) {
+            openConfirmModal('Удалить сертификат?', 'Это действие нельзя отменить.', async () => {
+                const data = await apiRequest(`/api/certificates/${certId}`, { method: 'DELETE' });
+                if (data.success) {
+                    if (data.user) currentUser = data.user;
+                    else await refreshUser();
+                    showToast('Сертификат удалён');
+                    renderProfile();
+                } else { showToast('Ошибка удаления', true); }
+            });
+        }
+
+        function openPromptModal(label, confirmText = 'ОК') {
+            return new Promise((resolve) => {
+                const modalId = 'promptModal_' + Date.now();
+                const html = `<div class="modal" id="${modalId}"><div class="modal-content"><div class="modal-handle"></div><h3>${escapeHtml(label)}</h3><input type="text" id="promptInput_${modalId}" placeholder="Введите текст..."><div class="modal-buttons"><button class="btn-secondary" id="cancelBtn_${modalId}">Отмена</button><button class="btn-primary" id="okBtn_${modalId}">${escapeHtml(confirmText)}</button></div></div></div>`;
+                document.body.insertAdjacentHTML('beforeend', html);
+                const modal = document.getElementById(modalId);
+                const input = document.getElementById(`promptInput_${modalId}`);
+                const cancel = document.getElementById(`cancelBtn_${modalId}`);
+                const ok = document.getElementById(`okBtn_${modalId}`);
+                const cleanup = () => { modal.classList.remove('active'); setTimeout(() => modal.remove(), 300); };
+                ok.onclick = () => { const val = input.value.trim(); cleanup(); resolve(val || null); };
+                cancel.onclick = () => { cleanup(); resolve(null); };
+                input.onkeypress = (e) => { if (e.key === 'Enter') { const val = input.value.trim(); cleanup(); resolve(val || null); } };
+                setTimeout(() => modal.classList.add('active'), 10);
+                input.focus();
+            });
+        }
+
+        // ========== Редактирование профиля ==========
+        function editProfileModal() {
+            const isPsych = currentUser.role === 'psychologist';
+            const html = `<div class="modal" id="editProfileModal"><div class="modal-content"><div class="modal-handle"></div><h3>Редактировать профиль</h3><input type="text" id="editName" value="${escapeHtml(currentUser.fullName)}" placeholder="ФИО"><input type="tel" id="editPhone" value="${escapeHtml(currentUser.phone || '')}" placeholder="Телефон"><textarea id="editBio" rows="3" placeholder="О себе">${escapeHtml(currentUser.about || '')}</textarea>${isPsych ? `<input type="text" id="editSpec" value="${escapeHtml(currentUser.specialization || '')}" placeholder="Специализация"><input type="text" id="editExp" value="${escapeHtml(currentUser.experience || '')}" placeholder="Опыт работы"><input type="number" id="editPrice" value="${currentUser.price || 0}" placeholder="Стоимость часа (₸)">` : ''}<div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('editProfileModal')">Отмена</button><button class="btn-primary" onclick="saveProfileEdit()">Сохранить</button></div></div></div>`;
+            document.body.insertAdjacentHTML('beforeend', html);
+            setTimeout(() => document.getElementById('editProfileModal').classList.add('active'), 10);
+        }
+
+        async function saveProfileEdit() {
+            const fd = new FormData();
+            fd.append('fullName', document.getElementById('editName').value);
+            fd.append('phone', document.getElementById('editPhone').value);
+            fd.append('about', document.getElementById('editBio').value);
+            if (currentUser.role === 'psychologist') {
+                fd.append('specialization', document.getElementById('editSpec').value);
+                fd.append('experience', document.getElementById('editExp').value);
+                fd.append('price', document.getElementById('editPrice').value);
+            }
+            const data = await uploadRequest('/api/user/profile', fd);
+            if (data.success) {
+                currentUser = data.user;
+                showToast('Профиль обновлён');
+                closeModal('editProfileModal');
+                renderProfile();
+            } else showToast('Ошибка', true);
+        }
+
+        async function changeAvatar() {
+            const input = document.createElement('input');
+            input.type = 'file'; input.accept = 'image/*';
+            input.onchange = async () => {
+                const file = input.files[0];
+                if (!file) return;
+                const fd = new FormData();
+                fd.append('avatar', file);
+                const uploadData = await uploadRequest('/api/upload-avatar', fd);
+                if (uploadData.success) {
+                    const updateData = await apiRequest('/api/user/profile', { method: 'PUT', body: JSON.stringify({ avatar: uploadData.avatarUrl }) });
+                    if (updateData.success) {
+                        currentUser = updateData.user;
+                        showToast('Аватар обновлён');
+                        renderProfile();
+                    }
+                }
+            };
+            input.click();
+        }
+
+        // ========== Расписание ==========
+        function showScheduleEditor() {
+            const schedule = currentUser.schedule || {};
+            const renderSlots = () => {
+                const sched = currentUser.schedule || {};
+                const ds = Object.keys(sched).sort();
+                return ds.length ? ds.map(d => `<div style="margin-bottom:12px;"><div style="font-size:12px;color:var(--text-muted);margin-bottom:6px;">${d}</div><div style="display:flex;flex-wrap:wrap;gap:6px;">${sched[d].map(t => `<span style="display:inline-flex;align-items:center;gap:6px;background:var(--green-dim);border:1px solid var(--green-border);padding:4px 12px;border-radius:20px;font-size:13px;">${t}<button onclick="removeSlot('${d}','${t}')" style="background:none;border:none;color:rgba(255,100,100,0.8);cursor:pointer;font-size:12px;padding:0;line-height:1;">✕</button></span>`).join('')}</div></div>`) : '<div class="empty-state" style="padding:20px;"><i class="fas fa-calendar-times"></i><div>Нет добавленного времени</div></div>';
+            };
+            const modalId = 'scheduleModal';
+            const html = `<div class="modal" id="${modalId}"><div class="modal-content" style="max-height:85vh;display:flex;flex-direction:column;"><div class="modal-handle"></div><h3>📅 Свободное время</h3><div class="schedule-modal-form"><div style="display:flex;gap:8px;align-items:flex-end;"><div style="flex:1;"><label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px;">Дата</label><input type="date" id="slotDate" style="margin-bottom:0;width:100%;"></div><div style="flex:1;"><label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px;">Время</label><input type="time" id="slotTime" style="margin-bottom:0;width:100%;"></div><button class="btn-sm" style="height:44px;margin-bottom:0;" onclick="window.addSlot()"><i class="fas fa-plus"></i> Добавить</button></div></div><div class="schedule-modal-list" id="schedule-list">${renderSlots()}</div><div class="modal-buttons" style="margin-top:0;"><button class="btn-secondary" onclick="closeModal('${modalId}')">Закрыть</button></div></div></div>`;
+            document.body.insertAdjacentHTML('beforeend', html);
+            setTimeout(() => document.getElementById(modalId).classList.add('active'), 10);
+            window.addSlot = async () => {
+                const date = document.getElementById('slotDate').value;
+                const time = document.getElementById('slotTime').value;
+                if (!date || !time) { showToast('Выберите дату и время', true); return; }
+                const sched = currentUser.schedule || {};
+                if (!sched[date]) sched[date] = [];
+                if (sched[date].includes(time)) { showToast('Такое время уже есть', true); return; }
+                sched[date].push(time); sched[date].sort();
+                const res = await apiRequest('/api/schedule', { method: 'PUT', body: JSON.stringify({ schedule: sched }) });
+                if (res.success) {
+                    currentUser.schedule = sched;
+                    document.getElementById('schedule-list').innerHTML = renderSlots();
+                    showToast('Время добавлено');
+                }
+            };
+            window.removeSlot = async (date, time) => {
+                const sched = currentUser.schedule || {};
+                if (sched[date]) {
+                    sched[date] = sched[date].filter(t => t !== time);
+                    if (!sched[date].length) delete sched[date];
+                    const res = await apiRequest('/api/schedule', { method: 'PUT', body: JSON.stringify({ schedule: sched }) });
+                    if (res.success) {
+                        currentUser.schedule = sched;
+                        document.getElementById('schedule-list').innerHTML = renderSlots();
+                    }
+                }
+            };
+        }
+
+        // ========== Страница психолога ==========
         async function viewPsychologistPage(psychologistId) {
             document.getElementById('mainContent').innerHTML = `<div class="container"><div class="empty-state"><i class="fas fa-circle-notch fa-spin"></i></div></div>`;
             const [userData, postsData, reviewsData] = await Promise.all([
@@ -843,16 +1061,17 @@
                 apiRequest(`/api/posts`),
                 apiRequest(`/api/reviews/${psychologistId}`)
             ]);
+            if (!userData.success) return;
             const p = userData.user;
             const psychPosts = (postsData.posts || []).filter(post => post.author.id === psychologistId);
             const reviews = reviewsData.reviews || [];
             const isOwn = currentUser && currentUser.id === psychologistId;
             const certificates = p.certificates || [];
-            const html = `<div class="container"><div class="psych-page-header"><button class="back-btn" onclick="switchTab('psychologists')"><i class="fas fa-arrow-left"></i></button><span style="font-size:14px;color:var(--text-muted);">Профиль</span></div><div class="profile-header"><img class="profile-avatar-lg" src="${escapeHtml(p.avatar)}" onerror="this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(p.fullName)}&background=8bca8b&color=fff'"><div class="profile-name">${escapeHtml(p.fullName)}</div><div class="profile-role-badge">🧠 Психолог</div>${p.about ? `<div class="profile-bio">${escapeHtml(p.about)}</div>` : ''}${renderStars(p.rating || 0)}<div class="psych-actions-row">${!isOwn && currentUser ? `<button class="btn-sm btn-outline" onclick="startChatWith('${psychologistId}','${escapeHtml(p.fullName)}')"><i class="fas fa-comment-dots"></i> Написать</button><button class="btn-sm" onclick="bookPsychologist('${psychologistId}','${escapeHtml(p.fullName)}')"><i class="fas fa-calendar-plus"></i> Записаться</button><button class="btn-sm btn-outline" onclick="openReviewModal('${psychologistId}','${escapeHtml(p.fullName)}')"><i class="fas fa-star"></i> Оценить</button></div>` : ''}${isOwn ? `<button class="btn-sm btn-outline" onclick="switchTab('profile')"><i class="fas fa-pen"></i> Редактировать</button>` : ''}</div></div>${p.specialization || p.experience || p.price ? `<div style="margin-bottom:16px;">${p.specialization ? `<div class="info-row"><i class="fas fa-brain"></i> ${escapeHtml(p.specialization)}</div>` : ''}${p.experience ? `<div class="info-row"><i class="fas fa-briefcase"></i> Опыт: ${escapeHtml(p.experience)}</div>` : ''}${p.price ? `<div class="info-row"><i class="fas fa-tag"></i> ${p.price} ₸ / час</div>` : ''}</div>` : ''}${certificates.length > 0 ? `<div style="margin-bottom:20px;"><div class="section-header-row"><h3>📜 Сертификаты</h3></div><div class="certificates-grid">${certificates.map(c => `<div class="certificate-card"><img src="${escapeHtml(c.image)}" onerror="this.src='https://placehold.co/100x80/1a2e1a/8bca8b?text=📜'"><div class="certificate-title">${escapeHtml(c.title)}</div></div>`).join('')}</div></div>` : ''}<div style="margin-bottom:20px;"><div class="section-header-row"><h3>📝 Посты</h3></div><div class="posts-grid">${psychPosts.map(pst => `<div class="post-card glass-card"><div class="post-text">${escapeHtml(pst.text)}</div>${pst.image ? `<img class="post-image" src="${escapeHtml(pst.image)}" onclick="openImageModal('${escapeHtml(pst.image)}')">` : ''}${pst.video ? `<video class="post-video" controls preload="metadata"><source src="${escapeHtml(pst.video)}" type="video/mp4"></video>` : ''}<div class="post-stats"><span style="color:var(--text-muted);font-size:13px;display:flex;gap:6px;align-items:center;"><i class="fa-regular fa-heart"></i> ${pst.likesCount||0}</span><span style="color:var(--text-muted);font-size:13px;display:flex;gap:6px;align-items:center;"><i class="fa-regular fa-comment"></i> ${pst.commentsCount||0}</span></div></div>`).join('')}${psychPosts.length === 0 ? '<div class="empty-state glass-card" style="padding:20px;"><i class="fas fa-newspaper"></i><div>Нет постов</div></div>' : ''}</div></div><div><div class="section-header-row"><h3>⭐ Отзывы (${reviews.length})</h3></div>${reviews.map(r => `<div class="review-card glass-card"><div class="review-header"><span class="review-name">${escapeHtml(r.clientName)}</span>${renderStars(r.rating)}</div><div class="review-text">${escapeHtml(r.text)}</div><div class="review-time">${new Date(r.createdAt).toLocaleString()}</div></div>`).join('')}${reviews.length === 0 ? '<div class="empty-state glass-card" style="padding:20px;"><i class="fas fa-star"></i><div>Нет отзывов</div></div>' : ''}</div></div>`;
+            const html = `<div class="container"><div class="psych-page-header"><button class="back-btn" onclick="switchTab('psychologists')"><i class="fas fa-arrow-left"></i></button><span style="font-size:14px;color:var(--text-muted);">Профиль</span></div><div class="profile-header"><img class="profile-avatar-lg" src="${escapeHtml(p.avatar)}" onerror="this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(p.fullName)}&background=8bca8b&color=fff'"><div class="profile-name">${escapeHtml(p.fullName)}</div><div class="profile-role-badge">🧠 Психолог</div>${p.about ? `<div class="profile-bio">${escapeHtml(p.about)}</div>` : ''}${renderStars(p.rating || 0)}<div class="psych-actions-row">${!isOwn && currentUser ? `<button class="btn-sm btn-outline" onclick="startChatWith('${psychologistId}','${escapeHtml(p.fullName)}')"><i class="fas fa-comment-dots"></i> Написать</button><button class="btn-sm" onclick="bookPsychologist('${psychologistId}','${escapeHtml(p.fullName)}')"><i class="fas fa-calendar-plus"></i> Записаться</button><button class="btn-sm btn-outline" onclick="openReviewModal('${psychologistId}','${escapeHtml(p.fullName)}')"><i class="fas fa-star"></i> Оценить</button>` : ''}${isOwn ? `<button class="btn-sm btn-outline" onclick="switchTab('profile')"><i class="fas fa-pen"></i> Редактировать</button>` : ''}</div></div>${p.specialization || p.experience || p.price ? `<div style="margin-bottom:16px;">${p.specialization ? `<div class="info-row"><i class="fas fa-brain"></i> ${escapeHtml(p.specialization)}</div>` : ''}${p.experience ? `<div class="info-row"><i class="fas fa-briefcase"></i> Опыт: ${escapeHtml(p.experience)}</div>` : ''}${p.price ? `<div class="info-row"><i class="fas fa-tag"></i> ${p.price} ₸ / час</div>` : ''}</div>` : ''}${certificates.length > 0 ? `<div style="margin-bottom:20px;"><div class="section-header-row"><h3>📜 Сертификаты</h3></div><div class="certificates-grid">${certificates.map(c => `<div class="certificate-card"><img src="${escapeHtml(c.image)}" onerror="this.src='https://placehold.co/100x80/1a2e1a/8bca8b?text=📜'"><div class="certificate-title">${escapeHtml(c.title)}</div></div>`).join('')}</div></div>` : ''}<div style="margin-bottom:20px;"><div class="section-header-row"><h3>📝 Посты</h3></div><div class="posts-grid">${psychPosts.map(pst => `<div class="post-card glass-card"><div class="post-text">${escapeHtml(pst.text)}</div>${pst.image ? `<img class="post-image" src="${escapeHtml(pst.image)}" onclick="openImageModal('${escapeHtml(pst.image)}')">` : ''}${pst.video ? `<video class="post-video" controls preload="metadata"><source src="${escapeHtml(pst.video)}" type="video/mp4"></video>` : ''}<div class="post-stats"><span style="color:var(--text-muted);font-size:13px;display:flex;gap:6px;align-items:center;"><i class="fa-regular fa-heart"></i> ${pst.likesCount||0}</span><span style="color:var(--text-muted);font-size:13px;display:flex;gap:6px;align-items:center;"><i class="fa-regular fa-comment"></i> ${pst.commentsCount||0}</span></div></div>`).join('')}${psychPosts.length === 0 ? '<div class="empty-state glass-card" style="padding:20px;"><i class="fas fa-newspaper"></i><div>Нет постов</div></div>' : ''}</div></div><div><div class="section-header-row"><h3>⭐ Отзывы (${reviews.length})</h3></div>${reviews.map(r => `<div class="review-card glass-card"><div class="review-header"><span class="review-name">${escapeHtml(r.clientName)}</span>${renderStars(r.rating)}</div><div class="review-text">${escapeHtml(r.text)}</div><div class="review-time">${new Date(r.createdAt).toLocaleString()}</div></div>`).join('')}${reviews.length === 0 ? '<div class="empty-state glass-card" style="padding:20px;"><i class="fas fa-star"></i><div>Нет отзывов</div></div>' : ''}</div></div>`;
             document.getElementById('mainContent').innerHTML = html;
         }
 
-        // ----- Чат -----
+        // ========== Чат (полная версия) ==========
         async function renderChats() {
             currentChatPartner = null;
             if (!currentUser) { showToast('Войдите в аккаунт', true); return; }
@@ -1007,14 +1226,216 @@
             setTimeout(() => openChat(userId, name), 400);
         }
 
-        // ----- Уведомления, запись, отзывы, посты (кратко) -----
-        async function renderNotifications() { /* аналогично старому, с apiRequest */ }
-        async function bookPsychologist(id, name) { /* как в старом, но с apiRequest */ }
-        function openReviewModal(id, name) { /* ... */ }
-        function createPostModal() { /* ... с uploadRequest */ }
-        function openSearchModal() { /* ... */ }
-        function checkUpcomingEvents() { /* без изменений */ }
-        // ----- Авторизация -----
+        // ========== Уведомления, запись, отзывы, посты ==========
+        async function renderNotifications() {
+            if (!currentUser) { showToast('Войдите в аккаунт', true); return; }
+            const notifs = currentUser.notifications || [];
+            let html = `<div class="container"><div class="page-title">Уведомления</div><div class="notifications-list">`;
+            for (const n of notifs) {
+                const isAppointmentNotif = n.type === 'new_appointment' && currentUser.role === 'psychologist';
+                html += `<div class="notification-item glass-card"><div class="notif-title">${escapeHtml(n.title)}</div><div class="notif-msg">${escapeHtml(n.message)}</div><div class="notif-time">${new Date(n.createdAt).toLocaleString()}</div>${isAppointmentNotif ? `<div style="margin-top:10px;"><button class="btn-sm" onclick="confirmAppointmentFromNotif('${n.appointmentId}')">✅ Подтвердить</button></div>` : ''}${n.roomId && !isAppointmentNotif ? `<div style="margin-top:10px;"><button class="btn-sm" onclick="startCall('${n.roomId}', '${currentUser.role}')"><i class="fas fa-video"></i> Войти в звонок</button></div>` : ''}</div>`;
+            }
+            if (notifs.length === 0) html += '<div class="empty-state glass-card" style="padding:40px;"><i class="fas fa-bell-slash"></i><div>Нет уведомлений</div></div>';
+            html += `</div></div>`;
+            document.getElementById('mainContent').innerHTML = html;
+        }
+
+        async function confirmAppointmentFromNotif(appointmentId) {
+            const apt = currentUser.clients.find(a => a.appointmentId === appointmentId);
+            if (!apt) { showToast('Запись не найдена', true); return; }
+            await confirmAppointment(appointmentId, apt.clientId);
+            renderNotifications();
+        }
+
+        async function bookPsychologist(id, name) {
+            const userRes = await apiRequest(`/api/user/${id}`);
+            if (!userRes.success) { showToast('Не удалось загрузить данные психолога', true); return; }
+            const psychologist = userRes.user;
+            const sched = psychologist.schedule || {};
+            if (!allPsychologists.length) allPsychologists = (await apiRequest('/api/psychologists')).psychologists || [];
+            const dates = Object.keys(sched).sort();
+            let slotsHtml = '';
+            if (dates.length) {
+                for (const d of dates) {
+                    slotsHtml += `<div style="margin-bottom:12px;"><div style="font-size:12px;color:var(--text-muted);margin-bottom:6px;">${d}</div><div style="display:flex;flex-wrap:wrap;gap:6px;">`;
+                    for (const t of sched[d]) {
+                        slotsHtml += `<button class="time-slot" data-date="${d}" data-time="${t}">${t}</button>`;
+                    }
+                    slotsHtml += `</div></div>`;
+                }
+            } else { slotsHtml = '<div class="empty-state" style="padding:20px;"><i class="fas fa-calendar-times"></i><div>Нет свободного времени</div></div>'; }
+            const modalId = 'bookModal';
+            const html = `<div class="modal" id="${modalId}"><div class="modal-content"><div class="modal-handle"></div><h3>Записаться к ${escapeHtml(name)}</h3><div id="slots" style="max-height:300px;overflow-y:auto;">${slotsHtml}</div><div id="selSlot" style="margin-top:10px;font-size:13px;color:var(--green);min-height:20px;"></div><div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('${modalId}')">Отмена</button><button class="btn-primary" id="confirmBook" disabled onclick="window.submitBook('${id}')">Записаться</button></div></div></div>`;
+            document.body.insertAdjacentHTML('beforeend', html);
+            setTimeout(() => document.getElementById(modalId).classList.add('active'), 10);
+            document.querySelectorAll('.time-slot').forEach(b => {
+                b.onclick = () => {
+                    document.querySelectorAll('.time-slot').forEach(bb => bb.classList.remove('selected'));
+                    b.classList.add('selected');
+                    document.getElementById('selSlot').textContent = `✅ Выбрано: ${b.dataset.date} в ${b.dataset.time}`;
+                    document.getElementById('confirmBook').disabled = false;
+                    window.selDate = b.dataset.date;
+                    window.selTime = b.dataset.time;
+                };
+            });
+            window.submitBook = async (pid) => {
+                if (!window.selDate || !window.selTime) { showToast('Выберите время', true); return; }
+                const data = await apiRequest('/api/appointment', { method: 'POST', body: JSON.stringify({ psychologistId: pid, date: window.selDate, time: window.selTime }) });
+                if (data.success) { showToast('Заявка отправлена!'); closeModal(modalId); await refreshUser(); }
+                else showToast(data.error || 'Ошибка', true);
+            };
+        }
+
+        function openReviewModal(id, name) {
+            let rating = 0;
+            const modalId = 'revModal';
+            const html = `<div class="modal" id="${modalId}"><div class="modal-content"><div class="modal-handle"></div><h3>Отзыв о ${escapeHtml(name)}</h3><div id="stars" style="display:flex;gap:6px;margin-bottom:18px;justify-content:center;">${[1,2,3,4,5].map(s => `<i class="far fa-star" data-r="${s}" style="font-size:32px;cursor:pointer;color:#f5c518;transition:transform 0.1s;"></i>`).join('')}</div><textarea id="revText" rows="3" placeholder="Расскажите о своём опыте..."></textarea><div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('${modalId}')">Отмена</button><button class="btn-primary" onclick="window._submitReview('${id}')">Отправить</button></div></div></div>`;
+            document.body.insertAdjacentHTML('beforeend', html);
+            setTimeout(() => document.getElementById(modalId).classList.add('active'), 10);
+            document.querySelectorAll('#stars i').forEach(s => {
+                s.onmouseenter = () => { document.querySelectorAll('#stars i').forEach((ss, i) => { ss.className = i < parseInt(s.dataset.r) ? 'fas fa-star' : 'far fa-star'; }); };
+                s.onmouseleave = () => { document.querySelectorAll('#stars i').forEach((ss, i) => { ss.className = i < rating ? 'fas fa-star' : 'far fa-star'; }); };
+                s.onclick = () => { rating = parseInt(s.dataset.r); document.querySelectorAll('#stars i').forEach((ss, i) => { ss.className = i < rating ? 'fas fa-star' : 'far fa-star'; }); };
+            });
+            window._submitReview = async (pid) => {
+                if (!rating) { showToast('Выберите рейтинг', true); return; }
+                const data = await apiRequest('/api/reviews', { method: 'POST', body: JSON.stringify({ psychologistId: pid, rating, text: document.getElementById('revText').value }) });
+                if (data.success) { showToast('Отзыв отправлен!'); closeModal(modalId); await refreshUser(); }
+                else showToast(data.error || 'Ошибка', true);
+            };
+        }
+
+        function createPostModal() {
+            const modalId = 'cpModal';
+            const html = `<div class="modal" id="${modalId}"><div class="modal-content"><div class="modal-handle"></div><h3>Новый пост</h3><textarea id="postText" rows="5" placeholder="Поделитесь чем-то полезным..."></textarea><label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:6px;">Фото или видео (необязательно, видео до 1 минуты)</label><input type="file" id="postMedia" accept="image/*,video/*" style="font-size:12px;"><div id="mediaPreview" style="margin-top:8px; display:none;"></div><div id="uploadProgress" style="display:none;" class="upload-progress"><div class="upload-progress-bar"></div></div><div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('${modalId}')">Отмена</button><button class="btn-primary" id="publishPostBtn">Опубликовать</button></div></div></div>`;
+            document.body.insertAdjacentHTML('beforeend', html);
+            setTimeout(() => document.getElementById(modalId).classList.add('active'), 10);
+            const mediaInput = document.getElementById('postMedia');
+            const previewDiv = document.getElementById('mediaPreview');
+            const progressDiv = document.getElementById('uploadProgress');
+            const progressBar = progressDiv.querySelector('.upload-progress-bar');
+            const publishBtn = document.getElementById('publishPostBtn');
+            let selectedFile = null;
+            mediaInput.onchange = async () => {
+                const file = mediaInput.files[0];
+                if (!file) return;
+                selectedFile = file;
+                if (file.type.startsWith('video/')) {
+                    const video = document.createElement('video');
+                    video.preload = 'metadata';
+                    video.onloadedmetadata = () => {
+                        URL.revokeObjectURL(video.src);
+                        if (video.duration > 60) { showToast('Видео не должно превышать 60 секунд', true); mediaInput.value = ''; previewDiv.innerHTML = ''; previewDiv.style.display = 'none'; selectedFile = null; }
+                        else { previewDiv.innerHTML = `<video controls style="max-width:100%; max-height:120px; border-radius:12px;"><source src="${URL.createObjectURL(file)}"></video><div style="font-size:11px; color:var(--text-muted); margin-top:4px;">✅ Видео ${Math.round(video.duration)} сек.</div>`; previewDiv.style.display = 'block'; }
+                    };
+                    video.src = URL.createObjectURL(file);
+                } else if (file.type.startsWith('image/')) {
+                    const reader = new FileReader();
+                    reader.onload = (e) => { previewDiv.innerHTML = `<img src="${e.target.result}" style="max-width:100%; max-height:120px; border-radius:12px;">`; previewDiv.style.display = 'block'; };
+                    reader.readAsDataURL(file);
+                } else { showToast('Неподдерживаемый формат', true); mediaInput.value = ''; selectedFile = null; }
+            };
+            publishBtn.onclick = async () => {
+                if (isPosting) { showToast('Пост уже публикуется, подождите...', true); return; }
+                const txt = document.getElementById('postText').value;
+                if (!txt.trim()) { showToast('Введите текст', true); return; }
+                isPosting = true;
+                publishBtn.disabled = true;
+                publishBtn.innerHTML = '<span class="spinner-small"></span> Публикация...';
+                const fd = new FormData();
+                fd.append('text', txt);
+                if (selectedFile) {
+                    if (selectedFile.type.startsWith('video/')) fd.append('video', selectedFile);
+                    else if (selectedFile.type.startsWith('image/')) fd.append('image', selectedFile);
+                }
+                progressDiv.style.display = 'block';
+                let progress = 0;
+                const interval = setInterval(() => { progress += 10; if (progress <= 90) progressBar.style.width = progress + '%'; }, 200);
+                try {
+                    const data = await uploadRequest('/api/posts', fd);
+                    clearInterval(interval);
+                    progressBar.style.width = '100%';
+                    if (data.success) { setTimeout(() => { closeModal(modalId); showToast('Пост опубликован'); if (currentTab === 'profile') renderProfile(); else renderFeed(); }, 500); }
+                    else { showToast(data.error || 'Ошибка публикации', true); progressDiv.style.display = 'none'; }
+                } catch(err) { clearInterval(interval); showToast('Ошибка соединения', true); progressDiv.style.display = 'none'; }
+                finally { isPosting = false; publishBtn.disabled = false; publishBtn.innerHTML = 'Опубликовать'; setTimeout(() => { progressDiv.style.display = 'none'; progressBar.style.width = '0%'; }, 1000); }
+            };
+        }
+
+        function openSearchModal() {
+            const modalId = 'searchM';
+            const html = `<div class="modal" id="${modalId}"><div class="modal-content"><div class="modal-handle"></div><h3>Поиск психологов</h3><input type="search" id="searchInp" placeholder="Введите имя..."><div id="searchRes"></div><div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('${modalId}')">Закрыть</button></div></div></div>`;
+            document.body.insertAdjacentHTML('beforeend', html);
+            setTimeout(() => { document.getElementById(modalId).classList.add('active'); document.getElementById('searchInp').focus(); }, 10);
+            let searchTimeout;
+            document.getElementById('searchInp').oninput = async (e) => {
+                clearTimeout(searchTimeout);
+                const q = e.target.value;
+                if (q.length < 2) { document.getElementById('searchRes').innerHTML = ''; return; }
+                searchTimeout = setTimeout(async () => {
+                    const data = await apiRequest(`/api/search/psychologists?q=${encodeURIComponent(q)}`);
+                    if (data.success) {
+                        let resHtml = '';
+                        for (const p of data.psychologists) {
+                            resHtml += `<div class="psychologist-item" style="padding:10px;cursor:pointer;border-radius:12px;transition:background 0.2s;" onclick="closeModal('${modalId}');viewPsychologistPage('${p.id}')"><img src="${escapeHtml(p.avatar)}" style="width:42px;height:42px;border-radius:50%;object-fit:cover;border:2px solid var(--green-border);"><div><div style="font-weight:600;font-size:14px;">${escapeHtml(p.full_name)}</div><div style="font-size:12px;color:var(--text-muted);">${escapeHtml(p.specialization||'Психолог')}</div></div></div>`;
+                        }
+                        document.getElementById('searchRes').innerHTML = resHtml || '<div class="empty-state" style="padding:16px;"><i class="fas fa-search"></i><div>Ничего не найдено</div></div>';
+                    }
+                }, 300);
+            };
+        }
+
+        function checkUpcomingEvents() {
+            if (!currentUser) return;
+            const now = new Date();
+            const appointments = currentUser.role === 'psychologist' ? (currentUser.clients || []) : (currentUser.appointments || []);
+            for (const apt of appointments) {
+                if (apt.status === 'confirmed') {
+                    const eventDate = new Date(apt.date + 'T' + apt.time);
+                    const diff = (eventDate - now) / (1000 * 60);
+                    if (diff > 0 && diff <= 60 && !localStorage.getItem(`notified_${apt.appointmentId}`)) {
+                        showFloatingNotification('Скоро созвон', `Запись с ${apt.clientName || apt.psychologistName} через ${Math.round(diff)} минут`, 'warning');
+                        localStorage.setItem(`notified_${apt.appointmentId}`, '1');
+                    }
+                }
+            }
+            if (currentUser.role === 'psychologist') {
+                apiRequest(`/api/tasks/${currentUser.id}`).then(res => {
+                    for (const task of (res.tasks || [])) {
+                        if (!task.completed && task.dueDate) {
+                            const due = new Date(task.dueDate);
+                            const today = new Date(); today.setHours(0,0,0,0);
+                            const daysDiff = Math.ceil((due - today) / (1000 * 60 * 60 * 24));
+                            if (daysDiff === 0 && !localStorage.getItem(`task_today_${task.id}`)) {
+                                showFloatingNotification('Задача на сегодня', task.text, 'warning');
+                                localStorage.setItem(`task_today_${task.id}`, '1');
+                            } else if (daysDiff === 1 && !localStorage.getItem(`task_tomorrow_${task.id}`)) {
+                                showFloatingNotification('Задача на завтра', task.text, 'info');
+                                localStorage.setItem(`task_tomorrow_${task.id}`, '1');
+                            }
+                        }
+                    }
+                });
+            }
+        }
+
+        // ========== Авторизация ==========
+        function openLoginModal() {
+            const modalId = 'loginM';
+            const html = `<div class="modal" id="${modalId}"><div class="modal-content"><div class="modal-handle"></div><h3>Войти в аккаунт</h3><input type="email" id="logEmail" placeholder="Email"><input type="password" id="logPass" placeholder="Пароль"><div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('${modalId}')">Отмена</button><button class="btn-primary" onclick="login()">Войти</button></div><p style="text-align:center;margin-top:14px;font-size:13px;color:var(--text-muted);">Нет аккаунта? <a href="#" onclick="closeModal('${modalId}');openRegisterModal()" style="color:var(--green);">Зарегистрироваться</a></p></div></div>`;
+            document.body.insertAdjacentHTML('beforeend', html);
+            setTimeout(() => document.getElementById(modalId).classList.add('active'), 10);
+            document.getElementById('logPass').onkeypress = (e) => { if (e.key === 'Enter') login(); };
+        }
+
+        function openRegisterModal() {
+            const modalId = 'regM';
+            const html = `<div class="modal" id="${modalId}"><div class="modal-content"><div class="modal-handle"></div><h3>Создать аккаунт</h3><input type="text" id="regName" placeholder="ФИО *"><input type="email" id="regEmail" placeholder="Email *"><input type="tel" id="regPhone" placeholder="Телефон"><input type="password" id="regPass" placeholder="Пароль (мин 6 символов) *"><select id="regRole"><option value="client">Клиент</option><option value="psychologist">Психолог</option></select><div id="psychF" style="display:none"><input type="text" id="regSpec" placeholder="Специализация *"><input type="text" id="regExp" placeholder="Опыт работы *"><textarea id="regAbout" rows="2" placeholder="О себе"></textarea></div><div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('${modalId}')">Отмена</button><button class="btn-primary" onclick="register()">Зарегистрироваться</button></div><p style="text-align:center;margin-top:14px;font-size:13px;color:var(--text-muted);">Есть аккаунт? <a href="#" onclick="closeModal('${modalId}');openLoginModal()" style="color:var(--green);">Войти</a></p></div></div>`;
+            document.body.insertAdjacentHTML('beforeend', html);
+            setTimeout(() => document.getElementById(modalId).classList.add('active'), 10);
+            document.getElementById('regRole').onchange = () => { document.getElementById('psychF').style.display = document.getElementById('regRole').value === 'psychologist' ? 'block' : 'none'; };
+        }
+
         async function login() {
             const email = document.getElementById('logEmail').value;
             const password = document.getElementById('logPass').value;
@@ -1028,7 +1449,28 @@
                 location.reload();
             } catch(e) { showToast(e.message, true); }
         }
-        async function register() { /* аналогично */ }
+
+        async function register() {
+            const body = {
+                fullName: document.getElementById('regName').value,
+                email: document.getElementById('regEmail').value,
+                phone: document.getElementById('regPhone').value,
+                password: document.getElementById('regPass').value,
+                role: document.getElementById('regRole').value
+            };
+            if (!body.fullName || !body.email || !body.password) { showToast('Заполните обязательные поля', true); return; }
+            if (body.role === 'psychologist') {
+                body.specialization = document.getElementById('regSpec').value;
+                body.experience = document.getElementById('regExp').value;
+                body.about = document.getElementById('regAbout').value;
+            }
+            try {
+                const data = await apiRequest('/api/register', { method: 'POST', body: JSON.stringify(body) });
+                if (data.success) { showToast('Регистрация успешна! Войдите'); closeModal('regM'); openLoginModal(); }
+                else showToast(data.error || 'Ошибка регистрации', true);
+            } catch(e) { showToast(e.message, true); }
+        }
+
         function logout() {
             openConfirmModal('Выйти из аккаунта?', '', () => {
                 if (socket) socket.disconnect();
@@ -1037,9 +1479,10 @@
                 location.reload();
             });
         }
+
         function startCall(roomId, role) { window.location.href = `/call.html?room=${roomId}&role=${role}`; }
 
-        // ----- Навигация и инициализация -----
+        // ========== Навигация и инициализация ==========
         function switchTab(tab) {
             currentTab = tab;
             document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
@@ -1086,9 +1529,9 @@
             else { renderFeed(); }
         }
 
-        // Привязываем глобальные функции
-        window.openLoginModal = () => { /* модалка */ };
-        window.openRegisterModal = () => { /* модалка */ };
+        // Глобальные привязки
+        window.openLoginModal = openLoginModal;
+        window.openRegisterModal = openRegisterModal;
         window.logout = logout;
         window.switchTab = switchTab;
         window.viewPsychologistPage = viewPsychologistPage;
@@ -1108,15 +1551,17 @@
         window.addTaskWithDate = addTaskWithDate;
         window.deleteTask = deleteTask;
         window.openAddNoteModal = openAddNoteModal;
-        window.addCertificateProfile = addCertificateProfile;
-        window.deleteCertificateProfile = deleteCertificateProfile;
+        window.saveNote = saveNote;
         window.openNoteModal = openNoteModal;
         window.updateNote = updateNote;
         window.deleteNote = deleteNote;
+        window.addCertificateProfile = addCertificateProfile;
+        window.deleteCertificateProfile = deleteCertificateProfile;
         window.saveEditPost = saveEditPost;
         window.saveProfileEdit = saveProfileEdit;
         window.renderProfileCalendar = renderProfileCalendar;
         window.changeProfileMonth = changeProfileMonth;
+        window.confirmAppointmentFromNotif = confirmAppointmentFromNotif;
 
         init();
     </script>
