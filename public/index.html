@@ -899,7 +899,7 @@
             }
         }
 
-        // ======================= ЛЕНТА (с пагинацией и ленивыми комментариями) =======================
+        // ======================= ЛЕНТА =======================
         async function renderFeed() {
             feedOffset = 0;
             feedPosts = [];
@@ -1133,7 +1133,8 @@
                 sendBtn.innerHTML = '<i class="fas fa-paper-plane"></i>';
             }
         }
-                // ======================= ПСИХОЛОГИ =======================
+
+        // ======================= ПСИХОЛОГИ =======================
         async function renderPsychologistsList() {
             document.getElementById('mainContent').innerHTML = `<div class="container"><div class="empty-state"><i class="fas fa-circle-notch fa-spin"></i></div></div>`;
             const data = await fetchJSON('/api/psychologists');
@@ -2245,12 +2246,10 @@
 
         function startChatWith(userId, name) {
             if (!currentUser) { showToast('Войдите в аккаунт', true); return; }
-            // Устанавливаем текущую вкладку в 'chats' без перерисовки содержимого
             currentTab = 'chats';
             document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
             const chatNav = document.querySelector('.nav-item[data-tab="chats"]');
             if (chatNav) chatNav.classList.add('active');
-            // Сразу открываем чат – он сам перерисует mainContent
             openChat(userId, name);
         }
 
@@ -2289,53 +2288,7 @@
             const reviews = reviewsData.reviews || [];
             const isOwn = currentUser && currentUser.id === psychologistId;
             const certificates = p.certificates || [];
-            const html = `<div class="container"><div class="psych-page-header"><button class="back-btn" onclick="switchTab('psychologists')"><i class="fas fa-arrow-left"></i></button><span style="font-size:14px;color:var(--text-muted);">Профиль</span></div><div class="profile-header"><img class="profile-avatar-lg" src="${escapeHtml(p.avatar)}" onerror="this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(p.fullName)}&background=8bca8b&color=fff'"><div class="profile-name">${escapeHtml(p.fullName)}</div><div class="profile-role-badge">🧠 Психолог</div>${p.about ? `<div class="profile-bio">${escapeHtml(p.about)}</div>` : ''}${renderStars(p.rating || 0)}<div class="psych-actions-row">${!isOwn && currentUser ? `<button class="btn-sm btn-outline" onclick="startChatWith('${psychologistId}','${escapeHtml(p.fullName)}')"><i class="fas fa-comment-dots"></i> Написать</button><button class="btn-sm" onclick="bookPsychologist('${psychologistId}','${escapeHtml(p.fullName)}')"><i class="fas fa-calendar-plus"></i> Записаться</button><button class="btn-sm btn-outline" onclick="openReviewModal('${psychologistId}','${escapeHtml(p.fullName)}')"><i class="fas fa-star"></i> Оценить</button>` : ''}${isOwn ? `<button class="btn-sm btn-outline" onclick="switchTab('profile')"><i class="fas fa-pen"></i> Редактировать</button>` : ''}</div></div>${p.specialization || p.experience || p.price ? `<div style="margin-bottom:16px;">${p.specialization ? `<div class="info-row"><i class="fas fa-brain"></i> ${escapeHtml(p.specialization)}</div>` : ''}${p.experience ? `<div class="info-row"><i class="fas fa-briefcase"></i> Опыт: ${escapeHtml(p.experience)}</div>` : ''}${p.price ? `<div class="info-row"><i class="fas fa-tag"></i> ${p.price} ₸ / час</div>` : ''}
-                        </div>` : ''}
-                    ${certificates.length > 0 ? `
-                    <div style="margin-bottom:20px;">
-                        <div class="section-header-row"><h3>📜 Сертификаты</h3></div>
-                        <div class="certificates-grid">
-                            ${certificates.map(c => `
-                                <div class="certificate-card">
-                                    <img src="${escapeHtml(c.image)}" onerror="this.src='https://placehold.co/100x80/1a2e1a/8bca8b?text=📜'">
-                                    <div class="certificate-title">${escapeHtml(c.title)}</div>
-                                </div>
-                            `).join('')}
-                        </div>
-                    </div>` : ''}
-                    <div style="margin-bottom:20px;">
-                        <div class="section-header-row"><h3>📝 Посты</h3></div>
-                        <div class="posts-grid">
-                            ${psychPosts.map(pst => `
-                                <div class="post-card glass-card">
-                                    <div class="post-text">${escapeHtml(pst.text)}</div>
-                                    ${pst.image ? `<img class="post-image" src="${escapeHtml(pst.image)}" onclick="openImageModal('${escapeHtml(pst.image)}')">` : ''}
-                                    ${pst.video ? `<video class="post-video" controls preload="metadata"><source src="${escapeHtml(pst.video)}" type="video/mp4"></video>` : ''}
-                                    <div class="post-stats">
-                                        <span style="color:var(--text-muted);font-size:13px;display:flex;gap:6px;align-items:center;"><i class="fa-regular fa-heart"></i> ${pst.likesCount||0}</span>
-                                        <span style="color:var(--text-muted);font-size:13px;display:flex;gap:6px;align-items:center;"><i class="fa-regular fa-comment"></i> ${pst.commentsCount||0}</span>
-                                    </div>
-                                </div>
-                            `).join('')}
-                            ${psychPosts.length === 0 ? '<div class="empty-state glass-card" style="padding:20px;"><i class="fas fa-newspaper"></i><div>Нет постов</div></div>' : ''}
-                        </div>
-                    </div>
-                    <div>
-                        <div class="section-header-row"><h3>⭐ Отзывы (${reviews.length})</h3></div>
-                        ${reviews.map(r => `
-                            <div class="review-card glass-card">
-                                <div class="review-header">
-                                    <span class="review-name">${escapeHtml(r.clientName)}</span>
-                                    ${renderStars(r.rating)}
-                                </div>
-                                <div class="review-text">${escapeHtml(r.text)}</div>
-                                <div class="review-time">${new Date(r.createdAt).toLocaleString()}</div>
-                            </div>
-                        `).join('')}
-                        ${reviews.length === 0 ? '<div class="empty-state glass-card" style="padding:20px;"><i class="fas fa-star"></i><div>Нет отзывов</div></div>' : ''}
-                    </div>
-                </div>
-            `;
+            const html = `<div class="container"><div class="psych-page-header"><button class="back-btn" onclick="switchTab('psychologists')"><i class="fas fa-arrow-left"></i></button><span style="font-size:14px;color:var(--text-muted);">Профиль</span></div><div class="profile-header"><img class="profile-avatar-lg" src="${escapeHtml(p.avatar)}" onerror="this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(p.fullName)}&background=8bca8b&color=fff'"><div class="profile-name">${escapeHtml(p.fullName)}</div><div class="profile-role-badge">🧠 Психолог</div>${p.about ? `<div class="profile-bio">${escapeHtml(p.about)}</div>` : ''}${renderStars(p.rating || 0)}<div class="psych-actions-row">${!isOwn && currentUser ? `<button class="btn-sm btn-outline" onclick="startChatWith('${psychologistId}','${escapeHtml(p.fullName)}')"><i class="fas fa-comment-dots"></i> Написать</button><button class="btn-sm" onclick="bookPsychologist('${psychologistId}','${escapeHtml(p.fullName)}')"><i class="fas fa-calendar-plus"></i> Записаться</button><button class="btn-sm btn-outline" onclick="openReviewModal('${psychologistId}','${escapeHtml(p.fullName)}')"><i class="fas fa-star"></i> Оценить</button>` : ''}${isOwn ? `<button class="btn-sm btn-outline" onclick="switchTab('profile')"><i class="fas fa-pen"></i> Редактировать</button>` : ''}</div></div>${p.specialization || p.experience || p.price ? `<div style="margin-bottom:16px;">${p.specialization ? `<div class="info-row"><i class="fas fa-brain"></i> ${escapeHtml(p.specialization)}</div>` : ''}${p.experience ? `<div class="info-row"><i class="fas fa-briefcase"></i> Опыт: ${escapeHtml(p.experience)}</div>` : ''}${p.price ? `<div class="info-row"><i class="fas fa-tag"></i> ${p.price} ₸ / час</div>` : ''}</div>` : ''}${certificates.length > 0 ? `<div style="margin-bottom:20px;"><div class="section-header-row"><h3>📜 Сертификаты</h3></div><div class="certificates-grid">${certificates.map(c => `<div class="certificate-card"><img src="${escapeHtml(c.image)}" onerror="this.src='https://placehold.co/100x80/1a2e1a/8bca8b?text=📜'"><div class="certificate-title">${escapeHtml(c.title)}</div></div>`).join('')}</div></div>` : ''}<div style="margin-bottom:20px;"><div class="section-header-row"><h3>📝 Посты</h3></div><div class="posts-grid">${psychPosts.map(pst => `<div class="post-card glass-card"><div class="post-text">${escapeHtml(pst.text)}</div>${pst.image ? `<img class="post-image" src="${escapeHtml(pst.image)}" onclick="openImageModal('${escapeHtml(pst.image)}')">` : ''}${pst.video ? `<video class="post-video" controls preload="metadata"><source src="${escapeHtml(pst.video)}" type="video/mp4"></video>` : ''}<div class="post-stats"><span style="color:var(--text-muted);font-size:13px;display:flex;gap:6px;align-items:center;"><i class="fa-regular fa-heart"></i> ${pst.likesCount||0}</span><span style="color:var(--text-muted);font-size:13px;display:flex;gap:6px;align-items:center;"><i class="fa-regular fa-comment"></i> ${pst.commentsCount||0}</span></div></div>`).join('')}${psychPosts.length === 0 ? '<div class="empty-state glass-card" style="padding:20px;"><i class="fas fa-newspaper"></i><div>Нет постов</div></div>' : ''}</div></div><div><div class="section-header-row"><h3>⭐ Отзывы (${reviews.length})</h3></div>${reviews.map(r => `<div class="review-card glass-card"><div class="review-header"><span class="review-name">${escapeHtml(r.clientName)}</span>${renderStars(r.rating)}</div><div class="review-text">${escapeHtml(r.text)}</div><div class="review-time">${new Date(r.createdAt).toLocaleString()}</div></div>`).join('')}${reviews.length === 0 ? '<div class="empty-state glass-card" style="padding:20px;"><i class="fas fa-star"></i><div>Нет отзывов</div></div>' : ''}</div></div>`;
             document.getElementById('mainContent').innerHTML = html;
         }
 
@@ -2346,7 +2299,11 @@
                 socket = null;
             }
             socket = io({
-                transports: ['websocket', 'polling']
+                transports: ['websocket', 'polling'],
+                reconnection: true,
+                reconnectionAttempts: Infinity,
+                reconnectionDelay: 1000,
+                reconnectionDelayMax: 5000
             });
             socket.on('connect', () => {
                 console.log('Socket connected');
@@ -2355,6 +2312,12 @@
             socket.on('connect_error', (err) => {
                 console.error('Socket connect error:', err.message);
                 showToast('Ошибка соединения с сервером', true);
+            });
+            socket.on('disconnect', (reason) => {
+                console.log('WebSocket disconnected:', socket.id, 'reason:', reason);
+                if (reason === 'io server disconnect') {
+                    socket.connect();
+                }
             });
             socket.on('post_created', (newPost) => {
                 if (currentTab === 'feed') renderFeed();
@@ -2541,7 +2504,7 @@
             else { renderFeed(); }
         }
 
-        // Глобальные привязки функций (чтобы работали onclick)
+        // Глобальные привязки функций
         window.openLoginModal = openLoginModal;
         window.openRegisterModal = openRegisterModal;
         window.logout = logout;
