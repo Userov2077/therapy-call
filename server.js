@@ -45,6 +45,7 @@ cloudinary.config({
     api_secret: process.env.CLOUDINARY_API_SECRET
 });
 
+// Хранилище для медиа (изображения, видео, аудио) через Cloudinary
 const cloudinaryStorage = new CloudinaryStorage({
     cloudinary: cloudinary,
     params: (req, file) => {
@@ -54,30 +55,7 @@ const cloudinaryStorage = new CloudinaryStorage({
         
         const mime = file.mimetype;
         
-        // Для поля 'file' (заметки) – определяем тип по mimetype
-        if (file.fieldname === 'file') {
-            if (mime.startsWith('image/')) {
-                resource_type = 'image';
-                folder = 'therapy_call_images';
-            } else if (mime.startsWith('video/')) {
-                resource_type = 'video';
-                folder = 'therapy_call_videos';
-            } else if (mime.startsWith('audio/')) {
-                resource_type = 'video';
-                folder = 'therapy_call_audio';
-            } else {
-                // Документы: Excel, Word, PDF, текстовые
-                resource_type = 'raw';
-                folder = 'therapy_call_documents';
-                if (mime === 'application/pdf') allowed_formats = ['pdf'];
-                else if (mime === 'application/msword') allowed_formats = ['doc'];
-                else if (mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') allowed_formats = ['docx'];
-                else if (mime === 'application/vnd.ms-excel') allowed_formats = ['xls'];
-                else if (mime === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') allowed_formats = ['xlsx'];
-                else if (mime === 'text/plain') allowed_formats = ['txt'];
-                else allowed_formats = ['*'];
-            }
-        } else if (file.fieldname === 'avatar') {
+        if (file.fieldname === 'avatar') {
             folder = 'therapy_call_avatars';
             resource_type = 'image';
         } else if (file.fieldname === 'certificate') {
@@ -95,6 +73,10 @@ const cloudinaryStorage = new CloudinaryStorage({
         } else if (file.fieldname === 'recording') {
             folder = 'therapy_call_recordings';
             resource_type = 'video';
+        } else if (file.fieldname === 'file') {
+            // Документы не обрабатываем через Cloudinary, они пойдут через локальное хранилище.
+            // Этот блок остаётся для совместимости, но фактически документы обрабатываются отдельным маршрутом.
+            return { error: 'Документы загружаются через /api/upload-doc' };
         }
         
         return {
@@ -104,7 +86,22 @@ const cloudinaryStorage = new CloudinaryStorage({
         };
     }
 });
-const upload = multer({ storage: cloudinaryStorage, limits: { fileSize: 50 * 1024 * 1024 } });
+
+const uploadMedia = multer({ storage: cloudinaryStorage, limits: { fileSize: 50 * 1024 * 1024 } });
+
+// Локальное хранилище для документов (Excel, Word, PDF, TXT)
+const docStorage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        const dir = 'public/uploads/documents';
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        cb(null, dir);
+    },
+    filename: (req, file, cb) => {
+        const unique = nanoid(12);
+        cb(null, unique + path.extname(file.originalname));
+    }
+});
+const uploadDoc = multer({ storage: docStorage, limits: { fileSize: 5 * 1024 * 1024 } });
 
 // ========== Инициализация таблиц ==========
 async function initDatabase() {
@@ -386,7 +383,7 @@ app.get('/api/user/:id', async (req, res) => {
     }
 });
 
-app.put('/api/user/profile', upload.single('avatar'), async (req, res) => {
+app.put('/api/user/profile', uploadMedia.single('avatar'), async (req, res) => {
     try {
         const { userId, fullName, phone, about, specialization, experience, price, avatar } = req.body;
         const user = await getUser(userId);
@@ -435,13 +432,21 @@ app.put('/api/schedule', async (req, res) => {
         const { userId, schedule } = req.body;
         const user = await getUser(userId);
         if (!user || user.role !== 'psychologist') return res.json({ success: false, error: 'Нет прав' });
+        // Удаляем только свободные слоты
         await pool.query(`DELETE FROM time_slots WHERE psychologist_id=$1 AND status='free'`, [user.id]);
         for (const [date, times] of Object.entries(schedule)) {
             for (const time of times) {
-                await pool.query(
-                    `INSERT INTO time_slots (id, psychologist_id, date, time, status) VALUES ($1,$2,$3,$4,'free')`,
-                    [nanoid(12), user.id, date, time]
+                // Проверяем, нет ли уже занятого слота (pending или booked) на это время
+                const existing = await pool.query(
+                    `SELECT id FROM time_slots WHERE psychologist_id=$1 AND date=$2 AND time=$3 AND status IN ('pending', 'booked')`,
+                    [user.id, date, time]
                 );
+                if (existing.rows.length === 0) {
+                    await pool.query(
+                        `INSERT INTO time_slots (id, psychologist_id, date, time, status) VALUES ($1,$2,$3,$4,'free')`,
+                        [nanoid(12), user.id, date, time]
+                    );
+                }
             }
         }
         user.schedule = schedule;
@@ -605,35 +610,26 @@ app.post('/api/appointment/complete', async (req, res) => {
     }
 });
 
-// ========== ЗАГРУЗКА ФАЙЛОВ ==========
-app.post('/api/upload-avatar', upload.single('avatar'), (req, res) => {
+// ========== ЗАГРУЗКА ФАЙЛОВ (разделение: медиа – Cloudinary, документы – локально) ==========
+app.post('/api/upload-avatar', uploadMedia.single('avatar'), (req, res) => {
     if (!req.file) return res.json({ success: false, error: 'Файл не загружен' });
     res.json({ success: true, avatarUrl: req.file.path });
 });
 
-app.post('/api/upload', upload.single('file'), (req, res) => {
-    try {
-        if (!req.file) {
-            return res.status(400).json({ success: false, error: 'Файл не загружен' });
-        }
-        // Ограничение размера 5 МБ
-        if (req.file.size > 5 * 1024 * 1024) {
-            return res.status(400).json({ success: false, error: 'Файл слишком большой (максимум 5 МБ)' });
-        }
-        console.log('Файл загружен:', req.file.originalname, 'MIME:', req.file.mimetype, 'URL:', req.file.path);
-        res.json({ success: true, fileUrl: req.file.path });
-    } catch (err) {
-        console.error('Ошибка загрузки:', err);
-        res.status(500).json({ success: false, error: err.message });
+app.post('/api/upload', uploadMedia.single('file'), (req, res) => {
+    if (!req.file) return res.json({ success: false, error: 'Файл не загружен' });
+    if (req.file.size > 5 * 1024 * 1024) {
+        return res.json({ success: false, error: 'Файл слишком большой (максимум 5 МБ)' });
     }
+    res.json({ success: true, fileUrl: req.file.path });
 });
 
-app.post('/api/upload-chat-image', upload.single('image'), (req, res) => {
+app.post('/api/upload-chat-image', uploadMedia.single('image'), (req, res) => {
     if (!req.file) return res.json({ success: false, error: 'Файл не загружен' });
     res.json({ success: true, imageUrl: req.file.path });
 });
 
-app.post('/api/upload-voice', upload.single('voice'), (req, res) => {
+app.post('/api/upload-voice', uploadMedia.single('voice'), (req, res) => {
     if (!req.file) return res.json({ success: false, error: 'Файл не загружен' });
     if (req.file.size > 5 * 1024 * 1024) {
         return res.json({ success: false, error: 'Размер голосового сообщения не должен превышать 5 МБ' });
@@ -641,7 +637,7 @@ app.post('/api/upload-voice', upload.single('voice'), (req, res) => {
     res.json({ success: true, voiceUrl: req.file.path });
 });
 
-app.post('/api/upload-recording', upload.single('recording'), async (req, res) => {
+app.post('/api/upload-recording', uploadMedia.single('recording'), async (req, res) => {
     if (!req.file) return res.json({ success: false, error: 'Файл не загружен' });
     const recording = {
         id: nanoid(12),
@@ -658,14 +654,24 @@ app.post('/api/upload-recording', upload.single('recording'), async (req, res) =
     res.json({ success: true, recordingUrl: recording.url });
 });
 
-app.post('/api/upload-video', upload.single('video'), (req, res) => {
+app.post('/api/upload-video', uploadMedia.single('video'), (req, res) => {
     if (!req.file) return res.status(400).json({ success: false, error: 'Видео не загружено' });
     res.json({ success: true, videoUrl: req.file.path });
 });
 
-app.post('/api/upload-image', upload.single('image'), (req, res) => {
+app.post('/api/upload-image', uploadMedia.single('image'), (req, res) => {
     if (!req.file) return res.status(400).json({ success: false, error: 'Изображение не загружено' });
     res.json({ success: true, imageUrl: req.file.path });
+});
+
+// Загрузка документов (Excel, Word, PDF, TXT) – локально
+app.post('/api/upload-doc', uploadDoc.single('file'), (req, res) => {
+    if (!req.file) return res.status(400).json({ success: false, error: 'Файл не загружен' });
+    if (req.file.size > 5 * 1024 * 1024) {
+        return res.status(400).json({ success: false, error: 'Файл слишком большой (максимум 5 МБ)' });
+    }
+    const fileUrl = `/uploads/documents/${req.file.filename}`;
+    res.json({ success: true, fileUrl });
 });
 
 // ========== ПОСТЫ ==========
@@ -1054,7 +1060,7 @@ app.get('/api/reviews/:psychologistId', async (req, res) => {
 });
 
 // ========== СЕРТИФИКАТЫ ==========
-app.post('/api/certificates', upload.single('certificate'), async (req, res) => {
+app.post('/api/certificates', uploadMedia.single('certificate'), async (req, res) => {
     try {
         const { userId, title } = req.body;
         const user = await getUser(userId);
