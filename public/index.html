@@ -706,6 +706,10 @@
         .post-video::-webkit-media-controls {
             display: none !important;
         }
+        /* Стили для блока с кнопками комментария */
+        .comment {
+            position: relative; /* чтобы кнопки позиционировались относительно коммента */
+        }
         .comment-actions {
             position: absolute;
             right: 8px;
@@ -714,14 +718,14 @@
             gap: 6px;
             background: rgba(0,0,0,0.5);
             backdrop-filter: blur(4px);
-            padding: 4px 6px;
+            padding: 4px 8px;
             border-radius: 20px;
             z-index: 2;
         }
         .comment-actions button {
             background: rgba(139,202,139,0.2);
             border: none;
-            color: var(--green);
+            color: #8bca8b;
             font-size: 11px;
             padding: 4px 8px;
             border-radius: 16px;
@@ -729,7 +733,7 @@
             transition: all 0.2s;
         }
         .comment-actions button:hover {
-            background: var(--green);
+            background: #8bca8b;
             color: #0d2010;
         }
     </style>
