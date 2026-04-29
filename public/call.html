@@ -38,7 +38,6 @@
             background: #000;
         }
 
-        /* Remote video — full bg */
         .remote-video-wrapper {
             position: absolute;
             inset: 0;
@@ -57,7 +56,6 @@
             background: #060908;
         }
 
-        /* Vignette overlay */
         .vignette {
             position: absolute;
             inset: 0;
@@ -68,7 +66,6 @@
             z-index: 3;
         }
 
-        /* Local video PiP */
         .local-video-wrapper {
             position: absolute;
             bottom: 110px;
@@ -103,7 +100,6 @@
             background: #000;
         }
 
-        /* ── Top bar ── */
         .top-bar {
             position: absolute;
             top: 0;
@@ -163,7 +159,6 @@
         }
         .reconnect-btn-top i { font-size: 10px; }
 
-        /* ── Waiting message ── */
         .waiting-message {
             position: absolute;
             top: 50%;
@@ -201,7 +196,6 @@
         }
         @keyframes spin { to { transform: rotate(360deg); } }
 
-        /* ── Controls bar ── */
         .controls {
             position: absolute;
             bottom: 0;
@@ -256,7 +250,6 @@
             color: #e06060;
         }
 
-        /* Tooltip */
         .control-btn[data-tip]::after {
             content: attr(data-tip);
             position: absolute;
@@ -281,7 +274,6 @@
             bottom: calc(100% + 14px);
         }
 
-        /* End call — bigger, distinct */
         .end-call {
             width: 58px;
             height: 58px;
@@ -297,14 +289,12 @@
             transform: translateY(-2px);
         }
 
-        /* Chat button active state */
         .chat-active {
             background: var(--gold-dim) !important;
             border-color: var(--gold) !important;
             color: var(--gold) !important;
         }
 
-        /* Recording */
         .recording-active {
             background: rgba(180,30,30,0.5) !important;
             border-color: rgba(220,60,60,0.6) !important;
@@ -321,7 +311,6 @@
         }
         @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0.25; } }
 
-        /* ── Chat panel ── */
         .chat-panel {
             position: absolute;
             bottom: 110px;
@@ -478,7 +467,6 @@
         }
         .chat-input-area button:hover { background: rgba(201,169,110,0.3); border-color: var(--gold); }
 
-        /* Toast */
         .toast {
             position: fixed;
             bottom: 110px;
@@ -505,7 +493,6 @@
             to { opacity: 1; transform: translateX(-50%) translateY(0); }
         }
 
-        /* Mobile */
         @media (max-width: 640px) {
             .local-video-wrapper { width: 84px; height: 116px; bottom: 104px; right: 14px; }
             .control-btn { width: 46px; height: 46px; font-size: 15px; }
@@ -525,22 +512,18 @@
         <video id="remoteVideo" autoplay playsinline></video>
     </div>
 
-    <!-- Cinematic vignette -->
     <div class="vignette"></div>
 
-    <!-- Waiting state -->
     <div id="waitingMessage" class="waiting-message" style="display:none;">
         <div class="waiting-ring"></div>
         <p>Ожидание собеседника</p>
         <span>Сессия готова</span>
     </div>
 
-    <!-- Local PiP -->
     <div class="local-video-wrapper" id="localVideoWrapper">
         <video id="localVideo" autoplay muted playsinline></video>
     </div>
 
-    <!-- Top bar -->
     <div class="top-bar">
         <div class="session-info">
             <div class="session-label">Терапевтическая сессия</div>
@@ -551,7 +534,6 @@
         </button>
     </div>
 
-    <!-- Controls -->
     <div class="controls">
         <button id="toggleMic" class="control-btn" data-tip="Микрофон">
             <i class="fas fa-microphone"></i>
@@ -570,7 +552,6 @@
         </button>
     </div>
 
-    <!-- Chat panel -->
     <div id="chatPanel" class="chat-panel">
         <div class="chat-header">
             <div class="chat-header-title">
@@ -668,15 +649,24 @@
             { urls: 'stun:stun2.l.google.com:19302' },
             { urls: 'stun:stun3.l.google.com:19302' },
             { urls: 'stun:stun4.l.google.com:19302' },
+            { urls: 'stun:stun.ekiga.net' },
+            { urls: 'stun:stun.ideasip.com' },
+            { urls: 'stun:stun.iptel.org' },
+            { urls: 'stun:stun.rixtelecom.se' },
+            { urls: 'stun:stun.schlund.de' },
+            // Добавляем несколько надёжных TURN-серверов (публичные, но с ограничениями)
             { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
             { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
-            { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' }
+            { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
+            // Резервные TURN-серверы от Twilio (бесплатные, но лучше зарегистрировать свои)
+            { urls: 'turn:global.turn.twilio.com:3478?transport=udp', username: 'any', credential: 'any' },
+            { urls: 'turn:global.turn.twilio.com:3478?transport=tcp', username: 'any', credential: 'any' }
         ];
     }
 
     async function createPeerConnection() {
         if (peerConnection) { peerConnection.close(); peerConnection = null; }
-        const config = { iceServers: await getIceServers() };
+        const config = { iceServers: await getIceServers(), iceTransportPolicy: 'all' };
         peerConnection = new RTCPeerConnection(config);
         if (localStream) localStream.getTracks().forEach(t => peerConnection.addTrack(t, localStream));
         peerConnection.ontrack = (event) => {
@@ -692,14 +682,17 @@
         peerConnection.oniceconnectionstatechange = () => {
             if (!peerConnection) return;
             const state = peerConnection.iceConnectionState;
+            console.log('ICE state:', state);
             if (state === 'connected') {
                 connectionEstablished = true;
                 updateStatus('Соединение установлено');
                 waitingMsg.style.display = 'none';
             } else if (state === 'failed') {
                 connectionEstablished = false;
-                updateStatus('Соединение разорвано', true);
+                updateStatus('Соединение разорвано, попробуйте переподключиться', true);
                 waitingMsg.style.display = 'flex';
+                // Попытка пересоздать соединение
+                setTimeout(() => { if (!connectionEstablished) reconnect(); }, 3000);
             } else if (state === 'disconnected') {
                 connectionEstablished = false;
                 updateStatus('Потеря связи', true);
@@ -739,7 +732,11 @@
         }
         
         socket = io({
-            transports: ['websocket', 'polling']
+            transports: ['websocket', 'polling'],
+            reconnection: true,
+            reconnectionAttempts: Infinity,
+            reconnectionDelay: 1000,
+            reconnectionDelayMax: 5000
         });
         
         socket.on('connect', () => {
@@ -869,10 +866,6 @@
         if (!localStream) return;
         try {
             recordedChunks = [];
-            const audioContext = new AudioContext();
-            const dest = audioContext.createMediaStreamDestination();
-            const micSource = audioContext.createMediaStreamDestination();
-            // Простая запись без сложной обработки
             const recordingStream = new MediaStream([localStream.getAudioTracks()[0]]);
             mediaRecorder = new MediaRecorder(recordingStream, { mimeType: 'audio/webm' });
             mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recordedChunks.push(e.data); };
@@ -889,7 +882,6 @@
                 } catch(e) {
                     console.error('Upload recording error:', e);
                 }
-                audioContext.close();
             };
             mediaRecorder.start(1000);
             isRecording = true;
