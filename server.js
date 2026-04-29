@@ -68,7 +68,7 @@ const cloudinaryStorage = new CloudinaryStorage({
 
 const upload = multer({ storage: cloudinaryStorage, limits: { fileSize: 50 * 1024 * 1024 } });
 
-// ========== Инициализация таблиц (без изменений) ==========
+// ========== Инициализация таблиц ==========
 async function initDatabase() {
     const queries = [
         `CREATE TABLE IF NOT EXISTS users (
@@ -778,7 +778,6 @@ app.delete('/api/posts/:postId/comment/:commentId', async (req, res) => {
         if (result.rows.length === 0) return res.json({ success: false, error: 'Комментарий не найден' });
         if (result.rows[0].author_id !== userId) return res.json({ success: false, error: 'Нет прав' });
         await pool.query('DELETE FROM comments WHERE id=$1', [commentId]);
-        // Обновляем количество комментариев в клиенте через сокет (опционально)
         io.emit('comment_deleted', { commentId, postId: result.rows[0].post_id });
         res.json({ success: true });
     } catch (err) {
