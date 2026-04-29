@@ -791,11 +791,18 @@
         async function fetchJSON(url, opt = {}) {
             try {
                 const r = await fetch(url, opt);
-                return await r.json();
-            } catch(e) { 
+                const text = await r.text();
+                try {
+                    return JSON.parse(text);
+                } catch(e) {
+                    console.error('Invalid JSON response:', text);
+                    showToast('Ошибка формата ответа сервера', true);
+                    return { success: false };
+                }
+            } catch(e) {
                 console.error('Fetch error:', e);
-                showToast('Ошибка соединения', true); 
-                return { success: false }; 
+                showToast('Ошибка соединения', true);
+                return { success: false };
             }
         }
 
@@ -1472,17 +1479,55 @@
             const file = document.getElementById('noteFile')?.files[0];
             let att = null, attT = null;
             if (file) {
-                const fd = new FormData(); fd.append('file', file);
-                const r = await fetch('/api/upload', { method:'POST', body: fd });
-                const d = await r.json();
-                if (d.success) { att = d.fileUrl; attT = file.type.startsWith('image/') ? 'image' : 'file'; }
+            // Проверка размера файла (например, до 5 МБ)
+                if (file.size > 5 * 1024 * 1024) {
+                    showToast('Файл не должен превышать 5 МБ', true);
+                    return;
+                }
+                const fd = new FormData();
+                fd.append('file', file);
+                try {
+                    const res = await fetch('/api/upload', { method: 'POST', body: fd });
+                    if (!res.ok) {
+                        const errorText = await res.text();
+                        console.error('Upload error:', errorText);
+                        showToast('Ошибка загрузки файла', true);
+                        return;
+                    }
+                    const d = await res.json();
+                    if (d.success) {
+                        att = d.fileUrl;
+                        attT = file.type.startsWith('image/') ? 'image' : 'file';
+                    } else {
+                        showToast(d.error || 'Ошибка загрузки', true);
+                        return;
+                    }
+                } catch (err) {
+                    console.error('Upload fetch error:', err);
+                    showToast('Ошибка соединения при загрузке', true);
+                    return;
+                }
             }
-            await fetch('/api/notes', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ psychologistId: currentUser.id, title, content, attachment: att, attachmentType: attT }) });
-            closeModal('noteModal');
-            showToast('Заметка сохранена');
-            renderProfile();
+            try {
+                const res = await fetch('/api/notes', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ psychologistId: currentUser.id, title, content, attachment: att, attachmentType: attT })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    closeModal('noteModal');
+                    showToast('Заметка сохранена');
+                    renderProfile();
+                } else {
+                    showToast(data.error || 'Ошибка сохранения заметки', true);
+                }
+            } catch (err) {
+                console.error('Save note error:', err);
+                showToast('Ошибка соединения', true);
+            }
         }
-
+        
         async function openNoteModal(id, title, content, att) {
             const modalId = 'editNoteModal';
             const html = `

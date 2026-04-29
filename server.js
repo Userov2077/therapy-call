@@ -45,7 +45,6 @@ cloudinary.config({
     api_secret: process.env.CLOUDINARY_API_SECRET
 });
 
-// Общее хранилище для всех файлов (изображения, видео, аудио)
 const cloudinaryStorage = new CloudinaryStorage({
     cloudinary: cloudinary,
     params: (req, file) => {
@@ -360,7 +359,7 @@ app.put('/api/user/profile', upload.single('avatar'), async (req, res) => {
         if (experience !== undefined) user.experience = experience;
         if (price !== undefined) user.price = parseInt(price) || 0;
         if (req.file) {
-            user.avatar = req.file.path; // Cloudinary URL
+            user.avatar = req.file.path;
         } else if (avatar && avatar.startsWith('http')) {
             user.avatar = avatar;
         }
@@ -480,12 +479,34 @@ app.post('/api/appointment', async (req, res) => {
 app.post('/api/appointment/confirm', async (req, res) => {
     try {
         const { appointmentId, psychologistId, clientId } = req.body;
-        await pool.query('UPDATE appointments SET status=$1 WHERE id=$2', ['confirmed', appointmentId]);
         const psychologist = await getUser(psychologistId);
         const client = await getUser(clientId);
+        if (!psychologist || !client) return res.json({ success: false, error: 'Пользователь не найден' });
+        
+        const aptRes = await pool.query('SELECT * FROM appointments WHERE id=$1', [appointmentId]);
+        if (aptRes.rows.length === 0) return res.json({ success: false, error: 'Запись не найдена' });
+        const apt = aptRes.rows[0];
+        
+        // Обновляем слот на 'booked'
+        await pool.query(
+            `UPDATE time_slots SET status='booked' WHERE psychologist_id=$1 AND date=$2 AND time=$3 AND appointment_id=$4`,
+            [psychologistId, apt.date, apt.time, appointmentId]
+        );
+        
+        // Обновляем статус записи
+        await pool.query('UPDATE appointments SET status=$1 WHERE id=$2', ['confirmed', appointmentId]);
+        
+        // Обновляем JSON-поля пользователей
         if (psychologist) {
             const c = (psychologist.clients || []).find(c => c.appointmentId === appointmentId);
             if (c) c.status = 'confirmed';
+            // Удаляем подтверждённое время из расписания (JSON-поле)
+            const schedule = psychologist.schedule || {};
+            if (schedule[apt.date]) {
+                schedule[apt.date] = schedule[apt.date].filter(t => t !== apt.time);
+                if (schedule[apt.date].length === 0) delete schedule[apt.date];
+                psychologist.schedule = schedule;
+            }
             psychologist.notifications = (psychologist.notifications || []).filter(n => n.appointmentId !== appointmentId);
             await updateUser(psychologist);
         }
@@ -494,8 +515,7 @@ app.post('/api/appointment/confirm', async (req, res) => {
             if (a) a.status = 'confirmed';
             await updateUser(client);
         }
-        const aptRes = await pool.query('SELECT * FROM appointments WHERE id=$1', [appointmentId]);
-        const apt = aptRes.rows[0];
+        
         const clientNotif = {
             id: nanoid(12), type: 'appointment_confirmed',
             title: 'Запись подтверждена!',
@@ -507,6 +527,7 @@ app.post('/api/appointment/confirm', async (req, res) => {
             client.notifications.unshift(clientNotif);
             await updateUser(client);
         }
+        
         io.to(clientId).emit('notification', clientNotif);
         io.to(clientId).emit('appointment_updated', apt);
         io.to(psychologistId).emit('appointment_updated', apt);
@@ -545,7 +566,7 @@ app.post('/api/appointment/complete', async (req, res) => {
     }
 });
 
-// ========== ЗАГРУЗКА ФАЙЛОВ (все через Cloudinary) ==========
+// ========== ЗАГРУЗКА ФАЙЛОВ ==========
 app.post('/api/upload-avatar', upload.single('avatar'), (req, res) => {
     if (!req.file) return res.json({ success: false, error: 'Файл не загружен' });
     res.json({ success: true, avatarUrl: req.file.path });
