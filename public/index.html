@@ -707,9 +707,30 @@
             display: none !important;
         }
         .comment-actions {
+            position: absolute;
+            right: 8px;
+            top: 8px;
             display: flex;
-            align-items: center;
-            gap: 4px;
+            gap: 6px;
+            background: rgba(0,0,0,0.5);
+            backdrop-filter: blur(4px);
+            padding: 4px 6px;
+            border-radius: 20px;
+            z-index: 2;
+        }
+        .comment-actions button {
+            background: rgba(139,202,139,0.2);
+            border: none;
+            color: var(--green);
+            font-size: 11px;
+            padding: 4px 8px;
+            border-radius: 16px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .comment-actions button:hover {
+            background: var(--green);
+            color: #0d2010;
         }
     </style>
 </head>
@@ -1298,10 +1319,10 @@
                         ${currentUser.about ? `<div class="profile-bio">${escapeHtml(currentUser.about)}</div>` : ''}
                         ${isPsych ? renderStars(currentUser.rating || 0) : ''}
                         <div class="profile-stats">
-                            <div class="profile-stat"><div class="number">${myPosts.length}</div><div class="label">постов</div></div>
-                            <div class="profile-stat"><div class="number">${followersCount}</div><div class="label">подписчиков</div></div>
-                            ${isPsych ? `<div class="profile-stat"><div class="number">${totalLikesOnPosts}</div><div class="label">лайков на постах</div></div>` : ''}
-                            ${isPsych ? `<div class="profile-stat"><div class="number">${(currentUser.rating || 0).toFixed(1)}</div><div class="label">рейтинг</div></div>` : ''}
+                        ${isPsych ? `<div class="profile-stat"><div class="number">${myPosts.length}</div><div class="label">постов</div></div>` : ''}
+                        ${isPsych ? `<div class="profile-stat"><div class="number">${followersCount}</div><div class="label">подписчиков</div></div>` : ''}
+                        ${isPsych ? `<div class="profile-stat"><div class="number">${totalLikesOnPosts}</div><div class="label">лайков на постах</div></div>` : ''}
+                        ${isPsych ? `<div class="profile-stat"><div class="number">${(currentUser.rating || 0).toFixed(1)}</div><div class="label">рейтинг</div></div>` : ''}
                         </div>
                         <div class="profile-actions">
                             <button class="btn-sm btn-outline" onclick="editProfileModal()"><i class="fas fa-pen"></i> Редактировать</button>
@@ -2143,6 +2164,7 @@
             if (contacts.length === 0) html += '<div class="empty-state glass-card" style="padding:40px;"><i class="fas fa-comment-slash"></i><div>Нет сообщений. Напишите психологу из раздела «Психологи»!</div></div>';
             html += `</div></div>`;
             document.getElementById('mainContent').innerHTML = html;
+            window.scrollTo({ top: 0, behavior: 'smooth' });
         }
 
         async function openChat(userId, userName) {
