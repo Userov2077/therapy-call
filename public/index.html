@@ -696,6 +696,21 @@
             .time-slot { padding: 4px 10px; font-size: 12px; }
             .post-video { max-height: 240px; }
         }
+        .post-video {
+            width: 100%;
+            border-radius: var(--radius-md);
+            margin-bottom: 12px;
+            background: #000;
+            object-fit: cover;
+        }
+        .post-video::-webkit-media-controls {
+            display: none !important;
+        }
+        .comment-actions {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
     </style>
 </head>
 <body>
@@ -899,7 +914,64 @@
             }
         }
 
+        async function toggleSubscription(psychologistId) {
+            if (!currentUser) { showToast('Войдите в аккаунт', true); return; }
+            const res = await fetch('/api/subscriptions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ followerId: currentUser.id, followingId: psychologistId })
+            });
+            const data = await res.json();
+            if (data.success) {
+                const btn = document.getElementById(`subsBtn${psychologistId}`);
+                if (btn) btn.textContent = data.subscribed ? 'Отписаться' : 'Подписаться';
+                showToast(data.subscribed ? 'Вы подписались' : 'Вы отписались');
+                // Обновляем счётчики в профиле (если открыт профиль психолога)
+                if (currentTab === 'psychologists') viewPsychologistPage(psychologistId);
+                else if (currentTab === 'profile') renderProfile();
+            } else {
+                showToast('Ошибка', true);
+            }
+        }
+
         // ======================= ЛЕНТА (с пагинацией и ленивыми комментариями) =======================
+        async function editComment(commentId, postId, oldText) {
+            const newText = prompt('Редактировать комментарий:', oldText);
+            if (!newText || newText === oldText) return;
+            const res = await fetch(`/api/posts/${postId}/comment/${commentId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId: currentUser.id, text: newText })
+            });
+            const data = await res.json();
+            if (data.success) {
+                document.getElementById(`comment-text-${commentId}`).innerText = newText;
+                showToast('Комментарий обновлён');
+            } else {
+                showToast('Ошибка', true);
+            }
+        }
+
+        async function deleteComment(commentId, postId) {
+            if (!confirm('Удалить комментарий?')) return;
+            const res = await fetch(`/api/posts/${postId}/comment/${commentId}`, {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId: currentUser.id })
+            });
+            const data = await res.json();
+            if (data.success) {
+                const commentDiv = document.querySelector(`.comment[data-comment-id="${commentId}"]`);
+                if (commentDiv) commentDiv.remove();
+                // Уменьшаем счётчик комментариев в посте
+                const commentSpan = document.querySelector(`.comment-toggle[data-id="${postId}"] span`);
+                if (commentSpan) commentSpan.textContent = Math.max(0, (parseInt(commentSpan.textContent) || 0) - 1);
+                showToast('Комментарий удалён');
+            } else {
+                showToast('Ошибка', true);
+            }
+        }
+
         async function renderFeed() {
             feedOffset = 0;
             feedPosts = [];
@@ -940,6 +1012,23 @@
         }
 
         function renderFeedPosts() {
+            const isOwnComment = currentUser && c.author_id === currentUser.id;
+            html += `
+            <div class="comment" data-comment-id="${c.id}">
+            <img class="comment-avatar" src="${escapeHtml(c.author_avatar)}" onerror="this.src='https://ui-avatars.com/api/?name=U&background=8bca8b&color=fff'">
+            <div class="comment-content">
+            <div class="comment-author">${escapeHtml(c.author_name)}</div>
+            <div class="comment-text" id="comment-text-${c.id}">${escapeHtml(c.text)}</div>
+            <div class="comment-time">${new Date(c.created_at).toLocaleString()}</div>
+            </div>
+                ${isOwnComment ? `
+                <div class="comment-actions">
+                <button class="edit-comment-btn" data-id="${c.id}" data-post-id="${postId}" data-text="${escapeHtml(c.text)}" style="background:none;border:none;color:var(--green);margin-left:8px;"><i class="fas fa-pen"></i></button>
+                <button class="delete-comment-btn" data-id="${c.id}" data-post-id="${postId}" style="background:none;border:none;color:red;"><i class="fas fa-trash"></i></button>
+                </div>
+                    ` : ''}
+                </div>
+                `;
             const container = document.getElementById('postsContainer');
             if (!container) return;
             let html = '';
@@ -958,7 +1047,9 @@
                         </div>
                         <div class="post-text">${escapeHtml(post.text)}</div>
                         ${post.image ? `<img class="post-image" src="${escapeHtml(post.image)}" onclick="openImageModal('${escapeHtml(post.image)}')">` : ''}
-                        ${post.video ? `<video class="post-video" controls preload="metadata"><source src="${escapeHtml(post.video)}" type="video/mp4"></video>` : ''}
+                        ${post.video ? `<video class="post-video" autoplay loop muted playsinline disablePictureInPicture style="pointer-events: none;" preload="metadata">
+                        <source src="${escapeHtml(post.video)}" type="video/mp4">
+                        </video>` : ''}
                         <div class="post-stats">
                             <button class="like-btn${post.userLiked ? ' liked' : ''}" data-id="${post.id}">
                                 <i class="fa-${post.userLiked ? 'solid' : 'regular'} fa-heart"></i>
@@ -1005,6 +1096,12 @@
                             </div>
                         </div>
                     `).join('');
+                    document.querySelectorAll('.edit-comment-btn').forEach(btn => {
+                        btn.onclick = () => editComment(btn.dataset.id, btn.dataset.postId, btn.dataset.text);
+                    });
+                    document.querySelectorAll('.delete-comment-btn').forEach(btn => {
+                        btn.onclick = () => deleteComment(btn.dataset.id, btn.dataset.postId);
+                    });
                 }
             }
         }
@@ -1164,74 +1261,77 @@
 
         // ======================= ПРОФИЛЬ =======================
         async function renderProfile() {
-            if (!currentUser) { showToast('Войдите в аккаунт', true); return; }
-            const isPsych = currentUser.role === 'psychologist';
-            document.getElementById('mainContent').innerHTML = `<div class="container"><div class="empty-state"><i class="fas fa-circle-notch fa-spin"></i></div></div>`;
-            const [postsRes, tasksRes, notesRes, subsRes] = await Promise.all([
-                fetchJSON(`/api/posts?userId=${currentUser.id}`),
-                isPsych ? fetchJSON(`/api/tasks/${currentUser.id}`) : Promise.resolve({ tasks: [] }),
-                isPsych ? fetchJSON(`/api/notes/${currentUser.id}`) : Promise.resolve({ notes: [] }),
-                fetchJSON(`/api/subscriptions/${currentUser.id}`)
-            ]);
-            const myPosts = (postsRes.posts || []).filter(p => p.author.id === currentUser.id);
-            const tasks = tasksRes.tasks || [];
-            const notes = notesRes.notes || [];
-            const followersCount = subsRes.followers?.length || 0;
-            let appointmentsHtml = '';
-            if (!isPsych && currentUser.appointments && currentUser.appointments.length > 0) {
-                const appointments = currentUser.appointments.filter(a => a.status === 'confirmed' || a.status === 'completed');
-                appointmentsHtml = `<div class="profile-sections"><div class="collapsible-section open"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">📅</div><div><div class="collapsible-title">Мои записи</div><div class="collapsible-subtitle">${appointments.length} сеансов</div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body">${appointments.map(apt => { const isCompleted = apt.status === 'completed' || new Date(`${apt.date}T${apt.time}`) < new Date(); return `<div class="appointment-item"><div class="appt-info"><div class="appt-name">${escapeHtml(apt.psychologistName)}</div><div class="appt-time">📅 ${apt.date} в ${apt.time}</div><div class="appt-status ${isCompleted ? 'status-completed' : (apt.status === 'confirmed' ? 'status-confirmed' : 'status-pending')}">${isCompleted ? '✅ Завершён' : (apt.status === 'confirmed' ? '✅ Подтверждён' : '⏳ Ожидает')}</div></div><div class="appt-actions">${!isCompleted && apt.status === 'confirmed' ? `<button class="btn-sm" onclick="startCall('${apt.roomId}', 'client')"><i class="fas fa-video"></i> Войти</button>` : ''}${isCompleted ? '<i class="fas fa-check-circle" style="color:var(--green); font-size:20px;"></i>' : ''}</div></div>`; }).join('')}${appointments.length === 0 ? '<div class="empty-state" style="padding:16px;"><i class="fas fa-calendar-times"></i><div>Нет записей</div></div>' : ''}</div></div></div>`;
-            }
-            let psychSections = '';
-            if (isPsych) {
-                const pendingCount = (currentUser.clients || []).filter(a => a.status === 'pending').length;
-                const confirmedCount = (currentUser.clients || []).filter(a => a.status === 'confirmed').length;
-                const undoneTasks = tasks.filter(t => !t.completed).length;
-                const certificates = currentUser.certificates || [];
-                psychSections = `
-                <div class="profile-sections">
-                    <div class="collapsible-section" id="sec-tasks"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">📋</div><div><div class="collapsible-title">Задачи</div><div class="collapsible-subtitle">${undoneTasks > 0 ? `${undoneTasks} не выполнено` : 'Все выполнены'}</div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body"><div id="tasksList">${tasks.map(t => `<div class="task-item"><input type="checkbox" class="task-checkbox task-cb" data-id="${t.id}" ${t.completed ? 'checked' : ''}><div style="flex:1"><div class="task-text ${t.completed ? 'task-completed' : ''}">${escapeHtml(t.text)}</div>${t.dueDate ? `<div class="task-due">📅 ${t.dueDate}</div>` : ''}</div><button class="task-delete" onclick="deleteTask('${t.id}')"><i class="fas fa-times"></i></button></div>`).join('')}</div>${tasks.length === 0 ? '<div class="empty-state" style="padding:16px;"><i class="fas fa-check-circle"></i><div>Нет задач</div></div>' : ''}<button class="section-add-btn" onclick="addTaskWithDate()"><i class="fas fa-plus"></i> Добавить задачу</button></div></div>
-                    <div class="collapsible-section" id="sec-calendar"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">📅</div><div><div class="collapsible-title">Календарь</div><div class="collapsible-subtitle">События</div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body"><div id="profileCalendar"></div></div></div>
-                    <div class="collapsible-section" id="sec-appointments"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">📞</div><div><div class="collapsible-title">Записи клиентов</div><div class="collapsible-subtitle">${pendingCount > 0 ? `${pendingCount} ожидает подтверждения` : confirmedCount > 0 ? `${confirmedCount} подтверждено` : 'Нет записей'}</div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body"><div id="appointmentsList">${(currentUser.clients || []).map(apt => { const isCompleted = apt.status === 'completed' || new Date(`${apt.date}T${apt.time}`) < new Date(); return `<div class="appointment-item"><div class="appt-info"><div class="appt-name">${escapeHtml(apt.clientName)}</div><div class="appt-time">📅 ${apt.date} в ${apt.time}</div><div class="appt-status ${apt.status === 'confirmed' ? 'status-confirmed' : 'status-pending'}">${apt.status === 'confirmed' ? (isCompleted ? '✅ Завершён' : '✅ Подтверждено') : '⏳ Ожидает'}</div></div><div class="appt-actions">${apt.status === 'pending' ? `<button class="btn-sm" onclick="confirmAppointment('${apt.appointmentId}','${apt.clientId}')">Подтвердить</button>` : ''}${apt.status === 'confirmed' && !isCompleted ? `<button class="btn-sm" onclick="startCall('${apt.roomId}', 'psychologist')"><i class="fas fa-video"></i> Начать</button>` : ''}${isCompleted ? '<i class="fas fa-check-circle" style="color:var(--green); font-size:20px;"></i>' : ''}</div></div>`; }).join('')}</div>${(currentUser.clients || []).length === 0 ? '<div class="empty-state" style="padding:16px;"><i class="fas fa-calendar-times"></i><div>Нет записей</div></div>' : ''}</div></div>
-                    <div class="collapsible-section" id="sec-clients"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">👥</div><div><div class="collapsible-title">Клиенты</div><div class="collapsible-subtitle">${confirmedCount} завершённых звонков</div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body"><div id="clientsList">${(currentUser.clients || []).filter(a => a.status === 'confirmed').map(apt => `<div class="client-item"><div><div class="client-name">${escapeHtml(apt.clientName)}</div><div class="client-time">${apt.date} в ${apt.time}</div></div><button class="btn-sm" onclick="startChatWith('${apt.clientId}','${escapeHtml(apt.clientName)}')"><i class="fas fa-comment-dots"></i> Написать</button></div>`).join('')}</div>${(currentUser.clients || []).filter(a => a.status === 'confirmed').length === 0 ? '<div class="empty-state" style="padding:16px;"><i class="fas fa-users-slash"></i><div>Нет завершённых звонков</div></div>' : ''}</div></div>
-                    <div class="collapsible-section" id="sec-notes"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">📝</div><div><div class="collapsible-title">Заметки</div><div class="collapsible-subtitle">${notes.length} заметок</div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body"><div class="notes-grid" id="notesGridProfile">${notes.map(n => `<div class="note-card" onclick="openNoteModal('${n.id}','${escapeHtml(n.title)}','${escapeHtml(n.content)}','${n.attachment || ''}')"><div class="note-title">${escapeHtml(n.title)}</div><div class="note-preview">${escapeHtml((n.content || '').substring(0, 70))}${(n.content || '').length > 70 ? '…' : ''}</div></div>`).join('')}${notes.length === 0 ? '<div class="empty-state" style="padding:16px;"><i class="fas fa-sticky-note"></i><div>Нет заметок</div></div>' : ''}</div><button class="section-add-btn" onclick="openAddNoteModal()"><i class="fas fa-plus"></i> Добавить заметку</button></div></div>
-                    <div class="collapsible-section" id="sec-certs"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">📜</div><div><div class="collapsible-title">Сертификаты и дипломы</div><div class="collapsible-subtitle">${certificates.length} документов</div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body"><div class="certificates-grid" id="certsGridProfile">${certificates.map(c => `<div class="certificate-card"><img src="${escapeHtml(c.image)}" onerror="this.src='https://placehold.co/100x80/1a2e1a/8bca8b?text=📜'"><div class="certificate-title">${escapeHtml(c.title)}</div><button class="delete-cert-btn" onclick="deleteCertificateProfile('${c.id}')"><i class="fas fa-times"></i></button></div>`).join('')}<div class="certificate-card add-cert-card" onclick="addCertificateProfile()"><i class="fas fa-plus"></i><span>Добавить</span></div></div></div></div>
-                </div>`;
-            }
-            const html = `
-                <div class="container">
-                    <div class="profile-header">
-                        <div class="profile-avatar-wrap">
-                            <img class="profile-avatar-lg" src="${escapeHtml(currentUser.avatar)}" id="profileAvatar" onerror="this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser.fullName)}&background=8bca8b&color=fff'">
-                            <button class="avatar-edit-btn" onclick="changeAvatar()"><i class="fas fa-pen"></i></button>
-                        </div>
-                        <div class="profile-name">${escapeHtml(currentUser.fullName)}</div>
-                        <div class="profile-role-badge">${isPsych ? '🧠 Психолог' : '👤 Клиент'}</div>
-                        ${currentUser.about ? `<div class="profile-bio">${escapeHtml(currentUser.about)}</div>` : ''}
-                        ${isPsych ? renderStars(currentUser.rating || 0) : ''}
-                        <div class="profile-stats">
-                            <div class="profile-stat"><div class="number">${myPosts.length}</div><div class="label">постов</div></div>
-                            <div class="profile-stat"><div class="number">${followersCount}</div><div class="label">подписчиков</div></div>
-                            ${isPsych ? `<div class="profile-stat"><div class="number">${(currentUser.rating || 0).toFixed(1)}</div><div class="label">рейтинг</div></div>` : ''}
-                        </div>
-                        <div class="profile-actions">
-                            <button class="btn-sm btn-outline" onclick="editProfileModal()"><i class="fas fa-pen"></i> Редактировать</button>
-                            ${isPsych ? `<button class="btn-sm btn-outline" onclick="showScheduleEditor()"><i class="fas fa-clock"></i> Расписание</button><button class="btn-sm" onclick="createPostModal()"><i class="fas fa-plus"></i> Пост</button>` : ''}
-                        </div>
-                    </div>
-                    ${!isPsych ? appointmentsHtml : ''}
-                    ${isPsych ? `<div style="margin-bottom: 16px;"><div class="section-header-row"><h3>Мои посты</h3><button class="btn-sm" onclick="createPostModal()"><i class="fas fa-plus"></i> Новый</button></div><div class="posts-grid" id="myPostsGridProfile">${myPosts.map(p => `<div class="post-card glass-card"><div class="post-text">${escapeHtml(p.text)}</div>${p.image ? `<img class="post-image" src="${escapeHtml(p.image)}" onclick="openImageModal('${escapeHtml(p.image)}')">` : ''}${p.video ? `<video class="post-video" controls preload="metadata"><source src="${escapeHtml(p.video)}" type="video/mp4"></video>` : ''}<div class="post-stats"><span style="color:var(--text-muted);font-size:13px;display:flex;gap:6px;align-items:center;"><i class="fa-regular fa-heart"></i> ${p.likesCount||0}</span><span style="color:var(--text-muted);font-size:13px;display:flex;gap:6px;align-items:center;"><i class="fa-regular fa-comment"></i> ${p.commentsCount||0}</span></div><div class="post-actions"><button class="profile-edit-post" data-id="${p.id}" data-text="${escapeHtml(p.text)}"><i class="fas fa-pen"></i> Ред.</button><button class="profile-delete-post" data-id="${p.id}"><i class="fas fa-trash-alt"></i> Удалить</button></div></div>`).join('')}${myPosts.length === 0 ? '<div class="empty-state glass-card" style="padding:24px;"><i class="fas fa-newspaper"></i><div>Нет постов</div></div>' : ''}</div></div>` : ''}
-                    ${psychSections}
+    if (!currentUser) { showToast('Войдите в аккаунт', true); return; }
+    const isPsych = currentUser.role === 'psychologist';
+    document.getElementById('mainContent').innerHTML = `<div class="container"><div class="empty-state"><i class="fas fa-circle-notch fa-spin"></i></div></div>`;
+    const [postsRes, tasksRes, notesRes, subsRes] = await Promise.all([
+        fetchJSON(`/api/posts?userId=${currentUser.id}`),
+        isPsych ? fetchJSON(`/api/tasks/${currentUser.id}`) : Promise.resolve({ tasks: [] }),
+        isPsych ? fetchJSON(`/api/notes/${currentUser.id}`) : Promise.resolve({ notes: [] }),
+        fetchJSON(`/api/subscriptions/${currentUser.id}`)
+    ]);
+    const myPosts = (postsRes.posts || []).filter(p => p.author.id === currentUser.id);
+    const tasks = tasksRes.tasks || [];
+    const notes = notesRes.notes || [];
+    const followersCount = subsRes.followers?.length || 0;
+    const totalLikesOnPosts = myPosts.reduce((sum, p) => sum + (p.likesCount || 0), 0);
+    
+    let appointmentsHtml = '';
+    if (!isPsych && currentUser.appointments && currentUser.appointments.length > 0) {
+        const appointments = currentUser.appointments.filter(a => a.status === 'confirmed' || a.status === 'completed');
+        appointmentsHtml = `<div class="profile-sections"><div class="collapsible-section open"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">📅</div><div><div class="collapsible-title">Мои записи</div><div class="collapsible-subtitle">${appointments.length} сеансов</div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body">${appointments.map(apt => { const isCompleted = apt.status === 'completed' || new Date(`${apt.date}T${apt.time}`) < new Date(); return `<div class="appointment-item"><div class="appt-info"><div class="appt-name">${escapeHtml(apt.psychologistName)}</div><div class="appt-time">📅 ${apt.date} в ${apt.time}</div><div class="appt-status ${isCompleted ? 'status-completed' : (apt.status === 'confirmed' ? 'status-confirmed' : 'status-pending')}">${isCompleted ? '✅ Завершён' : (apt.status === 'confirmed' ? '✅ Подтверждён' : '⏳ Ожидает')}</div></div><div class="appt-actions">${!isCompleted && apt.status === 'confirmed' ? `<button class="btn-sm" onclick="startCall('${apt.roomId}', 'client')"><i class="fas fa-video"></i> Войти</button>` : ''}${isCompleted ? '<i class="fas fa-check-circle" style="color:var(--green); font-size:20px;"></i>' : ''}</div></div>`; }).join('')}${appointments.length === 0 ? '<div class="empty-state" style="padding:16px;"><i class="fas fa-calendar-times"></i><div>Нет записей</div></div>' : ''}</div></div></div>`;
+    }
+    let psychSections = '';
+    if (isPsych) {
+        const pendingCount = (currentUser.clients || []).filter(a => a.status === 'pending').length;
+        const confirmedCount = (currentUser.clients || []).filter(a => a.status === 'confirmed').length;
+        const undoneTasks = tasks.filter(t => !t.completed).length;
+        const certificates = currentUser.certificates || [];
+        psychSections = `
+        <div class="profile-sections">
+            <div class="collapsible-section" id="sec-tasks"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">📋</div><div><div class="collapsible-title">Задачи</div><div class="collapsible-subtitle">${undoneTasks > 0 ? `${undoneTasks} не выполнено` : 'Все выполнены'}</div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body"><div id="tasksList">${tasks.map(t => `<div class="task-item"><input type="checkbox" class="task-checkbox task-cb" data-id="${t.id}" ${t.completed ? 'checked' : ''}><div style="flex:1"><div class="task-text ${t.completed ? 'task-completed' : ''}">${escapeHtml(t.text)}</div>${t.dueDate ? `<div class="task-due">📅 ${t.dueDate}</div>` : ''}</div><button class="task-delete" onclick="deleteTask('${t.id}')"><i class="fas fa-times"></i></button></div>`).join('')}</div>${tasks.length === 0 ? '<div class="empty-state" style="padding:16px;"><i class="fas fa-check-circle"></i><div>Нет задач</div></div>' : ''}<button class="section-add-btn" onclick="addTaskWithDate()"><i class="fas fa-plus"></i> Добавить задачу</button></div></div>
+            <div class="collapsible-section" id="sec-calendar"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">📅</div><div><div class="collapsible-title">Календарь</div><div class="collapsible-subtitle">События</div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body"><div id="profileCalendar"></div></div></div>
+            <div class="collapsible-section" id="sec-appointments"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">📞</div><div><div class="collapsible-title">Записи клиентов</div><div class="collapsible-subtitle">${pendingCount > 0 ? `${pendingCount} ожидает подтверждения` : confirmedCount > 0 ? `${confirmedCount} подтверждено` : 'Нет записей'}</div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body"><div id="appointmentsList">${(currentUser.clients || []).map(apt => { const isCompleted = apt.status === 'completed' || new Date(`${apt.date}T${apt.time}`) < new Date(); return `<div class="appointment-item"><div class="appt-info"><div class="appt-name">${escapeHtml(apt.clientName)}</div><div class="appt-time">📅 ${apt.date} в ${apt.time}</div><div class="appt-status ${apt.status === 'confirmed' ? 'status-confirmed' : 'status-pending'}">${apt.status === 'confirmed' ? (isCompleted ? '✅ Завершён' : '✅ Подтверждено') : '⏳ Ожидает'}</div></div><div class="appt-actions">${apt.status === 'pending' ? `<button class="btn-sm" onclick="confirmAppointment('${apt.appointmentId}','${apt.clientId}')">Подтвердить</button>` : ''}${apt.status === 'confirmed' && !isCompleted ? `<button class="btn-sm" onclick="startCall('${apt.roomId}', 'psychologist')"><i class="fas fa-video"></i> Начать</button>` : ''}${isCompleted ? '<i class="fas fa-check-circle" style="color:var(--green); font-size:20px;"></i>' : ''}</div></div>`; }).join('')}</div>${(currentUser.clients || []).length === 0 ? '<div class="empty-state" style="padding:16px;"><i class="fas fa-calendar-times"></i><div>Нет записей</div></div>' : ''}</div></div>
+            <div class="collapsible-section" id="sec-clients"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">👥</div><div><div class="collapsible-title">Клиенты</div><div class="collapsible-subtitle">${confirmedCount} завершённых звонков</div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body"><div id="clientsList">${(currentUser.clients || []).filter(a => a.status === 'confirmed').map(apt => `<div class="client-item"><div><div class="client-name">${escapeHtml(apt.clientName)}</div><div class="client-time">${apt.date} в ${apt.time}</div></div><button class="btn-sm" onclick="startChatWith('${apt.clientId}','${escapeHtml(apt.clientName)}')"><i class="fas fa-comment-dots"></i> Написать</button></div>`).join('')}</div>${(currentUser.clients || []).filter(a => a.status === 'confirmed').length === 0 ? '<div class="empty-state" style="padding:16px;"><i class="fas fa-users-slash"></i><div>Нет завершённых звонков</div></div>' : ''}</div></div>
+            <div class="collapsible-section" id="sec-notes"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">📝</div><div><div class="collapsible-title">Заметки</div><div class="collapsible-subtitle">${notes.length} заметок</div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body"><div class="notes-grid" id="notesGridProfile">${notes.map(n => `<div class="note-card" onclick="openNoteModal('${n.id}','${escapeHtml(n.title)}','${escapeHtml(n.content)}','${n.attachment || ''}')"><div class="note-title">${escapeHtml(n.title)}</div><div class="note-preview">${escapeHtml((n.content || '').substring(0, 70))}${(n.content || '').length > 70 ? '…' : ''}</div></div>`).join('')}${notes.length === 0 ? '<div class="empty-state" style="padding:16px;"><i class="fas fa-sticky-note"></i><div>Нет заметок</div></div>' : ''}</div><button class="section-add-btn" onclick="openAddNoteModal()"><i class="fas fa-plus"></i> Добавить заметку</button></div></div>
+            <div class="collapsible-section" id="sec-certs"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">📜</div><div><div class="collapsible-title">Сертификаты и дипломы</div><div class="collapsible-subtitle">${certificates.length} документов</div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body"><div class="certificates-grid" id="certsGridProfile">${certificates.map(c => `<div class="certificate-card"><img src="${escapeHtml(c.image)}" onerror="this.src='https://placehold.co/100x80/1a2e1a/8bca8b?text=📜'"><div class="certificate-title">${escapeHtml(c.title)}</div><button class="delete-cert-btn" onclick="deleteCertificateProfile('${c.id}')"><i class="fas fa-times"></i></button></div>`).join('')}<div class="certificate-card add-cert-card" onclick="addCertificateProfile()"><i class="fas fa-plus"></i><span>Добавить</span></div></div></div></div>
+        </div>`;
+    }
+    const html = `
+        <div class="container">
+            <div class="profile-header">
+                <div class="profile-avatar-wrap">
+                    <img class="profile-avatar-lg" src="${escapeHtml(currentUser.avatar)}" id="profileAvatar" onerror="this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser.fullName)}&background=8bca8b&color=fff'">
+                    <button class="avatar-edit-btn" onclick="changeAvatar()"><i class="fas fa-pen"></i></button>
                 </div>
-            `;
-            document.getElementById('mainContent').innerHTML = html;
-            if (isPsych) {
-                document.querySelectorAll('.profile-edit-post').forEach(b => { b.onclick = () => openEditPostModal(b.dataset.id, b.dataset.text); });
-                document.querySelectorAll('.profile-delete-post').forEach(b => { b.onclick = () => openConfirmModal('Удалить пост?', 'Это действие нельзя отменить.', async () => { await fetch(`/api/posts/${b.dataset.id}`, { method:'DELETE', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ authorId: currentUser.id }) }); renderProfile(); }); });
-                document.querySelectorAll('.task-cb').forEach(cb => { cb.onchange = async () => { await fetch(`/api/tasks/${cb.dataset.id}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ completed: cb.checked }) }); const label = cb.closest('.task-item').querySelector('.task-text'); if (label) label.classList.toggle('task-completed', cb.checked); }; });
-            }
-            checkUpcomingEvents();
-        }
+                <div class="profile-name">${escapeHtml(currentUser.fullName)}</div>
+                <div class="profile-role-badge">${isPsych ? '🧠 Психолог' : '👤 Клиент'}</div>
+                ${currentUser.about ? `<div class="profile-bio">${escapeHtml(currentUser.about)}</div>` : ''}
+                ${isPsych ? renderStars(currentUser.rating || 0) : ''}
+                <div class="profile-stats">
+                    <div class="profile-stat"><div class="number">${myPosts.length}</div><div class="label">постов</div></div>
+                    <div class="profile-stat"><div class="number">${followersCount}</div><div class="label">подписчиков</div></div>
+                    ${isPsych ? `<div class="profile-stat"><div class="number">${totalLikesOnPosts}</div><div class="label">лайков на постах</div></div>` : ''}
+                    ${isPsych ? `<div class="profile-stat"><div class="number">${(currentUser.rating || 0).toFixed(1)}</div><div class="label">рейтинг</div></div>` : ''}
+                </div>
+                <div class="profile-actions">
+                    <button class="btn-sm btn-outline" onclick="editProfileModal()"><i class="fas fa-pen"></i> Редактировать</button>
+                    ${isPsych ? `<button class="btn-sm btn-outline" onclick="showScheduleEditor()"><i class="fas fa-clock"></i> Расписание</button><button class="btn-sm" onclick="createPostModal()"><i class="fas fa-plus"></i> Пост</button>` : ''}
+                </div>
+            </div>
+            ${!isPsych ? appointmentsHtml : ''}
+            ${isPsych ? `<div style="margin-bottom: 16px;"><div class="section-header-row"><h3>Мои посты</h3><button class="btn-sm" onclick="createPostModal()"><i class="fas fa-plus"></i> Новый</button></div><div class="posts-grid" id="myPostsGridProfile">${myPosts.map(p => `<div class="post-card glass-card"><div class="post-text">${escapeHtml(p.text)}</div>${p.image ? `<img class="post-image" src="${escapeHtml(p.image)}" onclick="openImageModal('${escapeHtml(p.image)}')">` : ''}${p.video ? `<video class="post-video" controls preload="metadata"><source src="${escapeHtml(p.video)}" type="video/mp4"></video>` : ''}<div class="post-stats"><span style="color:var(--text-muted);font-size:13px;display:flex;gap:6px;align-items:center;"><i class="fa-regular fa-heart"></i> ${p.likesCount||0}</span><span style="color:var(--text-muted);font-size:13px;display:flex;gap:6px;align-items:center;"><i class="fa-regular fa-comment"></i> ${p.commentsCount||0}</span></div><div class="post-actions"><button class="profile-edit-post" data-id="${p.id}" data-text="${escapeHtml(p.text)}"><i class="fas fa-pen"></i> Ред.</button><button class="profile-delete-post" data-id="${p.id}"><i class="fas fa-trash-alt"></i> Удалить</button></div></div>`).join('')}${myPosts.length === 0 ? '<div class="empty-state glass-card" style="padding:24px;"><i class="fas fa-newspaper"></i><div>Нет постов</div></div>' : ''}</div></div>` : ''}
+            ${psychSections}
+        </div>
+    `;
+    document.getElementById('mainContent').innerHTML = html;
+    if (isPsych) {
+        document.querySelectorAll('.profile-edit-post').forEach(b => { b.onclick = () => openEditPostModal(b.dataset.id, b.dataset.text); });
+        document.querySelectorAll('.profile-delete-post').forEach(b => { b.onclick = () => openConfirmModal('Удалить пост?', 'Это действие нельзя отменить.', async () => { await fetch(`/api/posts/${b.dataset.id}`, { method:'DELETE', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ authorId: currentUser.id }) }); renderProfile(); }); });
+        document.querySelectorAll('.task-cb').forEach(cb => { cb.onchange = async () => { await fetch(`/api/tasks/${cb.dataset.id}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ completed: cb.checked }) }); const label = cb.closest('.task-item').querySelector('.task-text'); if (label) label.classList.toggle('task-completed', cb.checked); }; });
+    }
+    checkUpcomingEvents();
+}
 
         // ======================= КАЛЕНДАРЬ =======================
         async function renderProfileCalendar() {
@@ -1975,9 +2075,13 @@
             if (!e || !p) { showToast('Заполните все поля', true); return; }
             const r = await fetch('/api/login', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ email: e, password: p }) });
             const d = await r.json();
-            if (d.success) { localStorage.setItem('userId', d.userId); showToast('Добро пожаловать!'); closeModal('loginM'); location.reload(); }
-            else showToast(d.error || 'Неверный email или пароль', true);
-        }
+            if (d.success) {
+                localStorage.setItem('userId', d.userId);
+                showToast('Добро пожаловать!');
+                closeModal('loginM');
+                // Принудительно перезагружаем страницу, чтобы подтянуть currentUser
+                location.reload();
+            }
 
         async function register() {
             const body = {
@@ -2300,6 +2404,9 @@
                     ${renderStars(p.rating || 0)}
                     <div class="psych-actions-row">
                         ${!isOwn && currentUser ? `
+                            <button class="btn-sm btn-outline" onclick="toggleSubscription('${psychologistId}')" id="subsBtn${psychologistId}">
+                            ${currentUser.following && currentUser.following.includes(psychologistId) ? 'Отписаться' : 'Подписаться'}
+                            </button>
                             <button class="btn-sm btn-outline" onclick="startChatWith('${psychologistId}','${escapeHtml(p.fullName)}')"><i class="fas fa-comment-dots"></i> Написать</button>
                             <button class="btn-sm" onclick="bookPsychologist('${psychologistId}','${escapeHtml(p.fullName)}')"><i class="fas fa-calendar-plus"></i> Записаться</button>
                             <button class="btn-sm btn-outline" onclick="openReviewModal('${psychologistId}','${escapeHtml(p.fullName)}')"><i class="fas fa-star"></i> Оценить</button>

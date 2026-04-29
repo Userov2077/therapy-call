@@ -755,6 +755,38 @@ app.post('/api/posts/:id/comment', async (req, res) => {
     }
 });
 
+app.put('/api/posts/:postId/comment/:commentId', async (req, res) => {
+    try {
+        const { userId, text } = req.body;
+        const commentId = req.params.commentId;
+        const result = await pool.query('SELECT author_id FROM comments WHERE id=$1', [commentId]);
+        if (result.rows.length === 0) return res.json({ success: false, error: 'Комментарий не найден' });
+        if (result.rows[0].author_id !== userId) return res.json({ success: false, error: 'Нет прав' });
+        await pool.query('UPDATE comments SET text=$1 WHERE id=$2', [text, commentId]);
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Edit comment error:', err);
+        res.json({ success: false });
+    }
+});
+
+app.delete('/api/posts/:postId/comment/:commentId', async (req, res) => {
+    try {
+        const { userId } = req.body;
+        const commentId = req.params.commentId;
+        const result = await pool.query('SELECT author_id, post_id FROM comments WHERE id=$1', [commentId]);
+        if (result.rows.length === 0) return res.json({ success: false, error: 'Комментарий не найден' });
+        if (result.rows[0].author_id !== userId) return res.json({ success: false, error: 'Нет прав' });
+        await pool.query('DELETE FROM comments WHERE id=$1', [commentId]);
+        // Обновляем количество комментариев в клиенте через сокет (опционально)
+        io.emit('comment_deleted', { commentId, postId: result.rows[0].post_id });
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Delete comment error:', err);
+        res.json({ success: false });
+    }
+});
+
 app.post('/api/posts/:id/like', async (req, res) => {
     try {
         const postId = req.params.id;
