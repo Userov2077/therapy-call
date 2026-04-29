@@ -923,6 +923,12 @@
             });
             const data = await res.json();
             if (data.success) {
+                if (!currentUser.following) currentUser.following = [];
+                if (data.subscribed) {
+                    if (!currentUser.following.includes(psychologistId)) currentUser.following.push(psychologistId);
+                } else {
+                    currentUser.following = currentUser.following.filter(id => id !== psychologistId);
+                }
                 const btn = document.getElementById(`subsBtn${psychologistId}`);
                 if (btn) btn.textContent = data.subscribed ? 'Отписаться' : 'Подписаться';
                 showToast(data.subscribed ? 'Вы подписались' : 'Вы отписались');
@@ -1069,16 +1075,27 @@
             if (data.success) {
                 const commentsList = document.querySelector(`#comments-${postId} .comments-list`);
                 if (commentsList) {
-                    commentsList.innerHTML = data.comments.map(c => `
-                        <div class="comment">
-                            <img class="comment-avatar" src="${escapeHtml(c.author_avatar)}" onerror="this.src='https://ui-avatars.com/api/?name=U&background=8bca8b&color=fff'">
-                            <div class="comment-content">
-                                <div class="comment-author">${escapeHtml(c.author_name)}</div>
-                                <div class="comment-text">${escapeHtml(c.text)}</div>
-                                <div class="comment-time">${new Date(c.created_at).toLocaleString()}</div>
-                            </div>
+                    commentsList.innerHTML = data.comments.map(c => {
+                        const isOwnComment = currentUser && String(currentUser.id) === String(c.author_id);
+                        return `
+                        <div class="comment" data-comment-id="${c.id}">
+                        <img class="comment-avatar" src="${escapeHtml(c.author_avatar)}" onerror="this.src='https://ui-avatars.com/api/?name=U&background=8bca8b&color=fff'">
+                        <div class="comment-content">
+                        <div class="comment-author">${escapeHtml(c.author_name)}</div>
+                        <div class="comment-text" id="comment-text-${c.id}">${escapeHtml(c.text)}</div>
+                        <div class="comment-time">${new Date(c.created_at).toLocaleString()}</div>
                         </div>
-                    `).join('');
+                            ${isOwnComment ? `
+                            <div class="comment-actions">
+                            <button class="edit-comment-btn" data-id="${c.id}" data-post-id="${postId}" data-text="${escapeHtml(c.text)}"><i class="fas fa-pen"></i></button>
+                            <button class="delete-comment-btn" data-id="${c.id}" data-post-id="${postId}"><i class="fas fa-trash-alt"></i></button>
+                            </div>
+                                ` : ''}
+                                </div>
+                            `;
+                        }).join('');
+
+                        // Привязываем обработчики к кнопкам
                     document.querySelectorAll('.edit-comment-btn').forEach(btn => {
                         btn.onclick = () => editComment(btn.dataset.id, btn.dataset.postId, btn.dataset.text);
                     });
@@ -1172,41 +1189,35 @@
             const input = document.getElementById(`comment-input-${postId}`);
             const text = input?.value.trim();
             if (!text) return;
+
             const sendBtn = input.nextElementSibling;
             sendBtn.disabled = true;
             sendBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+
             try {
                 const res = await fetch(`/api/posts/${postId}/comment`, { 
-                    method:'POST', 
-                    headers:{'Content-Type':'application/json'}, 
-                    body:JSON.stringify({ userId: currentUser.id, text: text }) 
+                    method: 'POST', 
+                    headers: { 'Content-Type': 'application/json' }, 
+                    body: JSON.stringify({ userId: currentUser.id, text: text }) 
                 });
                 const data = await res.json();
+
                 if (data.success) {
                     input.value = '';
-                    const commentsList = document.querySelector(`#comments-${postId} .comments-list`);
-                    if (commentsList) {
-                        const newCommentHtml = `
-                            <div class="comment">
-                                <img class="comment-avatar" src="${escapeHtml(currentUser.avatar)}" onerror="this.src='https://ui-avatars.com/api/?name=U&background=8bca8b&color=fff'">
-                                <div class="comment-content">
-                                    <div class="comment-author">${escapeHtml(currentUser.fullName)}</div>
-                                    <div class="comment-text">${escapeHtml(text)}</div>
-                                    <div class="comment-time">Только что</div>
-                                </div>
-                            </div>
-                        `;
-                        commentsList.insertAdjacentHTML('beforeend', newCommentHtml);
-                    }
+
+                    // Обновляем счётчик комментариев (чтобы кнопка показала +1)
                     const commentSpan = document.querySelector(`.comment-toggle[data-id="${postId}"] span`);
                     if (commentSpan) commentSpan.textContent = (parseInt(commentSpan.textContent) || 0) + 1;
+
+                    // Также обновляем в feedPosts (для согласованности)
                     const post = feedPosts.find(p => p.id === postId);
                     if (post) post.commentsCount = (post.commentsCount || 0) + 1;
+
                     showToast('Комментарий добавлен');
                 } else {
                     showToast(data.error || 'Ошибка', true);
                 }
-            } catch(err) {
+            } catch (err) {
                 showToast('Ошибка соединения', true);
             } finally {
                 sendBtn.disabled = false;
@@ -1262,7 +1273,7 @@
     let appointmentsHtml = '';
     if (!isPsych && currentUser.appointments && currentUser.appointments.length > 0) {
         const appointments = currentUser.appointments.filter(a => a.status === 'confirmed' || a.status === 'completed');
-        appointmentsHtml = `<div class="profile-sections"><div class="collapsible-section open"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">📅</div><div><div class="collapsible-title">Мои записи</div><div class="collapsible-subtitle">${appointments.length} сеансов</div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body">${appointments.map(apt => { const isCompleted = apt.status === 'completed' || new Date(`${apt.date}T${apt.time}`) < new Date(); return `<div class="appointment-item"><div class="appt-info"><div class="appt-name">${escapeHtml(apt.psychologistName)}</div><div class="appt-time">📅 ${apt.date} в ${apt.time}</div><div class="appt-status ${isCompleted ? 'status-completed' : (apt.status === 'confirmed' ? 'status-confirmed' : 'status-pending')}">${isCompleted ? '✅ Завершён' : (apt.status === 'confirmed' ? '✅ Подтверждён' : '⏳ Ожидает')}</div></div><div class="appt-actions">${!isCompleted && apt.status === 'confirmed' ? `<button class="btn-sm" onclick="startCall('${apt.roomId}', 'client')"><i class="fas fa-video"></i> Войти</button>` : ''}${isCompleted ? '<i class="fas fa-check-circle" style="color:var(--green); font-size:20px;"></i>' : ''}</div></div>`; }).join('')}${appointments.length === 0 ? '<div class="empty-state" style="padding:16px;"><i class="fas fa-calendar-times"></i><div>Нет записей</div></div>' : ''}</div></div></div>`;
+        appointmentsHtml = `<div class="profile-sections"><div class="collapsible-section open"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">📅</div><div><div class="collapsible-title">Мои записи</div><div class="collapsible-subtitle">${appointments.length} сеансов</div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body">${appointments.map(apt => { const isCompleted = apt.status === 'completed'; return `<div class="appointment-item"><div class="appt-info"><div class="appt-name">${escapeHtml(apt.psychologistName)}</div><div class="appt-time">📅 ${apt.date} в ${apt.time}</div><div class="appt-status ${isCompleted ? 'status-completed' : (apt.status === 'confirmed' ? 'status-confirmed' : 'status-pending')}">${isCompleted ? '✅ Завершён' : (apt.status === 'confirmed' ? '✅ Подтверждён' : '⏳ Ожидает')}</div></div><div class="appt-actions">${!isCompleted && apt.status === 'confirmed' ? `<button class="btn-sm" onclick="startCall('${apt.roomId}', 'client')"><i class="fas fa-video"></i> Войти</button>` : ''}${isCompleted ? '<i class="fas fa-check-circle" style="color:var(--green); font-size:20px;"></i>' : ''}</div></div>`; }).join('')}${appointments.length === 0 ? '<div class="empty-state" style="padding:16px;"><i class="fas fa-calendar-times"></i><div>Нет записей</div></div>' : ''}</div></div></div>`;
     }
     let psychSections = '';
     if (isPsych) {
@@ -1274,7 +1285,7 @@
         <div class="profile-sections">
             <div class="collapsible-section" id="sec-tasks"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">📋</div><div><div class="collapsible-title">Задачи</div><div class="collapsible-subtitle">${undoneTasks > 0 ? `${undoneTasks} не выполнено` : 'Все выполнены'}</div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body"><div id="tasksList">${tasks.map(t => `<div class="task-item"><input type="checkbox" class="task-checkbox task-cb" data-id="${t.id}" ${t.completed ? 'checked' : ''}><div style="flex:1"><div class="task-text ${t.completed ? 'task-completed' : ''}">${escapeHtml(t.text)}</div>${t.dueDate ? `<div class="task-due">📅 ${t.dueDate}</div>` : ''}</div><button class="task-delete" onclick="deleteTask('${t.id}')"><i class="fas fa-times"></i></button></div>`).join('')}</div>${tasks.length === 0 ? '<div class="empty-state" style="padding:16px;"><i class="fas fa-check-circle"></i><div>Нет задач</div></div>' : ''}<button class="section-add-btn" onclick="addTaskWithDate()"><i class="fas fa-plus"></i> Добавить задачу</button></div></div>
             <div class="collapsible-section" id="sec-calendar"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">📅</div><div><div class="collapsible-title">Календарь</div><div class="collapsible-subtitle">События</div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body"><div id="profileCalendar"></div></div></div>
-            <div class="collapsible-section" id="sec-appointments"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">📞</div><div><div class="collapsible-title">Записи клиентов</div><div class="collapsible-subtitle">${pendingCount > 0 ? `${pendingCount} ожидает подтверждения` : confirmedCount > 0 ? `${confirmedCount} подтверждено` : 'Нет записей'}</div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body"><div id="appointmentsList">${(currentUser.clients || []).map(apt => { const isCompleted = apt.status === 'completed' || new Date(`${apt.date}T${apt.time}`) < new Date(); return `<div class="appointment-item"><div class="appt-info"><div class="appt-name">${escapeHtml(apt.clientName)}</div><div class="appt-time">📅 ${apt.date} в ${apt.time}</div><div class="appt-status ${apt.status === 'confirmed' ? 'status-confirmed' : 'status-pending'}">${apt.status === 'confirmed' ? (isCompleted ? '✅ Завершён' : '✅ Подтверждено') : '⏳ Ожидает'}</div></div><div class="appt-actions">${apt.status === 'pending' ? `<button class="btn-sm" onclick="confirmAppointment('${apt.appointmentId}','${apt.clientId}')">Подтвердить</button>` : ''}${apt.status === 'confirmed' && !isCompleted ? `<button class="btn-sm" onclick="startCall('${apt.roomId}', 'psychologist')"><i class="fas fa-video"></i> Начать</button>` : ''}${isCompleted ? '<i class="fas fa-check-circle" style="color:var(--green); font-size:20px;"></i>' : ''}</div></div>`; }).join('')}</div>${(currentUser.clients || []).length === 0 ? '<div class="empty-state" style="padding:16px;"><i class="fas fa-calendar-times"></i><div>Нет записей</div></div>' : ''}</div></div>
+            <div class="collapsible-section" id="sec-appointments"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">📞</div><div><div class="collapsible-title">Записи клиентов</div><div class="collapsible-subtitle">${pendingCount > 0 ? `${pendingCount} ожидает подтверждения` : confirmedCount > 0 ? `${confirmedCount} подтверждено` : 'Нет записей'}</div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body"><div id="appointmentsList">${(currentUser.clients || []).map(apt => { const isCompleted = apt.status === 'completed'; return `<div class="appointment-item"><div class="appt-info"><div class="appt-name">${escapeHtml(apt.clientName)}</div><div class="appt-time">📅 ${apt.date} в ${apt.time}</div><div class="appt-status ${apt.status === 'confirmed' ? 'status-confirmed' : 'status-pending'}">${apt.status === 'confirmed' ? (isCompleted ? '✅ Завершён' : '✅ Подтверждено') : '⏳ Ожидает'}</div></div><div class="appt-actions">${apt.status === 'pending' ? `<button class="btn-sm" onclick="confirmAppointment('${apt.appointmentId}','${apt.clientId}')">Подтвердить</button>` : ''}${apt.status === 'confirmed' && !isCompleted ? `<button class="btn-sm" onclick="startCall('${apt.roomId}', 'psychologist')"><i class="fas fa-video"></i> Начать</button>` : ''}${isCompleted ? '<i class="fas fa-check-circle" style="color:var(--green); font-size:20px;"></i>' : ''}</div></div>`; }).join('')}</div>${(currentUser.clients || []).length === 0 ? '<div class="empty-state" style="padding:16px;"><i class="fas fa-calendar-times"></i><div>Нет записей</div></div>' : ''}</div></div>
             <div class="collapsible-section" id="sec-clients"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">👥</div><div><div class="collapsible-title">Клиенты</div><div class="collapsible-subtitle">${confirmedCount} завершённых звонков</div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body"><div id="clientsList">${(currentUser.clients || []).filter(a => a.status === 'confirmed').map(apt => `<div class="client-item"><div><div class="client-name">${escapeHtml(apt.clientName)}</div><div class="client-time">${apt.date} в ${apt.time}</div></div><button class="btn-sm" onclick="startChatWith('${apt.clientId}','${escapeHtml(apt.clientName)}')"><i class="fas fa-comment-dots"></i> Написать</button></div>`).join('')}</div>${(currentUser.clients || []).filter(a => a.status === 'confirmed').length === 0 ? '<div class="empty-state" style="padding:16px;"><i class="fas fa-users-slash"></i><div>Нет завершённых звонков</div></div>' : ''}</div></div>
             <div class="collapsible-section" id="sec-notes"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">📝</div><div><div class="collapsible-title">Заметки</div><div class="collapsible-subtitle">${notes.length} заметок</div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body"><div class="notes-grid" id="notesGridProfile">${notes.map(n => `<div class="note-card" onclick="openNoteModal('${n.id}','${escapeHtml(n.title)}','${escapeHtml(n.content)}','${n.attachment || ''}')"><div class="note-title">${escapeHtml(n.title)}</div><div class="note-preview">${escapeHtml((n.content || '').substring(0, 70))}${(n.content || '').length > 70 ? '…' : ''}</div></div>`).join('')}${notes.length === 0 ? '<div class="empty-state" style="padding:16px;"><i class="fas fa-sticky-note"></i><div>Нет заметок</div></div>' : ''}</div><button class="section-add-btn" onclick="openAddNoteModal()"><i class="fas fa-plus"></i> Добавить заметку</button></div></div>
             <div class="collapsible-section" id="sec-certs"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">📜</div><div><div class="collapsible-title">Сертификаты и дипломы</div><div class="collapsible-subtitle">${certificates.length} документов</div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body"><div class="certificates-grid" id="certsGridProfile">${certificates.map(c => `<div class="certificate-card"><img src="${escapeHtml(c.image)}" onerror="this.src='https://placehold.co/100x80/1a2e1a/8bca8b?text=📜'"><div class="certificate-title">${escapeHtml(c.title)}</div><button class="delete-cert-btn" onclick="deleteCertificateProfile('${c.id}')"><i class="fas fa-times"></i></button></div>`).join('')}<div class="certificate-card add-cert-card" onclick="addCertificateProfile()"><i class="fas fa-plus"></i><span>Добавить</span></div></div></div></div>
@@ -2060,14 +2071,23 @@
             const d = await r.json();
             if (d.success) {
                 localStorage.setItem('userId', d.userId);
-                showToast('Добро пожаловать!');
-                closeModal('loginM');
-                // Принудительно перезагружаем страницу, чтобы подтянуть currentUser
-                location.reload();
+                // Принудительно загружаем пользователя и переключаем вкладку
+                const userData = await fetchJSON(`/api/user/${d.userId}`);
+                if (userData.success) {
+                    currentUser = userData.user;
+                    document.getElementById('navAuth').style.display = 'none';
+                    document.getElementById('navUser').style.display = 'flex';
+                    document.getElementById('bottomNav').style.display = 'flex';
+                    await fetchJSON('/api/psychologists').then(d => { allPsychologists = d.psychologists || []; });
+                    initSocket();
+                    requestNotificationPermission();
+                    switchTab('feed');
+                    closeModal('loginM');
+                    showToast('Добро пожаловать!');
                 } else {
-        showToast(d.error || 'Неверный email или пароль', true);
-    }
-}
+                    showToast('Ошибка загрузки профиля', true);
+                }
+            }
 
         async function register() {
             const body = {
