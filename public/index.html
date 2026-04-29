@@ -1473,61 +1473,70 @@
         }
 
         async function saveNote() {
-            const title = document.getElementById('noteTitle').value;
-            const content = document.getElementById('noteContent').value;
-            if (!title || !content) { showToast('Заполните все поля', true); return; }
-            const file = document.getElementById('noteFile')?.files[0];
-            let att = null, attT = null;
-            if (file) {
-            // Проверка размера файла (например, до 5 МБ)
-                if (file.size > 5 * 1024 * 1024) {
-                    showToast('Файл не должен превышать 5 МБ', true);
-                    return;
-                }
-                const fd = new FormData();
-                fd.append('file', file);
-                try {
-                    const res = await fetch('/api/upload', { method: 'POST', body: fd });
-                    if (!res.ok) {
-                        const errorText = await res.text();
-                        console.error('Upload error:', errorText);
-                        showToast('Ошибка загрузки файла', true);
-                        return;
-                    }
-                    const d = await res.json();
-                    if (d.success) {
-                        att = d.fileUrl;
-                        attT = file.type.startsWith('image/') ? 'image' : 'file';
-                    } else {
-                        showToast(d.error || 'Ошибка загрузки', true);
-                        return;
-                    }
-                } catch (err) {
-                    console.error('Upload fetch error:', err);
-                    showToast('Ошибка соединения при загрузке', true);
-                    return;
-                }
-            }
-            try {
-                const res = await fetch('/api/notes', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ psychologistId: currentUser.id, title, content, attachment: att, attachmentType: attT })
-                });
-                const data = await res.json();
-                if (data.success) {
-                    closeModal('noteModal');
-                    showToast('Заметка сохранена');
-                    renderProfile();
-                } else {
-                    showToast(data.error || 'Ошибка сохранения заметки', true);
-                }
-            } catch (err) {
-                console.error('Save note error:', err);
-                showToast('Ошибка соединения', true);
-            }
+    const title = document.getElementById('noteTitle').value;
+    const content = document.getElementById('noteContent').value;
+    if (!title || !content) { showToast('Заполните все поля', true); return; }
+    
+    const file = document.getElementById('noteFile')?.files[0];
+    let att = null, attT = null;
+    
+    if (file) {
+        // Ограничим размер файла 5 МБ для заметок
+        if (file.size > 5 * 1024 * 1024) {
+            showToast('Файл не должен превышать 5 МБ', true);
+            return;
         }
-        
+        const fd = new FormData();
+        fd.append('file', file);
+        try {
+            const r = await fetch('/api/upload', { method: 'POST', body: fd });
+            if (!r.ok) {
+                const errorText = await r.text();
+                console.error('Upload error:', errorText);
+                showToast('Ошибка загрузки файла', true);
+                return;
+            }
+            const d = await r.json();
+            if (d.success) {
+                att = d.fileUrl;
+                attT = file.type.startsWith('image/') ? 'image' : 'file';
+            } else {
+                showToast(d.error || 'Ошибка загрузки файла', true);
+                return;
+            }
+        } catch (err) {
+            console.error('Upload error:', err);
+            showToast('Ошибка соединения при загрузке', true);
+            return;
+        }
+    }
+    
+    try {
+        const res = await fetch('/api/notes', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                psychologistId: currentUser.id,
+                title,
+                content,
+                attachment: att,
+                attachmentType: attT
+            })
+        });
+        const data = await res.json();
+        if (data.success) {
+            closeModal('noteModal');
+            showToast('Заметка сохранена');
+            renderProfile();
+        } else {
+            showToast(data.error || 'Ошибка сохранения заметки', true);
+        }
+    } catch (err) {
+        console.error('Save note error:', err);
+        showToast('Ошибка соединения', true);
+    }
+}
+
         async function openNoteModal(id, title, content, att) {
             const modalId = 'editNoteModal';
             const html = `
