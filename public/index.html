@@ -1012,74 +1012,57 @@
         }
 
         function renderFeedPosts() {
-            const isOwnComment = currentUser && c.author_id === currentUser.id;
-            html += `
-            <div class="comment" data-comment-id="${c.id}">
-            <img class="comment-avatar" src="${escapeHtml(c.author_avatar)}" onerror="this.src='https://ui-avatars.com/api/?name=U&background=8bca8b&color=fff'">
-            <div class="comment-content">
-            <div class="comment-author">${escapeHtml(c.author_name)}</div>
-            <div class="comment-text" id="comment-text-${c.id}">${escapeHtml(c.text)}</div>
-            <div class="comment-time">${new Date(c.created_at).toLocaleString()}</div>
-            </div>
-                ${isOwnComment ? `
-                <div class="comment-actions">
-                <button class="edit-comment-btn" data-id="${c.id}" data-post-id="${postId}" data-text="${escapeHtml(c.text)}" style="background:none;border:none;color:var(--green);margin-left:8px;"><i class="fas fa-pen"></i></button>
-                <button class="delete-comment-btn" data-id="${c.id}" data-post-id="${postId}" style="background:none;border:none;color:red;"><i class="fas fa-trash"></i></button>
-                </div>
-                    ` : ''}
-                </div>
-                `;
             const container = document.getElementById('postsContainer');
             if (!container) return;
             let html = '';
             for (const post of feedPosts) {
                 html += `
-                    <div class="post-card glass-card" data-post-id="${post.id}">
-                        <div class="post-header">
-                            <img class="post-avatar" src="${escapeHtml(post.author.avatar)}" onclick="viewPsychologistPage('${post.author.id}')">
-                            <div>
-                                <div class="post-author" onclick="viewPsychologistPage('${post.author.id}')">
-                                    ${escapeHtml(post.author.fullName)}
-                                    ${renderStars(post.author.rating || 0)}
-                                </div>
-                                <div class="post-time">${new Date(post.createdAt).toLocaleString()}</div>
-                            </div>
-                        </div>
-                        <div class="post-text">${escapeHtml(post.text)}</div>
-                        ${post.image ? `<img class="post-image" src="${escapeHtml(post.image)}" onclick="openImageModal('${escapeHtml(post.image)}')">` : ''}
-                        ${post.video ? `<video class="post-video" autoplay loop muted playsinline disablePictureInPicture style="pointer-events: none;" preload="metadata">
-                        <source src="${escapeHtml(post.video)}" type="video/mp4">
-                        </video>` : ''}
-                        <div class="post-stats">
-                            <button class="like-btn${post.userLiked ? ' liked' : ''}" data-id="${post.id}">
-                                <i class="fa-${post.userLiked ? 'solid' : 'regular'} fa-heart"></i>
-                                <span>${post.likesCount || 0}</span>
-                            </button>
-                            <button class="comment-toggle" data-id="${post.id}" data-loaded="false">
-                                <i class="fa-regular fa-comment"></i>
-                                <span>${post.commentsCount || 0}</span>
-                            </button>
-                        </div>
-                        <div class="comments-section" id="comments-${post.id}" style="display:none">
-                            <div class="comments-list"></div>
-                            ${currentUser ? `
-                            <div class="new-comment">
-                                <input type="text" placeholder="Написать комментарий..." id="comment-input-${post.id}" onkeypress="if(event.key==='Enter')addComment('${post.id}')">
-                                <button class="btn-sm" onclick="addComment('${post.id}')"><i class="fas fa-paper-plane"></i></button>
-                            </div>` : ''}
-                        </div>
-                        ${currentUser && post.author.id === currentUser.id ? `
-                        <div class="post-actions">
-                            <button class="edit-post-btn" data-id="${post.id}"><i class="fas fa-pen"></i> Редактировать</button>
-                            <button class="delete-post-btn" data-id="${post.id}"><i class="fas fa-trash-alt"></i> Удалить</button>
-                        </div>` : ''}
-                    </div>
-                `;
-            }
-            container.innerHTML = html;
-            attachFeedEvents();
-            initVideoObservers();
-        }
+                <div class="post-card glass-card" data-post-id="${post.id}">
+                <div class="post-header">
+                <img class="post-avatar" src="${escapeHtml(post.author.avatar)}" onclick="viewPsychologistPage('${post.author.id}')">
+                <div>
+                <div class="post-author" onclick="viewPsychologistPage('${post.author.id}')">
+                ${escapeHtml(post.author.fullName)}
+                ${renderStars(post.author.rating || 0)}
+                </div>
+                <div class="post-time">${new Date(post.createdAt).toLocaleString()}</div>
+                </div>
+                </div>
+                <div class="post-text">${escapeHtml(post.text)}</div>
+                ${post.image ? `<img class="post-image" src="${escapeHtml(post.image)}" onclick="openImageModal('${escapeHtml(post.image)}')">` : ''}
+                ${post.video ? `<video class="post-video" autoplay loop muted playsinline disablePictureInPicture style="pointer-events: none;" preload="metadata">
+                    <source src="${escapeHtml(post.video)}" type="video/mp4">
+                </video>` : ''}
+                <div class="post-stats">
+                    <button class="like-btn${post.userLiked ? ' liked' : ''}" data-id="${post.id}">
+                        <i class="fa-${post.userLiked ? 'solid' : 'regular'} fa-heart"></i>
+                        <span>${post.likesCount || 0}</span>
+                    </button>
+                    <button class="comment-toggle" data-id="${post.id}" data-loaded="false">
+                        <i class="fa-regular fa-comment"></i>
+                        <span>${post.commentsCount || 0}</span>
+                    </button>
+                </div>
+                <div class="comments-section" id="comments-${post.id}" style="display:none">
+                    <div class="comments-list"></div>
+                    ${currentUser ? `
+                    <div class="new-comment">
+                        <input type="text" placeholder="Написать комментарий..." id="comment-input-${post.id}" onkeypress="if(event.key==='Enter')addComment('${post.id}')">
+                        <button class="btn-sm" onclick="addComment('${post.id}')"><i class="fas fa-paper-plane"></i></button>
+                    </div>` : ''}
+                </div>
+                ${currentUser && post.author.id === currentUser.id ? `
+                <div class="post-actions">
+                    <button class="edit-post-btn" data-id="${post.id}"><i class="fas fa-pen"></i> Редактировать</button>
+                    <button class="delete-post-btn" data-id="${post.id}"><i class="fas fa-trash-alt"></i> Удалить</button>
+                </div>` : ''}
+            </div>
+        `;
+    }
+    container.innerHTML = html;
+    attachFeedEvents();
+    initVideoObservers();
+}
 
         async function loadCommentsForPost(postId) {
             const data = await fetchJSON(`/api/posts/${postId}/comments`);
@@ -2081,7 +2064,10 @@
                 closeModal('loginM');
                 // Принудительно перезагружаем страницу, чтобы подтянуть currentUser
                 location.reload();
-            }
+                } else {
+        showToast(d.error || 'Неверный email или пароль', true);
+    }
+}
 
         async function register() {
             const body = {
