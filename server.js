@@ -50,21 +50,60 @@ const cloudinaryStorage = new CloudinaryStorage({
     params: (req, file) => {
         let folder = 'therapy_call_general';
         let resource_type = 'auto';
-        if (file.fieldname === 'avatar') folder = 'therapy_call_avatars';
-        else if (file.fieldname === 'certificate') folder = 'therapy_call_certificates';
-        else if (file.fieldname === 'voice') folder = 'therapy_call_voice';
-        else if (file.fieldname === 'image' || file.fieldname === 'chat_image') folder = 'therapy_call_images';
-        else if (file.fieldname === 'video') folder = 'therapy_call_videos';
-        else if (file.fieldname === 'recording') folder = 'therapy_call_recordings';
-        else if (file.fieldname === 'file') folder = 'therapy_call_files';
+        let allowed_formats = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'mp4', 'mov', 'avi', 'webm', 'ogg', 'wav', 'mp3'];
+        
+        const mime = file.mimetype;
+        
+        // Для поля 'file' (заметки) – определяем тип по mimetype
+        if (file.fieldname === 'file') {
+            if (mime.startsWith('image/')) {
+                resource_type = 'image';
+                folder = 'therapy_call_images';
+            } else if (mime.startsWith('video/')) {
+                resource_type = 'video';
+                folder = 'therapy_call_videos';
+            } else if (mime.startsWith('audio/')) {
+                resource_type = 'video';
+                folder = 'therapy_call_audio';
+            } else {
+                // Документы: Excel, Word, PDF, текстовые
+                resource_type = 'raw';
+                folder = 'therapy_call_documents';
+                if (mime === 'application/pdf') allowed_formats = ['pdf'];
+                else if (mime === 'application/msword') allowed_formats = ['doc'];
+                else if (mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') allowed_formats = ['docx'];
+                else if (mime === 'application/vnd.ms-excel') allowed_formats = ['xls'];
+                else if (mime === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') allowed_formats = ['xlsx'];
+                else if (mime === 'text/plain') allowed_formats = ['txt'];
+                else allowed_formats = ['*'];
+            }
+        } else if (file.fieldname === 'avatar') {
+            folder = 'therapy_call_avatars';
+            resource_type = 'image';
+        } else if (file.fieldname === 'certificate') {
+            folder = 'therapy_call_certificates';
+            resource_type = 'image';
+        } else if (file.fieldname === 'voice') {
+            folder = 'therapy_call_voice';
+            resource_type = 'video';
+        } else if (file.fieldname === 'image' || file.fieldname === 'chat_image') {
+            folder = 'therapy_call_images';
+            resource_type = 'image';
+        } else if (file.fieldname === 'video') {
+            folder = 'therapy_call_videos';
+            resource_type = 'video';
+        } else if (file.fieldname === 'recording') {
+            folder = 'therapy_call_recordings';
+            resource_type = 'video';
+        }
+        
         return {
             folder: folder,
             resource_type: resource_type,
-            allowed_formats: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'mp4', 'mov', 'avi', 'webm', 'ogg', 'wav', 'mp3']
+            allowed_formats: allowed_formats
         };
     }
 });
-
 const upload = multer({ storage: cloudinaryStorage, limits: { fileSize: 50 * 1024 * 1024 } });
 
 // ========== Инициализация таблиц ==========
@@ -573,8 +612,20 @@ app.post('/api/upload-avatar', upload.single('avatar'), (req, res) => {
 });
 
 app.post('/api/upload', upload.single('file'), (req, res) => {
-    if (!req.file) return res.json({ success: false, error: 'Файл не загружен' });
-    res.json({ success: true, fileUrl: req.file.path });
+    try {
+        if (!req.file) {
+            return res.status(400).json({ success: false, error: 'Файл не загружен' });
+        }
+        // Ограничение размера 5 МБ
+        if (req.file.size > 5 * 1024 * 1024) {
+            return res.status(400).json({ success: false, error: 'Файл слишком большой (максимум 5 МБ)' });
+        }
+        console.log('Файл загружен:', req.file.originalname, 'MIME:', req.file.mimetype, 'URL:', req.file.path);
+        res.json({ success: true, fileUrl: req.file.path });
+    } catch (err) {
+        console.error('Ошибка загрузки:', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
 });
 
 app.post('/api/upload-chat-image', upload.single('image'), (req, res) => {
