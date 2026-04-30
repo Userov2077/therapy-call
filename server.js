@@ -74,7 +74,7 @@ const cloudinaryStorage = new CloudinaryStorage({
             folder = 'therapy_call_recordings';
             resource_type = 'video';
         } else if (file.fieldname === 'file') {
-            // Документы не обрабатываем через Cloudinary, они пойдут через локальное хранилище.
+            // Документы не обрабатываем через Cloudinary
             return { error: 'Документы загружаются через /api/upload-doc' };
         }
 
@@ -431,11 +431,9 @@ app.put('/api/schedule', async (req, res) => {
         const { userId, schedule } = req.body;
         const user = await getUser(userId);
         if (!user || user.role !== 'psychologist') return res.json({ success: false, error: 'Нет прав' });
-        // Удаляем только свободные слоты
         await pool.query(`DELETE FROM time_slots WHERE psychologist_id=$1 AND status='free'`, [user.id]);
         for (const [date, times] of Object.entries(schedule)) {
             for (const time of times) {
-                // Проверяем, нет ли уже занятого слота (pending или booked) на это время
                 const existing = await pool.query(
                     `SELECT id FROM time_slots WHERE psychologist_id=$1 AND date=$2 AND time=$3 AND status IN ('pending', 'booked')`,
                     [user.id, date, time]
@@ -530,20 +528,16 @@ app.post('/api/appointment/confirm', async (req, res) => {
         if (aptRes.rows.length === 0) return res.json({ success: false, error: 'Запись не найдена' });
         const apt = aptRes.rows[0];
 
-        // Обновляем слот на 'booked'
         await pool.query(
             `UPDATE time_slots SET status='booked' WHERE psychologist_id=$1 AND date=$2 AND time=$3 AND appointment_id=$4`,
             [psychologistId, apt.date, apt.time, appointmentId]
         );
 
-        // Обновляем статус записи
         await pool.query('UPDATE appointments SET status=$1 WHERE id=$2', ['confirmed', appointmentId]);
 
-        // Обновляем JSON-поля пользователей
         if (psychologist) {
             const c = (psychologist.clients || []).find(c => c.appointmentId === appointmentId);
             if (c) c.status = 'confirmed';
-            // Удаляем подтверждённое время из расписания (JSON-поле)
             const schedule = psychologist.schedule || {};
             if (schedule[apt.date]) {
                 schedule[apt.date] = schedule[apt.date].filter(t => t !== apt.time);
@@ -609,7 +603,7 @@ app.post('/api/appointment/complete', async (req, res) => {
     }
 });
 
-// ========== ЗАГРУЗКА ФАЙЛОВ (разделение: медиа – Cloudinary, документы – локально) ==========
+// ========== ЗАГРУЗКА ФАЙЛОВ ==========
 app.post('/api/upload-avatar', uploadMedia.single('avatar'), (req, res) => {
     if (!req.file) return res.json({ success: false, error: 'Файл не загружен' });
     res.json({ success: true, avatarUrl: req.file.path });
@@ -663,7 +657,6 @@ app.post('/api/upload-image', uploadMedia.single('image'), (req, res) => {
     res.json({ success: true, imageUrl: req.file.path });
 });
 
-// Загрузка документов (Excel, Word, PDF, TXT) – локально
 app.post('/api/upload-doc', uploadDoc.single('file'), (req, res) => {
     if (!req.file) return res.status(400).json({ success: false, error: 'Файл не загружен' });
     if (req.file.size > 5 * 1024 * 1024) {
@@ -1301,6 +1294,15 @@ io.on('connection', (socket) => {
             const targetId = socket.userType === 'psychologist' ? room.client : room.psychologist;
             if (targetId) io.to(targetId).emit('call-message', { from: socket.userId, text: msgData.text, time: new Date().toISOString() });
         }
+    });
+
+    // События для трансляции экрана
+    socket.on('screen-share-started', ({ roomId }) => {
+        socket.to(roomId).emit('screen-share-started');
+    });
+
+    socket.on('screen-share-stopped', ({ roomId }) => {
+        socket.to(roomId).emit('screen-share-stopped');
     });
 
     socket.on('offer', (data) => { socket.to(data.target).emit('offer', { sdp: data.sdp, from: socket.id }); });

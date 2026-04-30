@@ -38,6 +38,7 @@
             background: #000;
         }
 
+        /* Контейнер удалённого видео с фиксированным соотношением 16:9 */
         .remote-video-wrapper {
             position: absolute;
             inset: 0;
@@ -47,13 +48,28 @@
             display: flex;
             align-items: center;
             justify-content: center;
+            /* Центрируем видео по вертикали и горизонтали */
         }
-
         #remoteVideo {
+            max-width: 100%;
+            max-height: 100%;
+            width: auto;
+            height: auto;
+            object-fit: contain; /* Сохраняем пропорции, не обрезаем */
+            background: #000;
+        }
+        /* Для обычного видео (камера) – растягиваем на весь экран, но для трансляции экрана оставляем contain */
+        #remoteVideo.camera-mode {
+            object-fit: cover;
             width: 100%;
             height: 100%;
-            object-fit: cover;
-            background: #060908;
+        }
+        #remoteVideo.screen-mode {
+            object-fit: contain;
+            width: auto;
+            height: auto;
+            max-width: 100%;
+            max-height: 100%;
         }
 
         .vignette {
@@ -625,9 +641,22 @@
     let isLocalLarge = false;
     let connectionEstablished = false;
 
+    // Для трансляции экрана
     let isScreenSharing = false;
     let screenStream = null;
-    let cameraTrack = null;
+    let cameraTrack = null;      // сохраняем трек камеры, чтобы потом вернуть
+    // Для уведомления собеседника о режиме отображения
+    let remoteScreenMode = false;
+
+    function updateRemoteVideoMode(isScreen) {
+        if (isScreen) {
+            remoteVideo.classList.remove('camera-mode');
+            remoteVideo.classList.add('screen-mode');
+        } else {
+            remoteVideo.classList.remove('screen-mode');
+            remoteVideo.classList.add('camera-mode');
+        }
+    }
 
     function updateStatus(msg, isError = false) {
         statusDiv.textContent = msg;
@@ -690,6 +719,8 @@
             waitingMsg.style.display = 'none';
             connectionEstablished = true;
             updateStatus('Соединение установлено');
+            // По умолчанию считаем, что удалённое видео – это камера (растягиваем)
+            updateRemoteVideoMode(remoteScreenMode);
         };
         peerConnection.onicecandidate = (event) => {
             if (event.candidate && socket && partnerSocketId)
@@ -753,9 +784,10 @@
             } catch (err) {
                 console.error('Error replacing video track:', err);
             }
-        } else if (newTrack) {
-            peerConnection.addTrack(newTrack, localStream);
+        } else {
+            if (newTrack) peerConnection.addTrack(newTrack, localStream);
         }
+        // Обновляем локальное видео
         if (newTrack) {
             const newStream = new MediaStream();
             newStream.addTrack(newTrack);
@@ -767,19 +799,32 @@
     async function startScreenShare() {
         if (isScreenSharing) return;
         try {
-            const screenStreamObj = await navigator.mediaDevices.getDisplayMedia({ video: true });
+            let screenStreamObj;
+            try {
+                screenStreamObj = await navigator.mediaDevices.getDisplayMedia({ video: true });
+            } catch (err) {
+                showToast('Не удалось получить доступ к экрану. Возможно, браузер не поддерживает.', true);
+                return;
+            }
             screenStream = screenStreamObj;
             const screenTrack = screenStream.getVideoTracks()[0];
-            if (cameraTrack) cameraTrack.enabled = false;
+            // Отключаем камеру
+            if (cameraTrack) {
+                cameraTrack.enabled = false;
+            }
             await replaceVideoTrack(screenTrack);
             isScreenSharing = true;
             shareScreenBtn.classList.add('share-active');
+            showToast('Трансляция экрана включена');
             // Уведомляем собеседника о начале трансляции экрана
             if (socket && partnerSocketId) {
                 socket.emit('call-message', { text: '🖥️ Начал трансляцию экрана' });
-                socket.emit('screen-share-started', { target: partnerSocketId });
+                socket.emit('screen-share-started', { roomId });
             }
-            showToast('Трансляция экрана включена');
+            // Принудительно включаем режим contain для удалённого видео у собеседника
+            // (на стороне отправителя не нужно, но уведомление отправим)
+            // Также меняем локальный режим отображения для себя (не обязательно)
+            // Когда пользователь остановит трансляцию через системный UI
             screenTrack.onended = () => {
                 if (isScreenSharing) stopScreenShare();
             };
@@ -803,11 +848,12 @@
         }
         isScreenSharing = false;
         shareScreenBtn.classList.remove('share-active');
+        showToast('Трансляция экрана выключена');
+        // Уведомляем собеседника
         if (socket && partnerSocketId) {
             socket.emit('call-message', { text: '🖥️ Остановил трансляцию экрана' });
-            socket.emit('screen-share-stopped', { target: partnerSocketId });
+            socket.emit('screen-share-stopped', { roomId });
         }
-        showToast('Трансляция экрана выключена');
     }
 
     function toggleScreenShare() {
@@ -823,7 +869,7 @@
             socket.disconnect();
             socket = null;
         }
-
+        
         socket = io({
             transports: ['websocket', 'polling'],
             reconnection: true,
@@ -831,24 +877,24 @@
             reconnectionDelay: 1000,
             reconnectionDelayMax: 5000
         });
-
+        
         socket.on('connect', () => {
             updateStatus('Соединение с сервером');
             socket.emit('register_user', currentUserId);
             socket.emit('join-call-room', roomId, currentUserId, userRole);
         });
-
+        
         socket.on('connect_error', (err) => {
             console.error('Socket connection error:', err);
             updateStatus('Ошибка соединения', true);
         });
-
+        
         socket.on('room-joined', () => {
             updateStatus('Ожидание собеседника…');
             waitingMsg.style.display = 'flex';
             connectionEstablished = false;
         });
-
+        
         socket.on('call-ready', async (data) => {
             updateStatus('Собеседник найден…');
             partnerSocketId = data.partnerId;
@@ -861,7 +907,7 @@
                 }, 200);
             }
         });
-
+        
         socket.on('offer', async (data) => {
             partnerSocketId = data.from;
             if (!peerConnection) await createPeerConnection();
@@ -872,43 +918,45 @@
                 socket.emit('answer', { target: partnerSocketId, sdp: answer });
             }
         });
-
+        
         socket.on('answer', async (data) => {
             if (peerConnection) await peerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp));
         });
-
+        
         socket.on('ice-candidate', async (data) => {
             if (peerConnection) {
                 try { await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate)); }
                 catch(e) { console.warn('ICE add error', e); }
             }
         });
-
+        
         socket.on('call-message', (data) => {
             addChatMessage(data.text, false, data.time);
         });
-
+        
+        socket.on('screen-share-started', () => {
+            remoteScreenMode = true;
+            updateRemoteVideoMode(true);
+            showToast('Собеседник начал трансляцию экрана');
+        });
+        
+        socket.on('screen-share-stopped', () => {
+            remoteScreenMode = false;
+            updateRemoteVideoMode(false);
+            showToast('Собеседник остановил трансляцию экрана');
+        });
+        
         socket.on('call-ended', () => {
             updateStatus('Звонок завершён');
             showToast('Сессия завершена');
             setTimeout(() => window.location.href = '/', 1500);
         });
-
+        
         socket.on('partner-disconnected', () => {
             updateStatus('Собеседник отключился', true);
             showToast('Собеседник покинул сессию', true);
             connectionEstablished = false;
             waitingMsg.style.display = 'flex';
-        });
-
-        // Обработка уведомлений о трансляции экрана от собеседника
-        socket.on('screen-share-started', () => {
-            remoteVideo.style.objectFit = 'contain';
-            showToast('Собеседник начал показывать экран');
-        });
-        socket.on('screen-share-stopped', () => {
-            remoteVideo.style.objectFit = 'cover';
-            showToast('Собеседник прекратил показ экрана');
         });
     }
 
@@ -1053,7 +1101,7 @@
                 }
             }
         };
-
+        
         toggleCamBtn.onclick = () => {
             if (localStream) {
                 const t = localStream.getVideoTracks()[0];
@@ -1066,25 +1114,28 @@
                 }
             }
         };
-
+        
         shareScreenBtn.onclick = toggleScreenShare;
         recordBtn.onclick = toggleRecording;
         reconnectBtnTop.onclick = reconnect;
         endCallBtn.onclick = endCall;
         sendChatBtn.onclick = sendChatMessage;
         chatInput.onkeypress = e => { if (e.key === 'Enter') sendChatMessage(); };
-
+        
         chatToggleBtn.onclick = () => {
             chatPanel.classList.toggle('open');
             chatToggleBtn.classList.toggle('chat-active', chatPanel.classList.contains('open'));
         };
-
+        
         closeChatBtn.onclick = () => {
             chatPanel.classList.remove('open');
             chatToggleBtn.classList.remove('chat-active');
         };
-
+        
         localVideoWrapper.onclick = swapVideoSize;
+        
+        // Начальный режим удалённого видео – камера
+        updateRemoteVideoMode(false);
     }
 
     init();
