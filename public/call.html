@@ -135,8 +135,12 @@
             transition: color 0.4s, opacity 0.4s;
         }
 
-        .reconnect-btn-top {
+        .top-buttons {
+            display: flex;
+            gap: 8px;
             pointer-events: auto;
+        }
+        .top-btn {
             background: var(--surface);
             border: 1px solid var(--gold-mid);
             border-radius: 30px;
@@ -153,11 +157,25 @@
             transition: all 0.2s ease;
             backdrop-filter: blur(16px);
         }
-        .reconnect-btn-top:hover {
+        .top-btn:hover {
             background: var(--gold-dim);
             border-color: var(--gold);
         }
-        .reconnect-btn-top i { font-size: 10px; }
+        .top-btn.recording-active {
+            background: rgba(180,30,30,0.5);
+            border-color: rgba(220,60,60,0.6);
+            color: #ff8080;
+        }
+        .rec-dot {
+            display: inline-block;
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: #ff5555;
+            animation: blink 1s ease infinite;
+            margin-right: 2px;
+        }
+        @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0.25; } }
 
         .waiting-message {
             position: absolute;
@@ -295,21 +313,11 @@
             color: var(--gold) !important;
         }
 
-        .recording-active {
-            background: rgba(180,30,30,0.5) !important;
-            border-color: rgba(220,60,60,0.6) !important;
-            color: #ff8080 !important;
+        .share-active {
+            background: var(--gold-dim) !important;
+            border-color: var(--gold) !important;
+            color: var(--gold) !important;
         }
-        .rec-dot {
-            display: inline-block;
-            width: 7px;
-            height: 7px;
-            border-radius: 50%;
-            background: #ff5555;
-            animation: blink 1s ease infinite;
-            margin-right: 2px;
-        }
-        @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0.25; } }
 
         .chat-panel {
             position: absolute;
@@ -529,9 +537,14 @@
             <div class="session-label">Терапевтическая сессия</div>
             <div id="connectionStatus">Подключение…</div>
         </div>
-        <button id="reconnectBtnTop" class="reconnect-btn-top">
-            <i class="fas fa-sync-alt"></i> Переподключиться
-        </button>
+        <div class="top-buttons">
+            <button id="recordBtn" class="top-btn" data-tip="Запись разговора">
+                <i class="fas fa-circle"></i> Запись
+            </button>
+            <button id="reconnectBtnTop" class="top-btn">
+                <i class="fas fa-sync-alt"></i> Переподключиться
+            </button>
+        </div>
     </div>
 
     <div class="controls">
@@ -541,8 +554,8 @@
         <button id="toggleCam" class="control-btn" data-tip="Камера">
             <i class="fas fa-video"></i>
         </button>
-        <button id="recordBtn" class="control-btn" data-tip="Запись">
-            <i class="fas fa-circle"></i>
+        <button id="shareScreenBtn" class="control-btn" data-tip="Показать экран">
+            <i class="fas fa-desktop"></i>
         </button>
         <button id="chatToggleBtn" class="control-btn" data-tip="Чат">
             <i class="fas fa-comment"></i>
@@ -590,6 +603,7 @@
     const statusDiv = document.getElementById('connectionStatus');
     const toggleMicBtn = document.getElementById('toggleMic');
     const toggleCamBtn = document.getElementById('toggleCam');
+    const shareScreenBtn = document.getElementById('shareScreenBtn');
     const recordBtn = document.getElementById('recordBtn');
     const reconnectBtnTop = document.getElementById('reconnectBtnTop');
     const chatToggleBtn = document.getElementById('chatToggleBtn');
@@ -610,6 +624,11 @@
     let recordedChunks = [];
     let isLocalLarge = false;
     let connectionEstablished = false;
+
+    // Для трансляции экрана
+    let isScreenSharing = false;
+    let screenStream = null;
+    let cameraTrack = null;      // сохраняем трек камеры, чтобы потом вернуть
 
     function updateStatus(msg, isError = false) {
         statusDiv.textContent = msg;
@@ -654,13 +673,9 @@
             { urls: 'stun:stun.iptel.org' },
             { urls: 'stun:stun.rixtelecom.se' },
             { urls: 'stun:stun.schlund.de' },
-            // Добавляем несколько надёжных TURN-серверов (публичные, но с ограничениями)
             { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
             { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
-            { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
-            // Резервные TURN-серверы от Twilio (бесплатные, но лучше зарегистрировать свои)
-            { urls: 'turn:global.turn.twilio.com:3478?transport=udp', username: 'any', credential: 'any' },
-            { urls: 'turn:global.turn.twilio.com:3478?transport=tcp', username: 'any', credential: 'any' }
+            { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' }
         ];
     }
 
@@ -668,7 +683,9 @@
         if (peerConnection) { peerConnection.close(); peerConnection = null; }
         const config = { iceServers: await getIceServers(), iceTransportPolicy: 'all' };
         peerConnection = new RTCPeerConnection(config);
-        if (localStream) localStream.getTracks().forEach(t => peerConnection.addTrack(t, localStream));
+        if (localStream) {
+            localStream.getTracks().forEach(t => peerConnection.addTrack(t, localStream));
+        }
         peerConnection.ontrack = (event) => {
             remoteVideo.srcObject = event.streams[0];
             waitingMsg.style.display = 'none';
@@ -691,7 +708,6 @@
                 connectionEstablished = false;
                 updateStatus('Соединение разорвано, попробуйте переподключиться', true);
                 waitingMsg.style.display = 'flex';
-                // Попытка пересоздать соединение
                 setTimeout(() => { if (!connectionEstablished) reconnect(); }, 3000);
             } else if (state === 'disconnected') {
                 connectionEstablished = false;
@@ -715,13 +731,94 @@
     async function startLocalStream() {
         try {
             updateStatus('Запрос доступа к камере…');
-            localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+            const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+            localStream = stream;
             localVideo.srcObject = localStream;
+            // Сохраняем трек камеры для восстановления
+            cameraTrack = localStream.getVideoTracks()[0];
             updateStatus('Камера активна');
             if (socket && partnerSocketId) await initWebRTC(userRole === 'psychologist');
         } catch(e) {
             updateStatus('Нет доступа к камере или микрофону', true);
             showToast('Не удалось получить доступ к камере', true);
+        }
+    }
+
+    // Функция для замены видеотрека в peerConnection
+    async function replaceVideoTrack(newTrack) {
+        if (!peerConnection) return;
+        const senders = peerConnection.getSenders();
+        const videoSender = senders.find(s => s.track && s.track.kind === 'video');
+        if (videoSender) {
+            try {
+                await videoSender.replaceTrack(newTrack);
+                console.log('Video track replaced');
+            } catch (err) {
+                console.error('Error replacing video track:', err);
+            }
+        } else {
+            // Если отправителя ещё нет (редко), просто добавим трек
+            if (newTrack) peerConnection.addTrack(newTrack, localStream);
+        }
+        // Обновляем локальное видео
+        if (newTrack) {
+            const newStream = new MediaStream();
+            newStream.addTrack(newTrack);
+            if (localStream.getAudioTracks()[0]) newStream.addTrack(localStream.getAudioTracks()[0]);
+            localVideo.srcObject = newStream;
+        }
+    }
+
+    async function startScreenShare() {
+        if (isScreenSharing) return;
+        try {
+            const screenStreamObj = await navigator.mediaDevices.getDisplayMedia({ video: true });
+            screenStream = screenStreamObj;
+            const screenTrack = screenStream.getVideoTracks()[0];
+            // Отключаем камеру, если она активна
+            if (cameraTrack) {
+                cameraTrack.enabled = false;
+            }
+            // Заменяем видеотрек в peerConnection на трек экрана
+            await replaceVideoTrack(screenTrack);
+            isScreenSharing = true;
+            shareScreenBtn.classList.add('share-active');
+            showToast('Трансляция экрана включена');
+            // Когда пользователь остановит трансляцию через системный UI, обработаем
+            screenTrack.onended = () => {
+                if (isScreenSharing) stopScreenShare();
+            };
+        } catch (err) {
+            console.error('Error starting screen share:', err);
+            showToast('Не удалось начать трансляцию экрана', true);
+        }
+    }
+
+    async function stopScreenShare() {
+        if (!isScreenSharing) return;
+        // Останавливаем треки захвата экрана
+        if (screenStream) {
+            screenStream.getTracks().forEach(t => t.stop());
+            screenStream = null;
+        }
+        // Восстанавливаем камеру, если она была включена
+        if (cameraTrack) {
+            cameraTrack.enabled = true;
+            await replaceVideoTrack(cameraTrack);
+        } else {
+            // Если камеры не было, просто убираем видеотрек
+            await replaceVideoTrack(null);
+        }
+        isScreenSharing = false;
+        shareScreenBtn.classList.remove('share-active');
+        showToast('Трансляция экрана выключена');
+    }
+
+    function toggleScreenShare() {
+        if (isScreenSharing) {
+            stopScreenShare();
+        } else {
+            startScreenShare();
         }
     }
 
@@ -886,7 +983,7 @@
             mediaRecorder.start(1000);
             isRecording = true;
             recordBtn.classList.add('recording-active');
-            recordBtn.innerHTML = '<span class="rec-dot"></span><i class="fas fa-stop"></i>';
+            recordBtn.innerHTML = '<span class="rec-dot"></span> Запись ...';
             updateStatus('Запись идёт…');
         } catch(e) { console.error(e); showToast('Ошибка записи', true); }
     }
@@ -896,8 +993,16 @@
             mediaRecorder.stop();
             isRecording = false;
             recordBtn.classList.remove('recording-active');
-            recordBtn.innerHTML = '<i class="fas fa-circle"></i>';
+            recordBtn.innerHTML = '<i class="fas fa-circle"></i> Запись';
             updateStatus('Запись сохранена');
+        }
+    }
+
+    function toggleRecording() {
+        if (isRecording) {
+            stopRecording();
+        } else {
+            startRecording();
         }
     }
 
@@ -906,6 +1011,7 @@
         if (isRecording) stopRecording();
         if (peerConnection) peerConnection.close();
         if (localStream) localStream.getTracks().forEach(track => track.stop());
+        if (screenStream) screenStream.getTracks().forEach(track => track.stop());
         window.location.href = '/';
     }
 
@@ -955,7 +1061,8 @@
             }
         };
         
-        recordBtn.onclick = () => { isRecording ? stopRecording() : startRecording(); };
+        shareScreenBtn.onclick = toggleScreenShare;
+        recordBtn.onclick = toggleRecording;
         reconnectBtnTop.onclick = reconnect;
         endCallBtn.onclick = endCall;
         sendChatBtn.onclick = sendChatMessage;

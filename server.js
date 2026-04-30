@@ -52,9 +52,9 @@ const cloudinaryStorage = new CloudinaryStorage({
         let folder = 'therapy_call_general';
         let resource_type = 'auto';
         let allowed_formats = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'mp4', 'mov', 'avi', 'webm', 'ogg', 'wav', 'mp3'];
-        
+
         const mime = file.mimetype;
-        
+
         if (file.fieldname === 'avatar') {
             folder = 'therapy_call_avatars';
             resource_type = 'image';
@@ -75,10 +75,9 @@ const cloudinaryStorage = new CloudinaryStorage({
             resource_type = 'video';
         } else if (file.fieldname === 'file') {
             // Документы не обрабатываем через Cloudinary, они пойдут через локальное хранилище.
-            // Этот блок остаётся для совместимости, но фактически документы обрабатываются отдельным маршрутом.
             return { error: 'Документы загружаются через /api/upload-doc' };
         }
-        
+
         return {
             folder: folder,
             resource_type: resource_type,
@@ -526,20 +525,20 @@ app.post('/api/appointment/confirm', async (req, res) => {
         const psychologist = await getUser(psychologistId);
         const client = await getUser(clientId);
         if (!psychologist || !client) return res.json({ success: false, error: 'Пользователь не найден' });
-        
+
         const aptRes = await pool.query('SELECT * FROM appointments WHERE id=$1', [appointmentId]);
         if (aptRes.rows.length === 0) return res.json({ success: false, error: 'Запись не найдена' });
         const apt = aptRes.rows[0];
-        
+
         // Обновляем слот на 'booked'
         await pool.query(
             `UPDATE time_slots SET status='booked' WHERE psychologist_id=$1 AND date=$2 AND time=$3 AND appointment_id=$4`,
             [psychologistId, apt.date, apt.time, appointmentId]
         );
-        
+
         // Обновляем статус записи
         await pool.query('UPDATE appointments SET status=$1 WHERE id=$2', ['confirmed', appointmentId]);
-        
+
         // Обновляем JSON-поля пользователей
         if (psychologist) {
             const c = (psychologist.clients || []).find(c => c.appointmentId === appointmentId);
@@ -559,7 +558,7 @@ app.post('/api/appointment/confirm', async (req, res) => {
             if (a) a.status = 'confirmed';
             await updateUser(client);
         }
-        
+
         const clientNotif = {
             id: nanoid(12), type: 'appointment_confirmed',
             title: 'Запись подтверждена!',
@@ -571,7 +570,7 @@ app.post('/api/appointment/confirm', async (req, res) => {
             client.notifications.unshift(clientNotif);
             await updateUser(client);
         }
-        
+
         io.to(clientId).emit('notification', clientNotif);
         io.to(clientId).emit('appointment_updated', apt);
         io.to(psychologistId).emit('appointment_updated', apt);
@@ -1188,7 +1187,7 @@ app.post('/api/messages', async (req, res) => {
         const unreadRes = await client.query(`SELECT count FROM user_unreads WHERE user_id=$1 AND from_user_id=$2`, [to, from]);
         const newCount = unreadRes.rows[0]?.count || 1;
         await client.query('COMMIT');
-        
+
         const msgForClient = {
             id: newMsg.id,
             from: newMsg.from_user,
@@ -1200,7 +1199,7 @@ app.post('/api/messages', async (req, res) => {
         };
         io.to(to).emit('new_message', msgForClient);
         io.to(to).emit('unread_update', { from, count: newCount });
-        
+
         res.json({ success: true });
     } catch (err) {
         await client.query('ROLLBACK');
@@ -1259,13 +1258,13 @@ const activeRooms = new Map();
 
 io.on('connection', (socket) => {
     console.log('🔌 WebSocket connected:', socket.id);
-    
+
     socket.on('register_user', (userId) => {
         socket.userId = userId;
         if (userId) socket.join(userId);
         console.log(`User ${userId} registered`);
     });
-    
+
     socket.on('join-call-room', (roomId, userId, userType) => {
         try {
             if (!activeRooms.has(roomId)) activeRooms.set(roomId, { psychologist: null, client: null, users: new Map() });
@@ -1295,7 +1294,7 @@ io.on('connection', (socket) => {
             }
         } catch (err) { console.error('join-call-room error:', err); }
     });
-    
+
     socket.on('call-message', (msgData) => {
         const room = activeRooms.get(socket.roomId);
         if (room) {
@@ -1303,11 +1302,11 @@ io.on('connection', (socket) => {
             if (targetId) io.to(targetId).emit('call-message', { from: socket.userId, text: msgData.text, time: new Date().toISOString() });
         }
     });
-    
+
     socket.on('offer', (data) => { socket.to(data.target).emit('offer', { sdp: data.sdp, from: socket.id }); });
     socket.on('answer', (data) => { socket.to(data.target).emit('answer', { sdp: data.sdp, from: socket.id }); });
     socket.on('ice-candidate', (data) => { socket.to(data.target).emit('ice-candidate', { candidate: data.candidate, from: socket.id }); });
-    
+
     socket.on('end-call', async () => {
         if (socket.roomId) {
             socket.to(socket.roomId).emit('call-ended');
@@ -1344,7 +1343,7 @@ io.on('connection', (socket) => {
             delete socket.roomId;
         }
     });
-    
+
     socket.on('disconnect', (reason) => {
         console.log('WebSocket disconnected:', socket.id, 'reason:', reason);
         if (socket.roomId) {
