@@ -625,10 +625,9 @@
     let isLocalLarge = false;
     let connectionEstablished = false;
 
-    // Для трансляции экрана
     let isScreenSharing = false;
     let screenStream = null;
-    let cameraTrack = null;      // сохраняем трек камеры, чтобы потом вернуть
+    let cameraTrack = null;
 
     function updateStatus(msg, isError = false) {
         statusDiv.textContent = msg;
@@ -734,7 +733,6 @@
             const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
             localStream = stream;
             localVideo.srcObject = localStream;
-            // Сохраняем трек камеры для восстановления
             cameraTrack = localStream.getVideoTracks()[0];
             updateStatus('Камера активна');
             if (socket && partnerSocketId) await initWebRTC(userRole === 'psychologist');
@@ -744,7 +742,6 @@
         }
     }
 
-    // Функция для замены видеотрека в peerConnection
     async function replaceVideoTrack(newTrack) {
         if (!peerConnection) return;
         const senders = peerConnection.getSenders();
@@ -756,11 +753,9 @@
             } catch (err) {
                 console.error('Error replacing video track:', err);
             }
-        } else {
-            // Если отправителя ещё нет (редко), просто добавим трек
-            if (newTrack) peerConnection.addTrack(newTrack, localStream);
+        } else if (newTrack) {
+            peerConnection.addTrack(newTrack, localStream);
         }
-        // Обновляем локальное видео
         if (newTrack) {
             const newStream = new MediaStream();
             newStream.addTrack(newTrack);
@@ -775,16 +770,16 @@
             const screenStreamObj = await navigator.mediaDevices.getDisplayMedia({ video: true });
             screenStream = screenStreamObj;
             const screenTrack = screenStream.getVideoTracks()[0];
-            // Отключаем камеру, если она активна
-            if (cameraTrack) {
-                cameraTrack.enabled = false;
-            }
-            // Заменяем видеотрек в peerConnection на трек экрана
+            if (cameraTrack) cameraTrack.enabled = false;
             await replaceVideoTrack(screenTrack);
             isScreenSharing = true;
             shareScreenBtn.classList.add('share-active');
+            // Уведомляем собеседника о начале трансляции экрана
+            if (socket && partnerSocketId) {
+                socket.emit('call-message', { text: '🖥️ Начал трансляцию экрана' });
+                socket.emit('screen-share-started', { target: partnerSocketId });
+            }
             showToast('Трансляция экрана включена');
-            // Когда пользователь остановит трансляцию через системный UI, обработаем
             screenTrack.onended = () => {
                 if (isScreenSharing) stopScreenShare();
             };
@@ -796,21 +791,22 @@
 
     async function stopScreenShare() {
         if (!isScreenSharing) return;
-        // Останавливаем треки захвата экрана
         if (screenStream) {
             screenStream.getTracks().forEach(t => t.stop());
             screenStream = null;
         }
-        // Восстанавливаем камеру, если она была включена
         if (cameraTrack) {
             cameraTrack.enabled = true;
             await replaceVideoTrack(cameraTrack);
         } else {
-            // Если камеры не было, просто убираем видеотрек
             await replaceVideoTrack(null);
         }
         isScreenSharing = false;
         shareScreenBtn.classList.remove('share-active');
+        if (socket && partnerSocketId) {
+            socket.emit('call-message', { text: '🖥️ Остановил трансляцию экрана' });
+            socket.emit('screen-share-stopped', { target: partnerSocketId });
+        }
         showToast('Трансляция экрана выключена');
     }
 
@@ -827,7 +823,7 @@
             socket.disconnect();
             socket = null;
         }
-        
+
         socket = io({
             transports: ['websocket', 'polling'],
             reconnection: true,
@@ -835,24 +831,24 @@
             reconnectionDelay: 1000,
             reconnectionDelayMax: 5000
         });
-        
+
         socket.on('connect', () => {
             updateStatus('Соединение с сервером');
             socket.emit('register_user', currentUserId);
             socket.emit('join-call-room', roomId, currentUserId, userRole);
         });
-        
+
         socket.on('connect_error', (err) => {
             console.error('Socket connection error:', err);
             updateStatus('Ошибка соединения', true);
         });
-        
+
         socket.on('room-joined', () => {
             updateStatus('Ожидание собеседника…');
             waitingMsg.style.display = 'flex';
             connectionEstablished = false;
         });
-        
+
         socket.on('call-ready', async (data) => {
             updateStatus('Собеседник найден…');
             partnerSocketId = data.partnerId;
@@ -865,7 +861,7 @@
                 }, 200);
             }
         });
-        
+
         socket.on('offer', async (data) => {
             partnerSocketId = data.from;
             if (!peerConnection) await createPeerConnection();
@@ -876,33 +872,43 @@
                 socket.emit('answer', { target: partnerSocketId, sdp: answer });
             }
         });
-        
+
         socket.on('answer', async (data) => {
             if (peerConnection) await peerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp));
         });
-        
+
         socket.on('ice-candidate', async (data) => {
             if (peerConnection) {
                 try { await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate)); }
                 catch(e) { console.warn('ICE add error', e); }
             }
         });
-        
+
         socket.on('call-message', (data) => {
             addChatMessage(data.text, false, data.time);
         });
-        
+
         socket.on('call-ended', () => {
             updateStatus('Звонок завершён');
             showToast('Сессия завершена');
             setTimeout(() => window.location.href = '/', 1500);
         });
-        
+
         socket.on('partner-disconnected', () => {
             updateStatus('Собеседник отключился', true);
             showToast('Собеседник покинул сессию', true);
             connectionEstablished = false;
             waitingMsg.style.display = 'flex';
+        });
+
+        // Обработка уведомлений о трансляции экрана от собеседника
+        socket.on('screen-share-started', () => {
+            remoteVideo.style.objectFit = 'contain';
+            showToast('Собеседник начал показывать экран');
+        });
+        socket.on('screen-share-stopped', () => {
+            remoteVideo.style.objectFit = 'cover';
+            showToast('Собеседник прекратил показ экрана');
         });
     }
 
@@ -1047,7 +1053,7 @@
                 }
             }
         };
-        
+
         toggleCamBtn.onclick = () => {
             if (localStream) {
                 const t = localStream.getVideoTracks()[0];
@@ -1060,24 +1066,24 @@
                 }
             }
         };
-        
+
         shareScreenBtn.onclick = toggleScreenShare;
         recordBtn.onclick = toggleRecording;
         reconnectBtnTop.onclick = reconnect;
         endCallBtn.onclick = endCall;
         sendChatBtn.onclick = sendChatMessage;
         chatInput.onkeypress = e => { if (e.key === 'Enter') sendChatMessage(); };
-        
+
         chatToggleBtn.onclick = () => {
             chatPanel.classList.toggle('open');
             chatToggleBtn.classList.toggle('chat-active', chatPanel.classList.contains('open'));
         };
-        
+
         closeChatBtn.onclick = () => {
             chatPanel.classList.remove('open');
             chatToggleBtn.classList.remove('chat-active');
         };
-        
+
         localVideoWrapper.onclick = swapVideoSize;
     }
 
