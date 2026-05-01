@@ -973,23 +973,27 @@
             background: #000;
             transition: all 0.2s;
         }
-        @media (min-width: 768px) {
-            #remoteVideo { max-height: 70vh; }
-        }
+        @media (min-width: 1024px) {
+            .remote-video-wrapper {
+                position: absolute;
+                inset: 0;
+                padding: 0;
+            }
+            #remoteVideo, #callRemoteVideo {
+                max-height: 100%;
+                width: 100%;
+                height: 100%;
+                object-fit: cover;
+                border-radius: 0;
+            }
         #remoteVideo.camera-mode { object-fit: cover; }
         #remoteVideo.screen-mode { object-fit: contain; }
         .local-video-wrapper {
-            position: absolute;
-            bottom: calc(100px + var(--safe-bottom));
-            right: 16px;
-            width: 110px;
-            height: 150px;
-            border-radius: var(--radius);
-            overflow: hidden;
-            border: 1px solid var(--gold-mid);
-            cursor: pointer;
-            z-index: 10;
-            background: #000;
+            bottom: 20px;
+            right: 20px;
+            width: 200px;
+            height: auto;
+            aspect-ratio: 4/3;
         }
         #localVideo {
             width: 100%;
@@ -1073,7 +1077,7 @@
         @keyframes spin { to { transform: rotate(360deg); } }
         .controls {
             position: absolute;
-            bottom: calc(24px + var(--safe-bottom));
+            bottom: calc(30px + var(--safe-bottom));
             left: 0;
             right: 0;
             display: flex;
@@ -3477,7 +3481,7 @@ function renderClientsList(filter = 'upcoming') {
         window.confirmAppointmentFromNotif = confirmAppointmentFromNotif;
 
         // ======================= КОД ЗВОНКА =======================
-        // Переменные звонка
+                // ======================= КОД ЗВОНКА (ИСПРАВЛЕННЫЙ) =======================
         let callActive = false;
         let callPeerConnection = null;
         let callLocalStream = null;
@@ -3493,9 +3497,15 @@ function renderClientsList(filter = 'upcoming') {
         let callMinimized = false;
         let callRoomId = null;
         let callUserRole = null;
+        let callSocketHandlersRegistered = false;
 
-        // DOM элементы звонка (будут созданы динамически)
-        let callRemoteVideo, callLocalVideo, callWaitingMsg, callToggleMicBtn, callToggleCamBtn, callShareScreenBtn, callRecordBtn, callReconnectBtn, callEndCallBtn, callChatToggleBtn, callCloseChatBtn, callChatPanel, callChatMessages, callChatInput, callSendChatBtn, callLocalVideoWrapper, callMinimizeBtn, callMenuBtn, callExtraMenu, callGoHomeBtn, callFloatingCall, callFloatingRemoteVideo, callFloatingMicBtn, callFloatingCamBtn, callFloatingEndCallBtn, callRestoreCallBtn, callFloatingHeader;
+        // DOM элементы звонка (будут созданы при инициализации)
+        let callRemoteVideo, callLocalVideo, callWaitingMsg, callToggleMicBtn, callToggleCamBtn;
+        let callShareScreenBtn, callRecordBtn, callReconnectBtn, callEndCallBtn, callChatToggleBtn;
+        let callCloseChatBtn, callChatPanel, callChatMessages, callChatInput, callSendChatBtn;
+        let callLocalVideoWrapper, callMinimizeBtn, callMenuBtn, callExtraMenu, callGoHomeBtn;
+        let callFloatingCall, callFloatingRemoteVideo, callFloatingMicBtn, callFloatingCamBtn;
+        let callFloatingEndCallBtn, callRestoreCallBtn, callFloatingHeader;
 
         function callShowToast(msg, isErr = false) {
             const t = document.createElement('div');
@@ -3622,15 +3632,21 @@ function renderClientsList(filter = 'upcoming') {
 
         function callToggleScreenShare() { callIsScreenSharing ? callStopScreenShare() : callStartScreenShare(); }
 
-        function callSetupSocketForCall() {
-            if(!socket) return;
+        // Регистрация одноразовых обработчиков сокета для звонка
+        function callRegisterSocketHandlers() {
+            if (callSocketHandlersRegistered) return;
+            callSocketHandlersRegistered = true;
+
             socket.on('call-ready', async (data) => {
+                if (!callActive) return;
                 callPartnerSocketId = data.partnerId;
                 if (callWaitingMsg) callWaitingMsg.style.display='none';
                 if(callLocalStream) await callInitWebRTC(callUserRole === 'psychologist');
                 else { const iv = setInterval(async () => { if(callLocalStream) { clearInterval(iv); await callInitWebRTC(callUserRole === 'psychologist'); } }, 200); }
             });
+
             socket.on('offer', async (data) => {
+                if (!callActive) return;
                 callPartnerSocketId = data.from;
                 if(!callPeerConnection) await callCreatePeerConnection();
                 await callPeerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp));
@@ -3638,18 +3654,52 @@ function renderClientsList(filter = 'upcoming') {
                 await callPeerConnection.setLocalDescription(answer);
                 socket.emit('answer', { target: callPartnerSocketId, sdp: answer });
             });
-            socket.on('answer', async (data) => { if(callPeerConnection) await callPeerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp)); });
-            socket.on('ice-candidate', async (data) => { if(callPeerConnection) try{ await callPeerConnection.addIceCandidate(new RTCIceCandidate(data.candidate)); }catch(e){} });
-            socket.on('call-message', (data) => callAddChatMessage(data.text, false, data.time));
-            socket.on('screen-share-started', () => { callRemoteScreenMode=true; callUpdateRemoteVideoMode(true); });
-            socket.on('screen-share-stopped', () => { callRemoteScreenMode=false; callUpdateRemoteVideoMode(false); });
-            socket.on('call-ended', () => { callShowToast('Сессия завершена'); window.location.href = '/'; });
-            socket.on('partner-disconnected', () => { callShowToast('Собеседник отключился', true); if(callWaitingMsg) callWaitingMsg.style.display='flex'; callConnectionEstablished=false; });
+
+            socket.on('answer', async (data) => {
+                if (!callActive || !callPeerConnection) return;
+                await callPeerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp));
+            });
+
+            socket.on('ice-candidate', async (data) => {
+                if (!callActive || !callPeerConnection) return;
+                try{ await callPeerConnection.addIceCandidate(new RTCIceCandidate(data.candidate)); }catch(e){}
+            });
+
+            socket.on('call-message', (data) => {
+                if (!callActive) return;
+                callAddChatMessage(data.text, false, data.time);
+            });
+
+            socket.on('screen-share-started', () => {
+                if (!callActive) return;
+                callRemoteScreenMode=true; 
+                callUpdateRemoteVideoMode(true);
+            });
+
+            socket.on('screen-share-stopped', () => {
+                if (!callActive) return;
+                callRemoteScreenMode=false; 
+                callUpdateRemoteVideoMode(false);
+            });
+
+            socket.on('call-ended', () => {
+                if (!callActive) return;
+                callShowToast('Сессия завершена');
+                callCleanupCall();
+                window.location.href = '/';
+            });
+
+            socket.on('partner-disconnected', () => {
+                if (!callActive) return;
+                callShowToast('Собеседник отключился', true);
+                if(callWaitingMsg) callWaitingMsg.style.display='flex';
+                callConnectionEstablished=false;
+            });
         }
 
         function callSendChatMessage() { 
             const t = callChatInput?.value.trim(); 
-            if(t && socket && callPartnerSocketId) { 
+            if(t && socket && callPartnerSocketId && callActive) { 
                 callAddChatMessage(t, true); 
                 socket.emit('call-message', { text: t }); 
                 callChatInput.value = ''; 
@@ -3704,13 +3754,16 @@ function renderClientsList(filter = 'upcoming') {
             callCleanupCall();
         }
 
-        function callReconnect() { 
-            if(socket) socket.disconnect(); 
-            callPartnerSocketId=null; 
-            if(callPeerConnection) callPeerConnection.close(); 
-            callPeerConnection=null; 
-            // Переподключение через переинициализацию
-            location.reload(); // временно, чтобы не усложнять
+        async function callReconnect() {
+            if(!callActive) return;
+            callShowToast('Переподключение...');
+            if(callPeerConnection) callPeerConnection.close();
+            callPeerConnection = null;
+            callPartnerSocketId = null;
+            callConnectionEstablished = false;
+            if(callWaitingMsg) callWaitingMsg.style.display = 'flex';
+            // Повторно присоединяемся к комнате
+            socket.emit('join-call-room', callRoomId, currentUser.id, callUserRole);
         }
 
         function callUpdateRemoteVideoMode(isScreen) { 
@@ -3742,6 +3795,9 @@ function renderClientsList(filter = 'upcoming') {
                 callFloatingCamBtn.classList.toggle('muted', !camEnabled);
             }
             if(callRemoteVideo && callRemoteVideo.srcObject && callFloatingRemoteVideo) callFloatingRemoteVideo.srcObject = callRemoteVideo.srcObject;
+            // Показываем основной интерфейс
+            document.getElementById('mainContent').style.display = 'block';
+            document.getElementById('bottomNav').style.display = 'flex';
         }
 
         function callRestore() {
@@ -3752,6 +3808,14 @@ function renderClientsList(filter = 'upcoming') {
             const floating = document.getElementById('floatingCall');
             if (floating) floating.style.display = 'none';
             if(callFloatingRemoteVideo && callRemoteVideo && callFloatingRemoteVideo.srcObject && callRemoteVideo.srcObject !== callFloatingRemoteVideo.srcObject) callRemoteVideo.srcObject = callFloatingRemoteVideo.srcObject;
+            // Скрываем основной интерфейс
+            document.getElementById('mainContent').style.display = 'none';
+            document.getElementById('bottomNav').style.display = 'none';
+        }
+
+        function callGoHome() {
+            // Сворачиваем звонок, но не завершаем
+            if (!callMinimized) callMinimize();
         }
 
         function callInitDragging() {
@@ -3794,16 +3858,31 @@ function renderClientsList(filter = 'upcoming') {
         }
 
         function callCleanupCall() {
+            callActive = false;
             const callContainer = document.getElementById('callContainer');
             if (callContainer) callContainer.style.display = 'none';
             const floating = document.getElementById('floatingCall');
             if (floating) floating.style.display = 'none';
-            callActive = false;
+            document.getElementById('mainContent').style.display = 'block';
+            document.getElementById('bottomNav').style.display = 'flex';
+            // Сброс переменных
+            callPeerConnection = null;
+            callLocalStream = null;
+            callScreenStream = null;
+            callPartnerSocketId = null;
+            callIsRecording = false;
+            callMediaRecorder = null;
+            callIsScreenSharing = false;
+            callRemoteScreenMode = false;
+            callConnectionEstablished = false;
+            callMinimized = false;
         }
 
-        function callInjectCallHTML(roomId, role) {
+        function callInjectCallHTML() {
             const callContainer = document.getElementById('callContainer');
             if (!callContainer) return;
+            // Очищаем контейнер перед вставкой
+            callContainer.innerHTML = '';
             callContainer.innerHTML = `
                 <div class="remote-video-wrapper">
                     <video id="callRemoteVideo" autoplay playsinline></video>
@@ -3847,7 +3926,7 @@ function renderClientsList(filter = 'upcoming') {
                     </div>
                 </div>
             `;
-            // Получаем элементы
+            // Привязываем элементы
             callRemoteVideo = document.getElementById('callRemoteVideo');
             callLocalVideo = document.getElementById('callLocalVideo');
             callWaitingMsg = document.getElementById('callWaitingMsg');
@@ -3869,7 +3948,7 @@ function renderClientsList(filter = 'upcoming') {
             callExtraMenu = document.getElementById('callExtraMenu');
             callGoHomeBtn = document.getElementById('callGoHomeBtn');
 
-            // Назначение обработчиков
+            // Обработчики для элементов управления
             if (callToggleMicBtn) callToggleMicBtn.onclick = () => { if(callLocalStream) { const t = callLocalStream.getAudioTracks()[0]; if(t) { t.enabled = !t.enabled; callToggleMicBtn.classList.toggle('muted'); callToggleMicBtn.innerHTML = t.enabled ? '<i class="fas fa-microphone"></i>' : '<i class="fas fa-microphone-slash"></i>'; } } };
             if (callToggleCamBtn) callToggleCamBtn.onclick = () => { if(callLocalStream) { const t = callLocalStream.getVideoTracks()[0]; if(t) { t.enabled = !t.enabled; callToggleCamBtn.classList.toggle('muted'); callToggleCamBtn.innerHTML = t.enabled ? '<i class="fas fa-video"></i>' : '<i class="fas fa-video-slash"></i>'; } } };
             if (callShareScreenBtn) callShareScreenBtn.onclick = callToggleScreenShare;
@@ -3881,38 +3960,81 @@ function renderClientsList(filter = 'upcoming') {
             if (callChatToggleBtn) callChatToggleBtn.onclick = () => { if(callChatPanel) callChatPanel.classList.toggle('open'); };
             if (callCloseChatBtn) callCloseChatBtn.onclick = () => { if(callChatPanel) callChatPanel.classList.remove('open'); };
             if (callMinimizeBtn) callMinimizeBtn.onclick = callMinimize;
-            if (callGoHomeBtn) callGoHomeBtn.onclick = () => { callMinimize(); }; // при нажатии "На главную" тоже сворачиваем
+            if (callGoHomeBtn) callGoHomeBtn.onclick = callGoHome;
             if (callMenuBtn && callExtraMenu) {
                 callMenuBtn.onclick = (e) => { e.stopPropagation(); const vis = callExtraMenu.style.display === 'flex'; callExtraMenu.style.display = vis ? 'none' : 'flex'; };
                 document.addEventListener('click', (e) => { if(callMenuBtn && !callMenuBtn.contains(e.target) && callExtraMenu && !callExtraMenu.contains(e.target)) callExtraMenu.style.display = 'none'; });
             }
-
+            if (callLocalVideoWrapper) callLocalVideoWrapper.onclick = () => {
+                // Переключение размера локального видео (по желанию)
+                if (!callLocalVideoWrapper) return;
+                const isLarge = callLocalVideoWrapper.style.width === '100%';
+                if (isLarge) {
+                    callLocalVideoWrapper.style.width = '';
+                    callLocalVideoWrapper.style.height = '';
+                    callLocalVideoWrapper.style.bottom = '';
+                    callLocalVideoWrapper.style.right = '';
+                    callLocalVideoWrapper.style.borderRadius = '';
+                } else {
+                    callLocalVideoWrapper.style.width = '100%';
+                    callLocalVideoWrapper.style.height = '100%';
+                    callLocalVideoWrapper.style.bottom = '0';
+                    callLocalVideoWrapper.style.right = '0';
+                    callLocalVideoWrapper.style.borderRadius = '0';
+                }
+            };
             if (!navigator.mediaDevices?.getDisplayMedia && callShareScreenBtn) callShareScreenBtn.style.display = 'none';
             callUpdateRemoteVideoMode(false);
         }
 
         async function callInitialize(roomId, role) {
+            // Если уже звонок активен, сначала завершаем старый
+            if (callActive) {
+                callEndCall();
+                // Небольшая задержка для очистки
+                await new Promise(r => setTimeout(r, 500));
+            }
             callRoomId = roomId;
             callUserRole = role;
-            callInjectCallHTML(roomId, role);
-            callSetupSocketForCall();
-            await callStartLocalStream();
-            // После того как socket и stream готовы, join-call-room будет отправлен при connect
-        }
-
-        // Переопределяем startCall
-        window.startCall = (roomId, role) => {
-            // Закрываем основной контент, показываем звонок
+            callActive = true;
+            callMinimized = false;
+            // Скрываем основной интерфейс
             document.getElementById('mainContent').style.display = 'none';
             document.getElementById('bottomNav').style.display = 'none';
+            // Показываем контейнер звонка
             const callContainer = document.getElementById('callContainer');
-            if (callContainer) {
-                callContainer.style.display = 'flex';
-                callInitialize(roomId, role);
-            }
+            callContainer.style.display = 'flex';
+            // Инжектим HTML (пересоздаём DOM)
+            callInjectCallHTML();
+            // Регистрируем обработчики сокета (один раз)
+            callRegisterSocketHandlers();
+            // Запрашиваем медиа
+            await callStartLocalStream();
+            // Присоединяемся к комнате
+            socket.emit('join-call-room', roomId, currentUser.id, role);
+        }
+
+        // Переопределяем глобальную startCall
+        window.startCall = (roomId, role) => {
+            callInitialize(roomId, role);
         };
 
-        init();
+        // Дополнительно: убедимся, что плавающее окно уже существует в DOM
+        (function initFloatingElements() {
+            // Плавающее окно уже есть в HTML, получаем ссылки
+            callFloatingCall = document.getElementById('floatingCall');
+            callFloatingRemoteVideo = document.getElementById('floatingRemoteVideo');
+            callFloatingMicBtn = document.getElementById('floatingMicBtn');
+            callFloatingCamBtn = document.getElementById('floatingCamBtn');
+            callFloatingEndCallBtn = document.getElementById('floatingEndCallBtn');
+            callRestoreCallBtn = document.getElementById('restoreCallBtn');
+            callFloatingHeader = document.getElementById('floatingHeader');
+            if (callFloatingMicBtn) callFloatingMicBtn.onclick = () => { if(callLocalStream) { const t = callLocalStream.getAudioTracks()[0]; if(t) { t.enabled = !t.enabled; callFloatingMicBtn.innerHTML = t.enabled ? '<i class="fas fa-microphone"></i>' : '<i class="fas fa-microphone-slash"></i>'; callFloatingMicBtn.classList.toggle('muted', !t.enabled); if(callToggleMicBtn) { callToggleMicBtn.classList.toggle('muted', !t.enabled); callToggleMicBtn.innerHTML = t.enabled ? '<i class="fas fa-microphone"></i>' : '<i class="fas fa-microphone-slash"></i>'; } } } };
+            if (callFloatingCamBtn) callFloatingCamBtn.onclick = () => { if(callLocalStream) { const t = callLocalStream.getVideoTracks()[0]; if(t) { t.enabled = !t.enabled; callFloatingCamBtn.innerHTML = t.enabled ? '<i class="fas fa-video"></i>' : '<i class="fas fa-video-slash"></i>'; callFloatingCamBtn.classList.toggle('muted', !t.enabled); if(callToggleCamBtn) { callToggleCamBtn.classList.toggle('muted', !t.enabled); callToggleCamBtn.innerHTML = t.enabled ? '<i class="fas fa-video"></i>' : '<i class="fas fa-video-slash"></i>'; } } } };
+            if (callFloatingEndCallBtn) callFloatingEndCallBtn.onclick = callEndCall;
+            if (callRestoreCallBtn) callRestoreCallBtn.onclick = callRestore;
+            callInitDragging();
+        })();
     </script>
     <script>
         if ('serviceWorker' in navigator) {
