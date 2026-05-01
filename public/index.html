@@ -91,7 +91,6 @@
             padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
             border-top: 1px solid var(--border);
             z-index: 1000;
-            /* Убираем фиксированную высоту, пусть подстраивается под контент */
             height: auto;
             min-height: var(--bottom-h);
         }
@@ -931,9 +930,304 @@
             background: #8bca8b;
             color: #0d2010;
         }
-        /* Для PWA – чтобы фон не вылезал за пределы панели */
         .bottom-nav {
             border-radius: 0;
+        }
+
+        /* ======================= СТИЛИ ДЛЯ ЗВОНКА (ИНТЕГРИРОВАННЫЕ) ======================= */
+        :root {
+            --gold: #c9a96e;
+            --gold-dim: rgba(201,169,110,0.18);
+            --gold-mid: rgba(201,169,110,0.45);
+            --surface: rgba(12,14,13,0.88);
+            --surface-light: rgba(22,26,24,0.92);
+            --text: #e8e4dc;
+            --text-dim: rgba(232,228,220,0.45);
+            --radius: 20px;
+            --safe-top: env(safe-area-inset-top, 0px);
+            --safe-bottom: env(safe-area-inset-bottom, 0px);
+        }
+        .call-container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            background: #000;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .remote-video-wrapper {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #000;
+            padding: 10px;
+        }
+        #remoteVideo {
+            width: 100%;
+            max-width: 100%;
+            max-height: 40vh;
+            border-radius: 20px;
+            object-fit: contain;
+            background: #000;
+            transition: all 0.2s;
+        }
+        @media (min-width: 768px) {
+            #remoteVideo { max-height: 70vh; }
+        }
+        #remoteVideo.camera-mode { object-fit: cover; }
+        #remoteVideo.screen-mode { object-fit: contain; }
+        .local-video-wrapper {
+            position: absolute;
+            bottom: calc(100px + var(--safe-bottom));
+            right: 16px;
+            width: 110px;
+            height: 150px;
+            border-radius: var(--radius);
+            overflow: hidden;
+            border: 1px solid var(--gold-mid);
+            cursor: pointer;
+            z-index: 10;
+            background: #000;
+        }
+        #localVideo {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        .top-bar {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            padding: calc(12px + var(--safe-top)) 16px;
+            display: flex;
+            justify-content: flex-end;
+            z-index: 15;
+            background: linear-gradient(to bottom, rgba(0,0,0,0.5), transparent);
+        }
+        .top-buttons {
+            display: flex;
+            gap: 10px;
+        }
+        .top-btn {
+            background: var(--surface);
+            border: 1px solid var(--gold-mid);
+            border-radius: 40px;
+            padding: 6px 14px;
+            cursor: pointer;
+            font-size: 12px;
+            color: var(--gold);
+            backdrop-filter: blur(16px);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .top-btn i { font-size: 12px; }
+        .menu-wrapper { position: relative; }
+        #extraMenu {
+            position: absolute;
+            right: 0;
+            top: 45px;
+            background: var(--surface-light);
+            backdrop-filter: blur(24px);
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--gold-mid);
+            padding: 8px;
+            display: none;
+            flex-direction: column;
+            gap: 8px;
+            z-index: 30;
+            min-width: 150px;
+        }
+        #extraMenu button { width: 100%; }
+        .recording-active { background: rgba(180,30,30,0.5); color: #ff8080; }
+        .rec-dot {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #ff5555;
+            animation: blink 1s infinite;
+            margin-right: 6px;
+        }
+        @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+        .waiting-message {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            z-index: 5;
+        }
+        .waiting-ring {
+            width: 52px;
+            height: 52px;
+            border-radius: 50%;
+            border: 1.5px solid rgba(201,169,110,0.2);
+            border-top-color: var(--gold);
+            animation: spin 1.2s infinite;
+            margin: 0 auto 16px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .controls {
+            position: absolute;
+            bottom: calc(24px + var(--safe-bottom));
+            left: 0;
+            right: 0;
+            display: flex;
+            justify-content: center;
+            gap: 16px;
+            z-index: 20;
+            padding: 0 20px;
+        }
+        .control-btn {
+            width: 52px;
+            height: 52px;
+            border-radius: 50%;
+            border: 1px solid var(--gold-mid);
+            background: var(--surface);
+            backdrop-filter: blur(20px);
+            cursor: pointer;
+            font-size: 18px;
+            color: var(--text);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .control-btn.muted { background: rgba(180,60,60,0.22); color: #e06060; }
+        .end-call { background: rgba(160,30,30,0.7); color: #fff; }
+        .chat-panel {
+            position: absolute;
+            bottom: 100px;
+            right: 16px;
+            width: 300px;
+            max-width: calc(100vw - 32px);
+            background: var(--surface-light);
+            backdrop-filter: blur(28px);
+            border-radius: var(--radius);
+            border: 1px solid rgba(201,169,110,0.18);
+            transform: translateX(calc(100% + 20px));
+            opacity: 0;
+            transition: 0.3s;
+            z-index: 25;
+        }
+        .chat-panel.open { transform: translateX(0); opacity: 1; }
+        .chat-header {
+            padding: 12px 16px;
+            border-bottom: 1px solid rgba(201,169,110,0.1);
+            display: flex;
+            justify-content: space-between;
+        }
+        .chat-messages {
+            height: 260px;
+            overflow-y: auto;
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .chat-message {
+            max-width: 80%;
+            padding: 8px 12px;
+            border-radius: 14px;
+            font-size: 12px;
+        }
+        .chat-message.outgoing {
+            align-self: flex-end;
+            background: rgba(201,169,110,0.18);
+            border-bottom-right-radius: 4px;
+        }
+        .chat-message.incoming {
+            align-self: flex-start;
+            background: rgba(255,255,255,0.06);
+            border-bottom-left-radius: 4px;
+        }
+        .chat-input-area {
+            display: flex;
+            gap: 8px;
+            padding: 10px;
+            border-top: 1px solid rgba(201,169,110,0.1);
+        }
+        .chat-input-area input {
+            flex: 1;
+            padding: 8px 12px;
+            border-radius: 24px;
+            border: 1px solid rgba(201,169,110,0.18);
+            background: rgba(255,255,255,0.04);
+            color: var(--text);
+            font-size: 12px;
+        }
+        .chat-input-area button {
+            background: var(--gold-dim);
+            border: 1px solid var(--gold-mid);
+            width: 34px;
+            border-radius: 50%;
+            cursor: pointer;
+            color: var(--gold);
+        }
+        .floating-call {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 160px;
+            background: var(--surface-light);
+            backdrop-filter: blur(24px);
+            border-radius: 16px;
+            border: 1px solid var(--gold-mid);
+            box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+            z-index: 1000;
+            display: none;
+            flex-direction: column;
+            overflow: hidden;
+            cursor: grab;
+        }
+        .floating-call:active { cursor: grabbing; }
+        .floating-header {
+            background: rgba(0,0,0,0.6);
+            padding: 6px 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: grab;
+            font-size: 11px;
+            color: var(--gold);
+        }
+        .floating-header button {
+            background: none;
+            border: none;
+            color: var(--text-dim);
+            cursor: pointer;
+        }
+        .floating-video {
+            aspect-ratio: 16 / 9;
+            background: #000;
+        }
+        .floating-video video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        .floating-controls {
+            display: flex;
+            justify-content: space-around;
+            padding: 6px;
+            background: rgba(0,0,0,0.7);
+        }
+        .floating-controls button {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background: var(--surface);
+            border: 1px solid var(--gold-mid);
+            color: var(--text);
+            font-size: 12px;
+        }
+        @media (max-width: 640px) {
+            .control-btn { width: 46px; height: 46px; font-size: 16px; }
+            .local-video-wrapper { width: 80px; height: 110px; bottom: 80px; }
+            .floating-call { width: 140px; }
         }
     </style>
 </head>
@@ -960,9 +1254,30 @@
         <div class="nav-item" data-tab="profile"><i class="fas fa-user"></i><span>Профиль</span></div>
     </div>
 
+    <!-- Контейнер для звонка (изначально скрыт) -->
+    <div id="callContainer" class="call-container" style="display: none; position: fixed; inset: 0; z-index: 2000; background: #000; flex-direction: column;">
+        <!-- Динамически будет вставлен HTML звонка -->
+    </div>
+
+    <!-- Плавающее окно звонка (свёрнутое) -->
+    <div id="floatingCall" class="floating-call">
+        <div class="floating-header" id="floatingHeader">
+            <span>🎥 Звонок</span>
+            <button id="restoreCallBtn"><i class="fas fa-expand"></i></button>
+        </div>
+        <div class="floating-video">
+            <video id="floatingRemoteVideo" autoplay playsinline muted></video>
+        </div>
+        <div class="floating-controls">
+            <button id="floatingMicBtn"><i class="fas fa-microphone"></i></button>
+            <button id="floatingCamBtn"><i class="fas fa-video"></i></button>
+            <button id="floatingEndCallBtn" class="end-call"><i class="fas fa-phone-slash"></i></button>
+        </div>
+    </div>
+
     <script src="/socket.io/socket.io.js"></script>
     <script>
-        // ======================= ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ =======================
+        // ======================= ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ПРОЕКТА =======================
         let currentUser = null;
         let currentTab = 'feed';
         let socket = null;
@@ -1171,7 +1486,7 @@
             }
         }
 
-        // ======================= ЛЕНТА (с пагинацией и ленивыми комментариями) =======================
+        // ======================= ЛЕНТА =======================
         async function editComment(commentId, postId, oldText) {
             const newText = prompt('Редактировать комментарий:', oldText);
             if (!newText || newText === oldText) return;
@@ -1477,7 +1792,7 @@
             initVideoObservers();
         }
 
-        // ======================= ПРОФИЛЬ (исправлен: инструменты вверху, посты внизу) =======================
+        // ======================= ПРОФИЛЬ =======================
         async function renderProfile() {
     if (!currentUser) { showToast('Войдите в аккаунт', true); return; }
     const isPsych = currentUser.role === 'psychologist';
@@ -1510,8 +1825,6 @@
             <div class="profile-sections">
                 <div class="collapsible-section" id="sec-tasks"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">📋</div><div><div class="collapsible-title">Задачи</div><div class="collapsible-subtitle">${undoneTasks > 0 ? `${undoneTasks} не выполнено` : 'Все выполнены'}</div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body"><div id="tasksList">${tasks.map(t => `<div class="task-item"><input type="checkbox" class="task-checkbox task-cb" data-id="${t.id}" ${t.completed ? 'checked' : ''}><div style="flex:1"><div class="task-text ${t.completed ? 'task-completed' : ''}">${escapeHtml(t.text)}</div>${t.dueDate ? `<div class="task-due">📅 ${t.dueDate}</div>` : ''}</div><button class="task-delete" onclick="deleteTask('${t.id}')"><i class="fas fa-times"></i></button></div>`).join('')}</div>${tasks.length === 0 ? '<div class="empty-state" style="padding:16px;"><i class="fas fa-check-circle"></i><div>Нет задач</div></div>' : ''}<button class="section-add-btn" onclick="addTaskWithDate()"><i class="fas fa-plus"></i> Добавить задачу</button></div></div>
                 <div class="collapsible-section" id="sec-calendar"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">📅</div><div><div class="collapsible-title">Календарь</div><div class="collapsible-subtitle">События</div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body"><div id="profileCalendar"></div></div></div>
-                
-                <!-- Записи клиентов с фильтрами -->
                 <div class="collapsible-section" id="sec-appointments">
                     <div class="collapsible-header" onclick="toggleSection(this)">
                         <div class="collapsible-header-left">
@@ -1532,8 +1845,6 @@
                         <div id="appointmentsList" style="max-height: 300px; overflow-y: auto; padding-right: 4px;"></div>
                     </div>
                 </div>
-                
-                <!-- Клиенты (список для чатов) -->
                 <div class="collapsible-section" id="sec-clients">
                     <div class="collapsible-header" onclick="toggleSection(this)">
                         <div class="collapsible-header-left">
@@ -1553,7 +1864,6 @@
                         <div id="clientsList" style="max-height: 300px; overflow-y: auto; padding-right: 4px;"></div>
                     </div>
                 </div>
-                
                 <div class="collapsible-section" id="sec-notes"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">📝</div><div><div class="collapsible-title">Заметки</div><div class="collapsible-subtitle">${notes.length} заметок</div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body"><div class="notes-grid" id="notesGridProfile">${notes.map(n => `<div class="note-card" onclick="openNoteModal('${n.id}','${escapeHtml(n.title)}','${escapeHtml(n.content)}','${n.attachment || ''}')"><div class="note-title">${escapeHtml(n.title)}</div><div class="note-preview">${escapeHtml((n.content || '').substring(0, 70))}${(n.content || '').length > 70 ? '…' : ''}</div></div>`).join('')}${notes.length === 0 ? '<div class="empty-state" style="padding:16px;"><i class="fas fa-sticky-note"></i><div>Нет заметок</div></div>' : ''}</div><button class="section-add-btn" onclick="openAddNoteModal()"><i class="fas fa-plus"></i> Добавить заметку</button></div></div>
                 <div class="collapsible-section" id="sec-certs"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">📜</div><div><div class="collapsible-title">Сертификаты и дипломы</div><div class="collapsible-subtitle">${certificates.length} документов</div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body"><div class="certificates-grid" id="certsGridProfile">${certificates.map(c => `<div class="certificate-card"><img src="${escapeHtml(c.image)}" onerror="this.src='https://placehold.co/100x80/1a2e1a/8bca8b?text=📜'"><div class="certificate-title">${escapeHtml(c.title)}</div><button class="delete-cert-btn" onclick="deleteCertificateProfile('${c.id}')"><i class="fas fa-times"></i></button></div>`).join('')}<div class="certificate-card add-cert-card" onclick="addCertificateProfile()"><i class="fas fa-plus"></i><span>Добавить</span></div></div></div></div>
             </div>
@@ -1619,7 +1929,6 @@
         document.querySelectorAll('.profile-delete-post').forEach(b => { b.onclick = () => openConfirmModal('Удалить пост?', 'Это действие нельзя отменить.', async () => { await fetch(`/api/posts/${b.dataset.id}`, { method:'DELETE', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ authorId: currentUser.id }) }); renderProfile(); }); });
         document.querySelectorAll('.task-cb').forEach(cb => { cb.onchange = async () => { await fetch(`/api/tasks/${cb.dataset.id}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ completed: cb.checked }) }); const label = cb.closest('.task-item').querySelector('.task-text'); if (label) label.classList.toggle('task-completed', cb.checked); }; });
 
-        // Фильтры для "Записей клиентов"
         const aptFilterBtns = document.querySelectorAll('.filter-appointments-btn');
         if (aptFilterBtns.length) {
             aptFilterBtns.forEach(btn => {
@@ -1632,7 +1941,6 @@
             renderAppointmentsList('upcoming');
         }
 
-        // Фильтры для "Клиентов" (если функция renderClientsList существует)
         const clientFilterBtns = document.querySelectorAll('.filter-clients-btn');
         if (clientFilterBtns.length && typeof renderClientsList === 'function') {
             clientFilterBtns.forEach(btn => {
@@ -1648,7 +1956,6 @@
     checkUpcomingEvents();
 }
 
-        // Фильтрация и отображение списка записей клиентов (для психолога)
 function renderAppointmentsList(filter = 'upcoming') {
     const container = document.getElementById('appointmentsList');
     if (!container) return;
@@ -1700,53 +2007,47 @@ function renderAppointmentsList(filter = 'upcoming') {
     });
     container.innerHTML = html;
 }
-        // ======================= ФИЛЬТРАЦИЯ КЛИЕНТОВ (для психолога) =======================
-        function renderClientsList(filter = 'upcoming') {
-            const container = document.getElementById('clientsList');
-            if (!container) return;
 
-            const appointments = currentUser?.clients || [];
-            const now = new Date();
+function renderClientsList(filter = 'upcoming') {
+    const container = document.getElementById('clientsList');
+    if (!container) return;
 
-            let filtered = [];
-            if (filter === 'upcoming') {
-                filtered = appointments.filter(a => 
-                    a.status === 'confirmed' && new Date(a.date + 'T' + a.time) >= now
-                    );
-            } else {
-                filtered = appointments.filter(a => 
-                    a.status === 'confirmed' && new Date(a.date + 'T' + a.time) < now
-                    );
-            }
+    const appointments = currentUser?.clients || [];
+    const now = new Date();
 
-            const subtitle = document.getElementById('clientsSubtitle');
-            if (subtitle) {
-                subtitle.textContent = filter === 'upcoming' 
-                ? `${filtered.length} предстоящих` 
-                : `${filtered.length} прошедших`;
-            }
+    let filtered = [];
+    if (filter === 'upcoming') {
+        filtered = appointments.filter(a => a.status === 'confirmed' && new Date(a.date + 'T' + a.time) >= now);
+    } else {
+        filtered = appointments.filter(a => a.status === 'confirmed' && new Date(a.date + 'T' + a.time) < now);
+    }
 
-            if (filtered.length === 0) {
-                container.innerHTML = '<div class="empty-state" style="padding:20px;"><i class="fas fa-calendar-times"></i><div>Нет записей</div></div>';
-                return;
-            }
+    const subtitle = document.getElementById('clientsSubtitle');
+    if (subtitle) {
+        subtitle.textContent = filter === 'upcoming' ? `${filtered.length} предстоящих` : `${filtered.length} прошедших`;
+    }
 
-            let html = '';
-            filtered.forEach(apt => {
-                html += `
-                <div class="client-item">
+    if (filtered.length === 0) {
+        container.innerHTML = '<div class="empty-state" style="padding:20px;"><i class="fas fa-calendar-times"></i><div>Нет записей</div></div>';
+        return;
+    }
+
+    let html = '';
+    filtered.forEach(apt => {
+        html += `
+            <div class="client-item">
                 <div>
-                <div class="client-name">${escapeHtml(apt.clientName)}</div>
-                <div class="client-time">${apt.date} в ${apt.time}</div>
+                    <div class="client-name">${escapeHtml(apt.clientName)}</div>
+                    <div class="client-time">${apt.date} в ${apt.time}</div>
                 </div>
                 <button class="btn-sm" onclick="startChatWith('${apt.clientId}','${escapeHtml(apt.clientName)}')">
-                <i class="fas fa-comment-dots"></i> Написать
+                    <i class="fas fa-comment-dots"></i> Написать
                 </button>
-                </div>
-                `;
-            });
-            container.innerHTML = html;
-        }
+            </div>
+        `;
+    });
+    container.innerHTML = html;
+}
 
         // ======================= КАЛЕНДАРЬ =======================
         async function renderProfileCalendar() {
@@ -2285,7 +2586,7 @@ function renderAppointmentsList(filter = 'upcoming') {
             };
         }
 
-        // ======================= НОВЫЙ ПОСТ (Cloudinary) =======================
+        // ======================= НОВЫЙ ПОСТ =======================
         function createPostModal() {
             const modalId = 'cpModal';
             const html = `
@@ -2577,10 +2878,6 @@ function renderAppointmentsList(filter = 'upcoming') {
             });
         }
 
-        function startCall(roomId, role) {
-            window.location.href = `/call.html?room=${roomId}&role=${role}`;
-        }
-
         // ======================= ЧАТ =======================
         async function renderChats() {
             currentChatPartner = null;
@@ -2611,7 +2908,7 @@ function renderAppointmentsList(filter = 'upcoming') {
             }).sort((a,b) => new Date(b.lastTime) - new Date(a.lastTime));
             let html = `<div class="container"><div class="page-title">Сообщения</div><div class="chat-list">`;
             for (const c of contacts) {
-                                html += `<div class="chat-contact glass-card" data-contact-id="${c.id}" onclick="openChat('${c.id}','${escapeHtml(c.fullName)}')">
+                html += `<div class="chat-contact glass-card" data-contact-id="${c.id}" onclick="openChat('${c.id}','${escapeHtml(c.fullName)}')">
                             <img class="chat-contact-avatar" src="${escapeHtml(c.avatar)}" onerror="this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(c.fullName)}&background=8bca8b&color=fff'">
                             <div class="chat-contact-info">
                                 <div class="chat-contact-name">${escapeHtml(c.fullName)}</div>
@@ -3156,7 +3453,6 @@ function renderAppointmentsList(filter = 'upcoming') {
         window.bookPsychologist = bookPsychologist;
         window.openReviewModal = openReviewModal;
         window.confirmAppointment = confirmAppointment;
-        window.startCall = startCall;
         window.addComment = addComment;
         window.closeModal = closeModal;
         window.toggleSection = toggleSection;
@@ -3179,6 +3475,442 @@ function renderAppointmentsList(filter = 'upcoming') {
         window.renderProfileCalendar = renderProfileCalendar;
         window.changeProfileMonth = changeProfileMonth;
         window.confirmAppointmentFromNotif = confirmAppointmentFromNotif;
+
+        // ======================= КОД ЗВОНКА =======================
+        // Переменные звонка
+        let callActive = false;
+        let callPeerConnection = null;
+        let callLocalStream = null;
+        let callScreenStream = null;
+        let callPartnerSocketId = null;
+        let callIsRecording = false;
+        let callMediaRecorder = null;
+        let callRecordedChunks = [];
+        let callIsScreenSharing = false;
+        let callCameraTrack = null;
+        let callRemoteScreenMode = false;
+        let callConnectionEstablished = false;
+        let callMinimized = false;
+        let callRoomId = null;
+        let callUserRole = null;
+
+        // DOM элементы звонка (будут созданы динамически)
+        let callRemoteVideo, callLocalVideo, callWaitingMsg, callToggleMicBtn, callToggleCamBtn, callShareScreenBtn, callRecordBtn, callReconnectBtn, callEndCallBtn, callChatToggleBtn, callCloseChatBtn, callChatPanel, callChatMessages, callChatInput, callSendChatBtn, callLocalVideoWrapper, callMinimizeBtn, callMenuBtn, callExtraMenu, callGoHomeBtn, callFloatingCall, callFloatingRemoteVideo, callFloatingMicBtn, callFloatingCamBtn, callFloatingEndCallBtn, callRestoreCallBtn, callFloatingHeader;
+
+        function callShowToast(msg, isErr = false) {
+            const t = document.createElement('div');
+            t.textContent = msg;
+            t.style.cssText = 'position:fixed; bottom:80px; left:50%; transform:translateX(-50%); background:rgba(0,0,0,0.8); color:#c9a96e; padding:8px 18px; border-radius:30px; font-size:12px; z-index:3000;';
+            if(isErr) t.style.color = '#e08080';
+            document.body.appendChild(t);
+            setTimeout(() => t.remove(), 3000);
+        }
+
+        function callEscapeHtml(str) { return String(str||'').replace(/[&<>]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[m])); }
+
+        function callAddChatMessage(text, isOutgoing = false, time = null) {
+            if (!callChatMessages) return;
+            const empty = callChatMessages.querySelector('.chat-empty');
+            if(empty) empty.remove();
+            const div = document.createElement('div');
+            div.className = 'chat-message '+(isOutgoing?'outgoing':'incoming');
+            const t = time ? new Date(time).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}) : new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+            div.innerHTML = `<div>${callEscapeHtml(text)}</div><div class="chat-message-time">${t}</div>`;
+            callChatMessages.appendChild(div);
+            callChatMessages.scrollTop = callChatMessages.scrollHeight;
+        }
+
+        async function callGetIceServers() {
+            return [
+                {urls:'stun:stun.l.google.com:19302'},
+                {urls:'stun:stun1.l.google.com:19302'},
+                {urls:'turn:openrelay.metered.ca:80', username:'openrelayproject', credential:'openrelayproject'},
+                {urls:'turn:openrelay.metered.ca:443', username:'openrelayproject', credential:'openrelayproject'}
+            ];
+        }
+
+        async function callCreatePeerConnection() {
+            if(callPeerConnection) callPeerConnection.close();
+            const config = { iceServers: await callGetIceServers(), iceTransportPolicy:'all' };
+            callPeerConnection = new RTCPeerConnection(config);
+            if(callLocalStream) callLocalStream.getTracks().forEach(t => callPeerConnection.addTrack(t, callLocalStream));
+            callPeerConnection.ontrack = (event) => {
+                const stream = event.streams[0];
+                if (callRemoteVideo) callRemoteVideo.srcObject = stream;
+                if (callFloatingRemoteVideo) callFloatingRemoteVideo.srcObject = stream;
+                if (callWaitingMsg) callWaitingMsg.style.display = 'none';
+                callConnectionEstablished = true;
+                callUpdateRemoteVideoMode(callRemoteScreenMode);
+            };
+            callPeerConnection.onicecandidate = (event) => {
+                if(event.candidate && socket && callPartnerSocketId)
+                    socket.emit('ice-candidate', { target: callPartnerSocketId, candidate: event.candidate });
+            };
+            callPeerConnection.oniceconnectionstatechange = () => {
+                if(!callPeerConnection) return;
+                const state = callPeerConnection.iceConnectionState;
+                if(state === 'connected') { callConnectionEstablished=true; if(callWaitingMsg) callWaitingMsg.style.display='none'; }
+                else if(state === 'failed' || state === 'disconnected') { callConnectionEstablished=false; if(callWaitingMsg) callWaitingMsg.style.display='flex'; setTimeout(()=>{if(!callConnectionEstablished) callReconnect();},3000); }
+            };
+            return callPeerConnection;
+        }
+
+        async function callInitWebRTC(createOffer=true) {
+            if(!callLocalStream) return;
+            await callCreatePeerConnection();
+            if(createOffer && socket && callPartnerSocketId) {
+                const offer = await callPeerConnection.createOffer();
+                await callPeerConnection.setLocalDescription(offer);
+                socket.emit('offer', { target: callPartnerSocketId, sdp: offer });
+            }
+        }
+
+        async function callStartLocalStream() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+                callLocalStream = stream;
+                if (callLocalVideo) callLocalVideo.srcObject = callLocalStream;
+                callCameraTrack = callLocalStream.getVideoTracks()[0];
+                if(socket && callPartnerSocketId) await callInitWebRTC(callUserRole === 'psychologist');
+            } catch(e) { callShowToast('Нет доступа к камере/микрофону', true); }
+        }
+
+        async function callReplaceVideoTrack(newTrack) {
+            if(!callPeerConnection) return;
+            const sender = callPeerConnection.getSenders().find(s => s.track?.kind === 'video');
+            if(sender) await sender.replaceTrack(newTrack);
+            else if(newTrack) callPeerConnection.addTrack(newTrack, callLocalStream);
+            if(newTrack && callLocalVideo) {
+                const newStream = new MediaStream();
+                newStream.addTrack(newTrack);
+                if(callLocalStream.getAudioTracks()[0]) newStream.addTrack(callLocalStream.getAudioTracks()[0]);
+                callLocalVideo.srcObject = newStream;
+            }
+        }
+
+        async function callStartScreenShare() {
+            if(callIsScreenSharing || !navigator.mediaDevices?.getDisplayMedia) return callShowToast('Не поддерживается', true);
+            try {
+                const screen = await navigator.mediaDevices.getDisplayMedia({ video: true });
+                callScreenStream = screen;
+                const track = screen.getVideoTracks()[0];
+                if(callCameraTrack) callCameraTrack.enabled = false;
+                await callReplaceVideoTrack(track);
+                callIsScreenSharing = true;
+                if (callShareScreenBtn) callShareScreenBtn.classList.add('share-active');
+                if (socket && callPartnerSocketId) {
+                    socket.emit('call-message', { text: 'Начал трансляцию экрана' });
+                    socket.emit('screen-share-started', { roomId: callRoomId });
+                }
+                track.onended = () => callStopScreenShare();
+            } catch(e) { callShowToast('Ошибка трансляции', true); }
+        }
+
+        async function callStopScreenShare() {
+            if(!callIsScreenSharing) return;
+            if(callScreenStream) callScreenStream.getTracks().forEach(t=>t.stop());
+            callScreenStream = null;
+            if(callCameraTrack) { callCameraTrack.enabled = true; await callReplaceVideoTrack(callCameraTrack); }
+            else await callReplaceVideoTrack(null);
+            callIsScreenSharing = false;
+            if (callShareScreenBtn) callShareScreenBtn.classList.remove('share-active');
+            if (socket && callPartnerSocketId) {
+                socket.emit('call-message', { text: 'Остановил трансляцию экрана' });
+                socket.emit('screen-share-stopped', { roomId: callRoomId });
+            }
+        }
+
+        function callToggleScreenShare() { callIsScreenSharing ? callStopScreenShare() : callStartScreenShare(); }
+
+        function callSetupSocketForCall() {
+            if(!socket) return;
+            socket.on('call-ready', async (data) => {
+                callPartnerSocketId = data.partnerId;
+                if (callWaitingMsg) callWaitingMsg.style.display='none';
+                if(callLocalStream) await callInitWebRTC(callUserRole === 'psychologist');
+                else { const iv = setInterval(async () => { if(callLocalStream) { clearInterval(iv); await callInitWebRTC(callUserRole === 'psychologist'); } }, 200); }
+            });
+            socket.on('offer', async (data) => {
+                callPartnerSocketId = data.from;
+                if(!callPeerConnection) await callCreatePeerConnection();
+                await callPeerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp));
+                const answer = await callPeerConnection.createAnswer();
+                await callPeerConnection.setLocalDescription(answer);
+                socket.emit('answer', { target: callPartnerSocketId, sdp: answer });
+            });
+            socket.on('answer', async (data) => { if(callPeerConnection) await callPeerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp)); });
+            socket.on('ice-candidate', async (data) => { if(callPeerConnection) try{ await callPeerConnection.addIceCandidate(new RTCIceCandidate(data.candidate)); }catch(e){} });
+            socket.on('call-message', (data) => callAddChatMessage(data.text, false, data.time));
+            socket.on('screen-share-started', () => { callRemoteScreenMode=true; callUpdateRemoteVideoMode(true); });
+            socket.on('screen-share-stopped', () => { callRemoteScreenMode=false; callUpdateRemoteVideoMode(false); });
+            socket.on('call-ended', () => { callShowToast('Сессия завершена'); window.location.href = '/'; });
+            socket.on('partner-disconnected', () => { callShowToast('Собеседник отключился', true); if(callWaitingMsg) callWaitingMsg.style.display='flex'; callConnectionEstablished=false; });
+        }
+
+        function callSendChatMessage() { 
+            const t = callChatInput?.value.trim(); 
+            if(t && socket && callPartnerSocketId) { 
+                callAddChatMessage(t, true); 
+                socket.emit('call-message', { text: t }); 
+                callChatInput.value = ''; 
+            } 
+        }
+
+        function callStartRecording() {
+            if(!callLocalStream) return;
+            callRecordedChunks = [];
+            const stream = new MediaStream([callLocalStream.getAudioTracks()[0]]);
+            callMediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+            callMediaRecorder.ondataavailable = e => { if(e.data.size) callRecordedChunks.push(e.data); };
+            callMediaRecorder.onstop = async () => {
+                const blob = new Blob(callRecordedChunks, { type: 'audio/webm' });
+                const fd = new FormData();
+                fd.append('recording', blob, `call_${Date.now()}.webm`);
+                fd.append('from', currentUser.id);
+                fd.append('to', callPartnerSocketId || 'unknown');
+                fd.append('roomId', callRoomId);
+                try {
+                    await fetch('/api/upload-recording', { method:'POST', body:fd });
+                    callShowToast('Запись сохранена');
+                } catch(e) {}
+            };
+            callMediaRecorder.start(1000);
+            callIsRecording = true;
+            if (callRecordBtn) {
+                callRecordBtn.classList.add('recording-active');
+                callRecordBtn.innerHTML = '<span class="rec-dot"></span> Запись ...';
+            }
+        }
+
+        function callStopRecording() { 
+            if(callMediaRecorder?.state === 'recording') { 
+                callMediaRecorder.stop(); 
+                callIsRecording=false; 
+                if (callRecordBtn) {
+                    callRecordBtn.classList.remove('recording-active');
+                    callRecordBtn.innerHTML = '<i class="fas fa-circle"></i> Запись';
+                }
+            } 
+        }
+
+        function callToggleRecording() { callIsRecording ? callStopRecording() : callStartRecording(); }
+
+        function callEndCall() {
+            if(socket) socket.emit('end-call');
+            callStopRecording();
+            if(callPeerConnection) callPeerConnection.close();
+            if(callLocalStream) callLocalStream.getTracks().forEach(t=>t.stop());
+            if(callScreenStream) callScreenStream.getTracks().forEach(t=>t.stop());
+            callCleanupCall();
+        }
+
+        function callReconnect() { 
+            if(socket) socket.disconnect(); 
+            callPartnerSocketId=null; 
+            if(callPeerConnection) callPeerConnection.close(); 
+            callPeerConnection=null; 
+            // Переподключение через переинициализацию
+            location.reload(); // временно, чтобы не усложнять
+        }
+
+        function callUpdateRemoteVideoMode(isScreen) { 
+            if (!callRemoteVideo) return;
+            if(isScreen) { 
+                callRemoteVideo.classList.remove('camera-mode'); 
+                callRemoteVideo.classList.add('screen-mode'); 
+            } else { 
+                callRemoteVideo.classList.remove('screen-mode'); 
+                callRemoteVideo.classList.add('camera-mode'); 
+            } 
+        }
+
+        function callMinimize() {
+            if(callMinimized) return;
+            callMinimized = true;
+            const callContainer = document.getElementById('callContainer');
+            if (callContainer) callContainer.style.display = 'none';
+            const floating = document.getElementById('floatingCall');
+            if (floating) floating.style.display = 'flex';
+            const micEnabled = callLocalStream?.getAudioTracks()[0]?.enabled ?? true;
+            const camEnabled = callLocalStream?.getVideoTracks()[0]?.enabled ?? true;
+            if (callFloatingMicBtn) {
+                callFloatingMicBtn.innerHTML = micEnabled ? '<i class="fas fa-microphone"></i>' : '<i class="fas fa-microphone-slash"></i>';
+                callFloatingMicBtn.classList.toggle('muted', !micEnabled);
+            }
+            if (callFloatingCamBtn) {
+                callFloatingCamBtn.innerHTML = camEnabled ? '<i class="fas fa-video"></i>' : '<i class="fas fa-video-slash"></i>';
+                callFloatingCamBtn.classList.toggle('muted', !camEnabled);
+            }
+            if(callRemoteVideo && callRemoteVideo.srcObject && callFloatingRemoteVideo) callFloatingRemoteVideo.srcObject = callRemoteVideo.srcObject;
+        }
+
+        function callRestore() {
+            if(!callMinimized) return;
+            callMinimized = false;
+            const callContainer = document.getElementById('callContainer');
+            if (callContainer) callContainer.style.display = 'flex';
+            const floating = document.getElementById('floatingCall');
+            if (floating) floating.style.display = 'none';
+            if(callFloatingRemoteVideo && callRemoteVideo && callFloatingRemoteVideo.srcObject && callRemoteVideo.srcObject !== callFloatingRemoteVideo.srcObject) callRemoteVideo.srcObject = callFloatingRemoteVideo.srcObject;
+        }
+
+        function callInitDragging() {
+            if (!callFloatingCall) return;
+            let startX, startY, startLeft, startTop, isDragging = false;
+            const onStart = (e) => {
+                e.preventDefault();
+                const touch = e.touches ? e.touches[0] : e;
+                startX = touch.clientX;
+                startY = touch.clientY;
+                const rect = callFloatingCall.getBoundingClientRect();
+                startLeft = rect.left;
+                startTop = rect.top;
+                isDragging = true;
+                callFloatingCall.classList.add('dragging');
+            };
+            const onMove = (e) => {
+                if(!isDragging) return;
+                const touch = e.touches ? e.touches[0] : e;
+                const dx = touch.clientX - startX;
+                const dy = touch.clientY - startY;
+                let newLeft = startLeft + dx;
+                let newTop = startTop + dy;
+                newLeft = Math.min(window.innerWidth - callFloatingCall.offsetWidth, Math.max(0, newLeft));
+                newTop = Math.min(window.innerHeight - callFloatingCall.offsetHeight, Math.max(0, newTop));
+                callFloatingCall.style.left = newLeft + 'px';
+                callFloatingCall.style.top = newTop + 'px';
+                callFloatingCall.style.right = 'auto';
+                callFloatingCall.style.bottom = 'auto';
+            };
+            const onEnd = () => { isDragging = false; callFloatingCall.classList.remove('dragging'); };
+            if (callFloatingHeader) {
+                callFloatingHeader.addEventListener('mousedown', onStart);
+                window.addEventListener('mousemove', onMove);
+                window.addEventListener('mouseup', onEnd);
+                callFloatingHeader.addEventListener('touchstart', onStart);
+                window.addEventListener('touchmove', onMove);
+                window.addEventListener('touchend', onEnd);
+            }
+        }
+
+        function callCleanupCall() {
+            const callContainer = document.getElementById('callContainer');
+            if (callContainer) callContainer.style.display = 'none';
+            const floating = document.getElementById('floatingCall');
+            if (floating) floating.style.display = 'none';
+            callActive = false;
+        }
+
+        function callInjectCallHTML(roomId, role) {
+            const callContainer = document.getElementById('callContainer');
+            if (!callContainer) return;
+            callContainer.innerHTML = `
+                <div class="remote-video-wrapper">
+                    <video id="callRemoteVideo" autoplay playsinline></video>
+                </div>
+                <div id="callWaitingMsg" class="waiting-message" style="display:none;">
+                    <div class="waiting-ring"></div>
+                    <p>Ожидание собеседника</p>
+                </div>
+                <div class="local-video-wrapper" id="callLocalVideoWrapper">
+                    <video id="callLocalVideo" autoplay muted playsinline></video>
+                </div>
+                <div class="top-bar">
+                    <div class="top-buttons">
+                        <button id="callMinimizeBtn" class="top-btn"><i class="fas fa-window-minimize"></i> Свернуть</button>
+                        <div class="menu-wrapper">
+                            <button id="callMenuBtn" class="top-btn"><i class="fas fa-bars"></i></button>
+                            <div id="callExtraMenu">
+                                <button id="callRecordBtn" class="top-btn"><i class="fas fa-circle"></i> Запись</button>
+                                <button id="callReconnectBtn" class="top-btn"><i class="fas fa-sync-alt"></i> Переподключиться</button>
+                                <button id="callGoHomeBtn" class="top-btn"><i class="fas fa-home"></i> На главную</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="controls">
+                    <button id="callToggleMic" class="control-btn"><i class="fas fa-microphone"></i></button>
+                    <button id="callToggleCam" class="control-btn"><i class="fas fa-video"></i></button>
+                    <button id="callShareScreenBtn" class="control-btn"><i class="fas fa-desktop"></i></button>
+                    <button id="callChatToggleBtn" class="control-btn"><i class="fas fa-comment"></i></button>
+                    <button id="callEndCallBtn" class="control-btn end-call"><i class="fas fa-phone-slash"></i></button>
+                </div>
+                <div id="callChatPanel" class="chat-panel">
+                    <div class="chat-header">
+                        <span>Чат сессии</span>
+                        <button id="callCloseChatBtn"><i class="fas fa-times"></i></button>
+                    </div>
+                    <div class="chat-messages" id="callChatMessages"><div class="chat-empty">Сообщения появятся здесь</div></div>
+                    <div class="chat-input-area">
+                        <input type="text" id="callChatInput" placeholder="Сообщение...">
+                        <button id="callSendChatBtn"><i class="fas fa-paper-plane"></i></button>
+                    </div>
+                </div>
+            `;
+            // Получаем элементы
+            callRemoteVideo = document.getElementById('callRemoteVideo');
+            callLocalVideo = document.getElementById('callLocalVideo');
+            callWaitingMsg = document.getElementById('callWaitingMsg');
+            callToggleMicBtn = document.getElementById('callToggleMic');
+            callToggleCamBtn = document.getElementById('callToggleCam');
+            callShareScreenBtn = document.getElementById('callShareScreenBtn');
+            callRecordBtn = document.getElementById('callRecordBtn');
+            callReconnectBtn = document.getElementById('callReconnectBtn');
+            callEndCallBtn = document.getElementById('callEndCallBtn');
+            callChatToggleBtn = document.getElementById('callChatToggleBtn');
+            callCloseChatBtn = document.getElementById('callCloseChatBtn');
+            callChatPanel = document.getElementById('callChatPanel');
+            callChatMessages = document.getElementById('callChatMessages');
+            callChatInput = document.getElementById('callChatInput');
+            callSendChatBtn = document.getElementById('callSendChatBtn');
+            callLocalVideoWrapper = document.getElementById('callLocalVideoWrapper');
+            callMinimizeBtn = document.getElementById('callMinimizeBtn');
+            callMenuBtn = document.getElementById('callMenuBtn');
+            callExtraMenu = document.getElementById('callExtraMenu');
+            callGoHomeBtn = document.getElementById('callGoHomeBtn');
+
+            // Назначение обработчиков
+            if (callToggleMicBtn) callToggleMicBtn.onclick = () => { if(callLocalStream) { const t = callLocalStream.getAudioTracks()[0]; if(t) { t.enabled = !t.enabled; callToggleMicBtn.classList.toggle('muted'); callToggleMicBtn.innerHTML = t.enabled ? '<i class="fas fa-microphone"></i>' : '<i class="fas fa-microphone-slash"></i>'; } } };
+            if (callToggleCamBtn) callToggleCamBtn.onclick = () => { if(callLocalStream) { const t = callLocalStream.getVideoTracks()[0]; if(t) { t.enabled = !t.enabled; callToggleCamBtn.classList.toggle('muted'); callToggleCamBtn.innerHTML = t.enabled ? '<i class="fas fa-video"></i>' : '<i class="fas fa-video-slash"></i>'; } } };
+            if (callShareScreenBtn) callShareScreenBtn.onclick = callToggleScreenShare;
+            if (callRecordBtn) callRecordBtn.onclick = callToggleRecording;
+            if (callReconnectBtn) callReconnectBtn.onclick = callReconnect;
+            if (callEndCallBtn) callEndCallBtn.onclick = callEndCall;
+            if (callSendChatBtn) callSendChatBtn.onclick = callSendChatMessage;
+            if (callChatInput) callChatInput.onkeypress = e => { if(e.key === 'Enter') callSendChatMessage(); };
+            if (callChatToggleBtn) callChatToggleBtn.onclick = () => { if(callChatPanel) callChatPanel.classList.toggle('open'); };
+            if (callCloseChatBtn) callCloseChatBtn.onclick = () => { if(callChatPanel) callChatPanel.classList.remove('open'); };
+            if (callMinimizeBtn) callMinimizeBtn.onclick = callMinimize;
+            if (callGoHomeBtn) callGoHomeBtn.onclick = () => { callMinimize(); }; // при нажатии "На главную" тоже сворачиваем
+            if (callMenuBtn && callExtraMenu) {
+                callMenuBtn.onclick = (e) => { e.stopPropagation(); const vis = callExtraMenu.style.display === 'flex'; callExtraMenu.style.display = vis ? 'none' : 'flex'; };
+                document.addEventListener('click', (e) => { if(callMenuBtn && !callMenuBtn.contains(e.target) && callExtraMenu && !callExtraMenu.contains(e.target)) callExtraMenu.style.display = 'none'; });
+            }
+
+            if (!navigator.mediaDevices?.getDisplayMedia && callShareScreenBtn) callShareScreenBtn.style.display = 'none';
+            callUpdateRemoteVideoMode(false);
+        }
+
+        async function callInitialize(roomId, role) {
+            callRoomId = roomId;
+            callUserRole = role;
+            callInjectCallHTML(roomId, role);
+            callSetupSocketForCall();
+            await callStartLocalStream();
+            // После того как socket и stream готовы, join-call-room будет отправлен при connect
+        }
+
+        // Переопределяем startCall
+        window.startCall = (roomId, role) => {
+            // Закрываем основной контент, показываем звонок
+            document.getElementById('mainContent').style.display = 'none';
+            document.getElementById('bottomNav').style.display = 'none';
+            const callContainer = document.getElementById('callContainer');
+            if (callContainer) {
+                callContainer.style.display = 'flex';
+                callInitialize(roomId, role);
+            }
+        };
 
         init();
     </script>
