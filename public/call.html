@@ -120,6 +120,7 @@
             background: #000;
         }
 
+        /* Верхняя панель – только кнопки */
         .top-bar {
             position: absolute;
             top: 0;
@@ -127,73 +128,80 @@
             right: 0;
             padding: 20px 24px;
             display: flex;
-            justify-content: space-between;
+            justify-content: flex-end;
             align-items: flex-start;
             z-index: 15;
             pointer-events: none;
-        }
-        .session-info {
-            display: flex;
-            flex-direction: column;
-            gap: 4px;
-        }
-        .session-label {
-            font-family: 'Cormorant Garamond', serif;
-            font-size: 11px;
-            font-weight: 300;
-            letter-spacing: 0.18em;
-            text-transform: uppercase;
-            color: var(--gold);
-            opacity: 0.8;
-        }
-        #connectionStatus {
-            font-size: 12px;
-            color: var(--text-dim);
-            font-weight: 300;
-            letter-spacing: 0.04em;
-            transition: color 0.4s, opacity 0.4s;
-        }
-        .top-buttons {
-            display: flex;
-            gap: 8px;
-            pointer-events: auto;
+            gap: 12px;
         }
         .top-btn {
             background: var(--surface);
             border: 1px solid var(--gold-mid);
             border-radius: 30px;
-            padding: 7px 16px;
+            padding: 8px 16px;
             cursor: pointer;
             font-family: 'DM Sans', sans-serif;
-            font-size: 11px;
+            font-size: 12px;
             font-weight: 400;
             color: var(--gold);
-            letter-spacing: 0.06em;
             display: flex;
             align-items: center;
             gap: 6px;
             transition: all 0.2s ease;
             backdrop-filter: blur(16px);
+            pointer-events: auto;
         }
         .top-btn:hover {
             background: var(--gold-dim);
             border-color: var(--gold);
         }
-        .top-btn.recording-active {
-            background: rgba(180,30,30,0.5);
-            border-color: rgba(220,60,60,0.6);
-            color: #ff8080;
+        .menu-btn {
+            background: var(--surface);
+            border: 1px solid var(--gold-mid);
+            border-radius: 30px;
+            padding: 8px 12px;
+            cursor: pointer;
+            color: var(--gold);
+            font-size: 14px;
+            pointer-events: auto;
         }
-        .rec-dot {
-            display: inline-block;
-            width: 7px;
-            height: 7px;
-            border-radius: 50%;
-            background: #ff5555;
-            animation: blink 1s ease infinite;
-            margin-right: 2px;
+        /* Выпадающее меню */
+        .menu-dropdown {
+            position: absolute;
+            top: 70px;
+            right: 24px;
+            background: var(--surface-light);
+            backdrop-filter: blur(20px);
+            border: 1px solid var(--gold-mid);
+            border-radius: var(--radius-sm);
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            padding: 12px;
+            z-index: 20;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.2s, visibility 0.2s;
+            pointer-events: auto;
         }
-        @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0.25; } }
+        .menu-dropdown.show {
+            opacity: 1;
+            visibility: visible;
+        }
+        .menu-dropdown button {
+            background: none;
+            border: none;
+            color: var(--text);
+            font-size: 13px;
+            padding: 6px 12px;
+            text-align: left;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+        .menu-dropdown button:hover {
+            background: var(--gold-dim);
+            color: var(--gold);
+        }
 
         .waiting-message {
             position: absolute;
@@ -243,7 +251,7 @@
             align-items: center;
             gap: 14px;
             z-index: 20;
-            padding: 0 20px 24px;
+            padding-bottom: calc(24px + env(safe-area-inset-bottom));
             background: linear-gradient(to top, rgba(0,0,0,0.72) 0%, transparent 100%);
         }
 
@@ -283,29 +291,6 @@
             background: rgba(180,60,60,0.22);
             border-color: rgba(220,100,100,0.35);
             color: #e06060;
-        }
-        .control-btn[data-tip]::after {
-            content: attr(data-tip);
-            position: absolute;
-            bottom: calc(100% + 10px);
-            left: 50%;
-            transform: translateX(-50%);
-            background: var(--surface-light);
-            border: 1px solid rgba(201,169,110,0.2);
-            color: var(--text);
-            font-size: 10px;
-            font-weight: 400;
-            letter-spacing: 0.06em;
-            white-space: nowrap;
-            padding: 5px 10px;
-            border-radius: 8px;
-            opacity: 0;
-            pointer-events: none;
-            transition: opacity 0.18s, bottom 0.18s;
-        }
-        .control-btn[data-tip]:hover::after {
-            opacity: 1;
-            bottom: calc(100% + 14px);
         }
         .end-call {
             width: 58px;
@@ -576,12 +561,13 @@
             .local-video-wrapper { width: 84px; height: 116px; bottom: 104px; right: 14px; }
             .control-btn { width: 46px; height: 46px; font-size: 15px; }
             .end-call { width: 52px; height: 52px; font-size: 16px; }
-            .controls { gap: 10px; padding: 0 14px 20px; }
+            .controls { gap: 10px; padding-bottom: calc(20px + env(safe-area-inset-bottom)); }
             .chat-panel { width: calc(100vw - 28px); right: 14px; bottom: 104px; }
             .chat-messages { height: 240px; }
-            .top-bar { padding: 14px 16px; }
+            .top-bar { padding: 14px 16px; top: env(safe-area-inset-top); }
             .floating-call { width: 240px; bottom: 10px; right: 10px; }
             .floating-controls button { width: 32px; height: 32px; font-size: 12px; }
+            .menu-dropdown { top: 60px; right: 16px; }
         }
     </style>
 </head>
@@ -604,21 +590,17 @@
         <video id="localVideo" autoplay muted playsinline></video>
     </div>
 
+    <!-- Верхняя панель: только кнопка свёрнуть и меню -->
     <div class="top-bar">
-        <div class="session-info">
-            <div class="session-label">Терапевтическая сессия</div>
-            <div id="connectionStatus">Подключение…</div>
-        </div>
-        <div class="top-buttons">
-            <button id="minimizeBtn" class="top-btn" data-tip="Свернуть в окно">
-                <i class="fas fa-window-minimize"></i> Свернуть
-            </button>
-            <button id="recordBtn" class="top-btn" data-tip="Запись разговора">
-                <i class="fas fa-circle"></i> Запись
-            </button>
-            <button id="reconnectBtnTop" class="top-btn">
-                <i class="fas fa-sync-alt"></i> Переподключиться
-            </button>
+        <button id="minimizeBtn" class="top-btn">
+            <i class="fas fa-window-minimize"></i> Свернуть
+        </button>
+        <button id="menuBtn" class="menu-btn">
+            <i class="fas fa-bars"></i>
+        </button>
+        <div id="menuDropdown" class="menu-dropdown">
+            <button id="recordBtn"><i class="fas fa-circle"></i> Запись</button>
+            <button id="reconnectBtnTop"><i class="fas fa-sync-alt"></i> Переподключиться</button>
         </div>
     </div>
 
@@ -668,9 +650,9 @@
         <video id="floatingRemoteVideo" autoplay playsinline muted></video>
     </div>
     <div class="floating-controls">
-        <button id="floatingMicBtn" class="control-btn" data-tip="Микрофон"><i class="fas fa-microphone"></i></button>
-        <button id="floatingCamBtn" class="control-btn" data-tip="Камера"><i class="fas fa-video"></i></button>
-        <button id="floatingEndCallBtn" class="control-btn end-call" data-tip="Завершить"><i class="fas fa-phone-slash"></i></button>
+        <button id="floatingMicBtn" class="control-btn"><i class="fas fa-microphone"></i></button>
+        <button id="floatingCamBtn" class="control-btn"><i class="fas fa-video"></i></button>
+        <button id="floatingEndCallBtn" class="control-btn end-call"><i class="fas fa-phone-slash"></i></button>
     </div>
 </div>
 
@@ -687,7 +669,7 @@
         window.location.href = '/';
     }
 
-    // DOM элементы основной страницы
+    // DOM элементы
     const localVideo = document.getElementById('localVideo');
     const remoteVideo = document.getElementById('remoteVideo');
     const waitingMsg = document.getElementById('waitingMessage');
@@ -706,8 +688,10 @@
     const sendChatBtn = document.getElementById('sendChatBtn');
     const localVideoWrapper = document.getElementById('localVideoWrapper');
     const minimizeBtn = document.getElementById('minimizeBtn');
+    const menuBtn = document.getElementById('menuBtn');
+    const menuDropdown = document.getElementById('menuDropdown');
 
-    // Элементы плавающего окна
+    // Плавающее окно
     const floatingCall = document.getElementById('floatingCall');
     const floatingRemoteVideo = document.getElementById('floatingRemoteVideo');
     const floatingMicBtn = document.getElementById('floatingMicBtn');
@@ -732,12 +716,10 @@
     let cameraTrack = null;
     let remoteScreenMode = false;
 
-    // Состояние свернутости
     let isMinimized = false;
     let dragOffsetX = 0, dragOffsetY = 0;
     let isDragging = false;
 
-    // Вспомогательные функции
     function updateStatus(msg, isError = false) {
         statusDiv.textContent = msg;
         statusDiv.style.color = isError ? '#e08080' : (connectionEstablished ? 'rgba(232,228,220,0.35)' : 'rgba(232,228,220,0.55)');
@@ -797,7 +779,6 @@
         peerConnection.ontrack = (event) => {
             const stream = event.streams[0];
             remoteVideo.srcObject = stream;
-            // Обновляем плавающее окно
             if (floatingRemoteVideo) floatingRemoteVideo.srcObject = stream;
             waitingMsg.style.display = 'none';
             connectionEstablished = true;
@@ -869,7 +850,6 @@
         } else {
             if (newTrack) peerConnection.addTrack(newTrack, localStream);
         }
-        // Обновляем локальное видео
         if (newTrack) {
             const newStream = new MediaStream();
             newStream.addTrack(newTrack);
@@ -1091,8 +1071,7 @@
             };
             mediaRecorder.start(1000);
             isRecording = true;
-            recordBtn.classList.add('recording-active');
-            recordBtn.innerHTML = '<span class="rec-dot"></span> Запись ...';
+            recordBtn.innerHTML = '<i class="fas fa-stop"></i> Запись...';
             updateStatus('Запись идёт…');
         } catch(e) { console.error(e); showToast('Ошибка записи', true); }
     }
@@ -1101,7 +1080,6 @@
         if (mediaRecorder && mediaRecorder.state === 'recording') {
             mediaRecorder.stop();
             isRecording = false;
-            recordBtn.classList.remove('recording-active');
             recordBtn.innerHTML = '<i class="fas fa-circle"></i> Запись';
             updateStatus('Запись сохранена');
         }
@@ -1147,18 +1125,18 @@
         }
     }
 
-    // Функции сворачивания / разворачивания
+    // Сворачивание / разворачивание
     function minimizeCall() {
         if (isMinimized) return;
+        // Открыть главную страницу в новой вкладке
+        window.open('/', '_blank');
         // Скрыть основной контейнер, показать плавающее окно
         document.getElementById('fullscreenCall').style.display = 'none';
-        // Синхронизируем удалённое видео в мини-окне
         if (remoteVideo.srcObject) {
             floatingRemoteVideo.srcObject = remoteVideo.srcObject;
         }
         floatingCall.style.display = 'flex';
         isMinimized = true;
-        // Синхронизируем состояние кнопок
         syncFloatingButtons();
     }
 
@@ -1167,14 +1145,12 @@
         document.getElementById('fullscreenCall').style.display = 'block';
         floatingCall.style.display = 'none';
         isMinimized = false;
-        // Возвращаем удалённое видео обратно в основной элемент
         if (floatingRemoteVideo.srcObject && remoteVideo.srcObject !== floatingRemoteVideo.srcObject) {
             remoteVideo.srcObject = floatingRemoteVideo.srcObject;
         }
     }
 
     function syncFloatingButtons() {
-        // Микрофон
         const micEnabled = localStream ? localStream.getAudioTracks()[0]?.enabled : true;
         if (micEnabled) {
             floatingMicBtn.classList.remove('muted');
@@ -1183,7 +1159,6 @@
             floatingMicBtn.classList.add('muted');
             floatingMicBtn.innerHTML = '<i class="fas fa-microphone-slash"></i>';
         }
-        // Камера
         const camEnabled = localStream ? localStream.getVideoTracks()[0]?.enabled : true;
         if (camEnabled) {
             floatingCamBtn.classList.remove('muted');
@@ -1194,7 +1169,6 @@
         }
     }
 
-    // Перетаскивание плавающего окна
     function initDragging() {
         let startX, startY, startLeft, startTop;
         function onStart(e) {
@@ -1218,7 +1192,6 @@
             const dy = touch.clientY - startY;
             let newLeft = startLeft + dx;
             let newTop = startTop + dy;
-            // Ограничения по краям окна
             const maxX = window.innerWidth - floatingCall.offsetWidth;
             const maxY = window.innerHeight - floatingCall.offsetHeight;
             newLeft = Math.min(maxX, Math.max(0, newLeft));
@@ -1238,6 +1211,11 @@
         floatingHeader.addEventListener('touchstart', onStart);
         window.addEventListener('touchmove', onMove);
         window.addEventListener('touchend', onEnd);
+    }
+
+    // Меню
+    function toggleMenu() {
+        menuDropdown.classList.toggle('show');
     }
 
     // Инициализация
@@ -1268,7 +1246,6 @@
             }
         };
         shareScreenBtn.onclick = toggleScreenShare;
-        recordBtn.onclick = toggleRecording;
         reconnectBtnTop.onclick = reconnect;
         endCallBtn.onclick = endCall;
         sendChatBtn.onclick = sendChatMessage;
@@ -1307,8 +1284,14 @@
             }
         };
         floatingEndCallBtn.onclick = endCall;
+        recordBtn.onclick = toggleRecording;
+        menuBtn.onclick = toggleMenu;
+        document.addEventListener('click', (e) => {
+            if (!menuBtn.contains(e.target) && !menuDropdown.contains(e.target)) {
+                menuDropdown.classList.remove('show');
+            }
+        });
 
-        // Скрыть кнопку трансляции экрана, если не поддерживается
         if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
             shareScreenBtn.style.display = 'none';
         }
