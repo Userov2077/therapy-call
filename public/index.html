@@ -945,8 +945,6 @@
             position: absolute;
             bottom: calc(100px + var(--safe-bottom));
             right: 16px;
-            width: 110px;
-            height: 150px;
             border-radius: var(--radius);
             overflow: hidden;
             border: 1px solid var(--gold-mid);
@@ -1096,12 +1094,13 @@
             max-width: calc(100vw - 32px);
             background: var(--surface-light);
             backdrop-filter: blur(28px);
-            border-radius: var(--radius);
+            border-radius: 20px;
             border: 1px solid rgba(201,169,110,0.18);
             transform: translateX(calc(100% + 20px));
             opacity: 0;
             transition: 0.3s;
             z-index: 25;
+            overflow: hidden;
         }
         .chat-panel.open { transform: translateX(0); opacity: 1; }
         .chat-header {
@@ -1109,6 +1108,24 @@
             border-bottom: 1px solid rgba(201,169,110,0.1);
             display: flex;
             justify-content: space-between;
+            align-items: center;
+            background: rgba(0,0,0,0.3);
+        }
+        .chat-header button {
+            background: transparent;
+            border: none;
+            color: var(--gold);
+            font-size: 14px;
+            cursor: pointer;
+            width: 28px;
+            height: 28px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+        }
+        .chat-header button:hover {
+            background: rgba(201,169,110,0.2);
         }
         .chat-messages-call {
             height: 260px;
@@ -1117,12 +1134,14 @@
             display: flex;
             flex-direction: column;
             gap: 8px;
+            background: rgba(0,0,0,0.2);
         }
         .chat-message-call {
             max-width: 80%;
             padding: 8px 12px;
-            border-radius: 14px;
+            border-radius: 18px;
             font-size: 12px;
+            word-wrap: break-word;
         }
         .chat-message-call.outgoing {
             align-self: flex-end;
@@ -1139,6 +1158,7 @@
             gap: 8px;
             padding: 10px;
             border-top: 1px solid rgba(201,169,110,0.1);
+            background: rgba(0,0,0,0.3);
         }
         .chat-input-area-call input {
             flex: 1;
@@ -1150,12 +1170,15 @@
             font-size: 12px;
         }
         .chat-input-area-call button {
-            background: var(--gold-dim);
-            border: 1px solid var(--gold-mid);
+            background: rgba(201,169,110,0.2);
+            border: 1px solid rgba(201,169,110,0.3);
             width: 34px;
             border-radius: 50%;
             cursor: pointer;
             color: var(--gold);
+        }
+        .chat-input-area-call button:hover {
+            background: rgba(201,169,110,0.4);
         }
         .floating-call {
             position: fixed;
@@ -1292,6 +1315,46 @@
             justify-content: center;
             font-size: 14px;
         }
+        .floating-call.dragging {
+            cursor: grabbing;
+        }
+        .floating-call.dragging .floating-header {
+            cursor: grabbing;
+        }
+        /* Режимы для контейнеров видео */
+        .remote-video-wrapper.big {
+            flex: 1;
+            position: static;
+            width: 100%;
+            height: auto;
+        }
+        .remote-video-wrapper.small {
+            position: absolute;
+            width: 110px;
+            height: 150px;
+            bottom: calc(100px + var(--safe-bottom));
+            right: 16px;
+            z-index: 10;
+            border-radius: 16px;
+            overflow: hidden;
+            border: 1px solid var(--gold-mid);
+        }
+        .local-video-wrapper.small {
+            position: absolute;
+            width: 110px;
+            height: 150px;
+            bottom: calc(100px + var(--safe-bottom));
+            right: 16px;
+            z-index: 10;
+            border-radius: 16px;
+            overflow: hidden;
+            border: 1px solid var(--gold-mid);
+        }
+        .local-video-wrapper.big {
+            width: 100%;
+            height: auto;
+            position: static;
+        }
     </style>
 </head>
 <body>
@@ -1319,14 +1382,14 @@
 
     <!-- Блок видеозвонка (интегрирован) -->
     <div id="callContainer" class="call-container">
-        <div class="remote-video-wrapper">
+        <div class="remote-video-wrapper big">
             <video id="remoteVideo" autoplay playsinline></video>
-        </div>
+        </div>>
         <div id="waitingMessageCall" class="waiting-message" style="display:none;">
             <div class="waiting-ring"></div>
             <p>Ожидание собеседника</p>
         </div>
-        <div class="local-video-wrapper" id="localVideoWrapper">
+        <div class="local-video-wrapper small" id="localVideoWrapper">
             <video id="localVideo" autoplay muted playsinline></video>
         </div>
         <div class="top-bar">
@@ -3397,15 +3460,23 @@
             if (!navigator.mediaDevices?.getDisplayMedia && shareScreenCallBtn) shareScreenCallBtn.style.display = 'none';
             updateRemoteVideoMode(false);
             // === Добавляем возможность развернуть локальное видео на весь экран ===
-            const localVideoWrapperElem = document.getElementById('localVideoWrapper');
-            if (localVideoWrapperElem) {
-                localVideoWrapperElem.onclick = () => {
-                    const localVideoElem = document.getElementById('localVideo');
-                    if (!localVideoElem) return;
-                    if (!document.fullscreenElement) {
-                        localVideoElem.requestFullscreen().catch(err => console.warn(err));
+            const localVideoContainer = document.getElementById('localVideoWrapper');
+            const remoteVideoContainer = document.querySelector('.remote-video-wrapper');
+            if (localVideoContainer && remoteVideoContainer) {
+                localVideoContainer.onclick = () => {
+                    const isLocalBig = localVideoContainer.classList.contains('big');
+                    if (!isLocalBig) {
+                    // делаем локальное большим, удалённое маленьким
+                        localVideoContainer.classList.remove('small');
+                        localVideoContainer.classList.add('big');
+                        remoteVideoContainer.classList.remove('big');
+                        remoteVideoContainer.classList.add('small');
                     } else {
-                        document.exitFullscreen();
+                    // возвращаем обратно
+                        localVideoContainer.classList.remove('big');
+                        localVideoContainer.classList.add('small');
+                        remoteVideoContainer.classList.remove('small');
+                        remoteVideoContainer.classList.add('big');
                     }
                 };
             }
@@ -3953,6 +4024,44 @@
             }
         }
 
+        function makeDraggable(element) {
+    let startX, startY, startLeft, startTop, isDragging = false;
+    const header = element.querySelector('.floating-header');
+    if (!header) return;
+    const onStart = (e) => {
+        e.preventDefault();
+        const touch = e.touches ? e.touches[0] : e;
+        startX = touch.clientX;
+        startY = touch.clientY;
+        const rect = element.getBoundingClientRect();
+        startLeft = rect.left;
+        startTop = rect.top;
+        isDragging = true;
+        element.classList.add('dragging');
+    };
+    const onMove = (e) => {
+        if (!isDragging) return;
+        const touch = e.touches ? e.touches[0] : e;
+        const dx = touch.clientX - startX;
+        const dy = touch.clientY - startY;
+        let newLeft = startLeft + dx;
+        let newTop = startTop + dy;
+        newLeft = Math.min(window.innerWidth - element.offsetWidth, Math.max(0, newLeft));
+        newTop = Math.min(window.innerHeight - element.offsetHeight, Math.max(0, newTop));
+        element.style.left = newLeft + 'px';
+        element.style.top = newTop + 'px';
+        element.style.right = 'auto';
+        element.style.bottom = 'auto';
+    };
+    const onEnd = () => { isDragging = false; element.classList.remove('dragging'); };
+    header.addEventListener('mousedown', onStart);
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onEnd);
+    header.addEventListener('touchstart', onStart);
+    window.addEventListener('touchmove', onMove);
+    window.addEventListener('touchend', onEnd);
+}
+
         // ======================= ИНИЦИАЛИЗАЦИЯ =======================
         async function init() {
             const uid = localStorage.getItem('userId');
@@ -3978,6 +4087,8 @@
                 renderFeed();
             }
             document.querySelectorAll('.nav-item').forEach(el => { el.onclick = () => switchTab(el.dataset.tab); });
+            const floatingCallElem = document.getElementById('floatingCall');
+            if (floatingCallElem) makeDraggable(floatingCallElem);
         }
 
         // Глобальные привязки функций (сохраняем старые, добавляем новые)
@@ -4015,6 +4126,7 @@
         window.confirmAppointmentFromNotif = confirmAppointmentFromNotif;
 
         init();
+
     </script>
     <script>
         if ('serviceWorker' in navigator) {
