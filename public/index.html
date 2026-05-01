@@ -899,19 +899,40 @@
             align-items: center;
             justify-content: center;
             background: #000;
-            padding: 10px;
+            padding: 0;
+            width: 100%;
+            height: 100%;
         }
         #remoteVideo {
             width: 100%;
-            max-width: 100%;
-            max-height: 40vh;
-            border-radius: 20px;
-            object-fit: contain;
+            height: 100%;
+            object-fit: contain; /* для сохранения пропорций */
             background: #000;
         }
-        @media (min-width: 768px) {
+        /* На телефонах – ширина 100%, высота подстраивается */
+        @media (max-width: 768px) {
+            .remote-video-wrapper {
+                padding: 0;
+            }
             #remoteVideo {
-                max-height: 70vh;
+                width: 100%;
+                height: auto;
+                max-height: 70vh; /* или уберите, если хотите full width */
+            }
+        }
+        /* На ПК – растягиваем на весь экран */
+        @media (min-width: 769px) {
+            .call-container .remote-video-wrapper {
+                flex: 1;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+            #remoteVideo {
+                width: 100%;
+                height: auto;
+                max-height: 85vh;
+                object-fit: contain;
             }
         }
         #remoteVideo.camera-mode {
@@ -945,13 +966,19 @@
             right: 0;
             padding: calc(12px + var(--safe-top)) 16px;
             display: flex;
-            justify-content: flex-end;
+            justify-content: space-between;
             z-index: 15;
             background: linear-gradient(to bottom, rgba(0,0,0,0.5), transparent);
         }
         .top-buttons {
             display: flex;
             gap: 10px;
+        }
+        .left-buttons {
+            justify-content: flex-start;
+        }
+        .right-buttons {
+            justify-content: flex-end;
         }
         .top-btn {
             background: var(--surface);
@@ -966,8 +993,41 @@
             align-items: center;
             gap: 6px;
         }
+        .top-btn.icon-only {
+            padding: 6px 10px;
+        }
         .top-btn i { font-size: 12px; }
         .menu-wrapper { position: relative; }
+        #extraMenuCall {
+            position: absolute;
+            right: 0;
+            top: 45px;
+            background: var(--surface-light);
+            backdrop-filter: blur(24px);
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--gold-mid);
+            padding: 8px;
+            display: none;
+            flex-direction: column;
+            gap: 8px;
+            z-index: 30;
+            min-width: 150px;
+        }
+        #extraMenuCall.vertical-menu {
+            flex-direction: column;
+        }
+        #extraMenuCall button {
+            width: 100%;
+            background: transparent;
+            border: none;
+            color: var(--gold);
+            padding: 6px 12px;
+            text-align: left;
+            border-radius: 8px;
+        }
+        #extraMenuCall button:hover {
+            background: var(--gold-dim);
+        }
         #extraMenu {
             position: absolute;
             right: 0;
@@ -983,6 +1043,7 @@
             z-index: 30;
             min-width: 150px;
         }
+
         .waiting-message {
             position: absolute;
             top: 50%;
@@ -1221,6 +1282,16 @@
         .bottom-nav {
             border-radius: 0;
         }
+        .floating-header button {
+            background: rgba(255,255,255,0.2);
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+        }
     </style>
 </head>
 <body>
@@ -1259,11 +1330,13 @@
             <video id="localVideo" autoplay muted playsinline></video>
         </div>
         <div class="top-bar">
-            <div class="top-buttons">
-                <button id="minimizeCallBtn" class="top-btn"><i class="fas fa-window-minimize"></i> Свернуть</button>
+            <div class="top-buttons left-buttons">
+                <button id="minimizeCallBtn" class="top-btn icon-only"><i class="fas fa-window-minimize"></i></button>
+            </div>
+            <div class="top-buttons right-buttons">
                 <div class="menu-wrapper">
                     <button id="menuCallBtn" class="top-btn"><i class="fas fa-bars"></i></button>
-                    <div id="extraMenuCall">
+                    <div id="extraMenuCall" class="vertical-menu">
                         <button id="recordCallBtn" class="top-btn"><i class="fas fa-circle"></i> Запись</button>
                         <button id="reconnectCallBtn" class="top-btn"><i class="fas fa-sync-alt"></i> Переподключиться</button>
                         <button id="goHomeCallBtn" class="top-btn"><i class="fas fa-home"></i> На главную</button>
@@ -3323,7 +3396,21 @@
             }
             if (!navigator.mediaDevices?.getDisplayMedia && shareScreenCallBtn) shareScreenCallBtn.style.display = 'none';
             updateRemoteVideoMode(false);
+            // === Добавляем возможность развернуть локальное видео на весь экран ===
+            const localVideoWrapperElem = document.getElementById('localVideoWrapper');
+            if (localVideoWrapperElem) {
+                localVideoWrapperElem.onclick = () => {
+                    const localVideoElem = document.getElementById('localVideo');
+                    if (!localVideoElem) return;
+                    if (!document.fullscreenElement) {
+                        localVideoElem.requestFullscreen().catch(err => console.warn(err));
+                    } else {
+                        document.exitFullscreen();
+                    }
+                };
+            }
         }
+
 
         // Переопределяем глобальную startCall, чтобы использовать встроенный звонок
         window.startCall = startCallInWindow;
