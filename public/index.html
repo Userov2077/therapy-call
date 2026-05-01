@@ -91,7 +91,6 @@
             padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
             border-top: 1px solid var(--border);
             z-index: 1000;
-            /* Убираем фиксированную высоту, пусть подстраивается под контент */
             height: auto;
             min-height: var(--bottom-h);
         }
@@ -881,6 +880,294 @@
             margin-right: 8px;
         }
         @keyframes spin { to { transform: rotate(360deg); } }
+        /* ---------- СТИЛИ ДЛЯ ВСТРОЕННОГО ЗВОНКА ---------- */
+        .call-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #000;
+            z-index: 1500;
+            display: none;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .remote-video-wrapper {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #000;
+            padding: 10px;
+        }
+        #remoteVideo {
+            width: 100%;
+            max-width: 100%;
+            max-height: 40vh;
+            border-radius: 20px;
+            object-fit: contain;
+            background: #000;
+        }
+        @media (min-width: 768px) {
+            #remoteVideo {
+                max-height: 70vh;
+            }
+        }
+        #remoteVideo.camera-mode {
+            object-fit: cover;
+        }
+        #remoteVideo.screen-mode {
+            object-fit: contain;
+        }
+        .local-video-wrapper {
+            position: absolute;
+            bottom: calc(100px + var(--safe-bottom));
+            right: 16px;
+            width: 110px;
+            height: 150px;
+            border-radius: var(--radius);
+            overflow: hidden;
+            border: 1px solid var(--gold-mid);
+            cursor: pointer;
+            z-index: 10;
+            background: #000;
+        }
+        #localVideo {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        .top-bar {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            padding: calc(12px + var(--safe-top)) 16px;
+            display: flex;
+            justify-content: flex-end;
+            z-index: 15;
+            background: linear-gradient(to bottom, rgba(0,0,0,0.5), transparent);
+        }
+        .top-buttons {
+            display: flex;
+            gap: 10px;
+        }
+        .top-btn {
+            background: var(--surface);
+            border: 1px solid var(--gold-mid);
+            border-radius: 40px;
+            padding: 6px 14px;
+            cursor: pointer;
+            font-size: 12px;
+            color: var(--gold);
+            backdrop-filter: blur(16px);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .top-btn i { font-size: 12px; }
+        .menu-wrapper { position: relative; }
+        #extraMenu {
+            position: absolute;
+            right: 0;
+            top: 45px;
+            background: var(--surface-light);
+            backdrop-filter: blur(24px);
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--gold-mid);
+            padding: 8px;
+            display: none;
+            flex-direction: column;
+            gap: 8px;
+            z-index: 30;
+            min-width: 150px;
+        }
+        .waiting-message {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            z-index: 5;
+        }
+        .waiting-ring {
+            width: 52px;
+            height: 52px;
+            border-radius: 50%;
+            border: 1.5px solid rgba(201,169,110,0.2);
+            border-top-color: var(--gold);
+            animation: spin 1.2s infinite;
+            margin: 0 auto 16px;
+        }
+        .controls {
+            position: absolute;
+            bottom: calc(24px + var(--safe-bottom));
+            left: 0;
+            right: 0;
+            display: flex;
+            justify-content: center;
+            gap: 16px;
+            z-index: 20;
+            padding: 0 20px;
+        }
+        .control-btn {
+            width: 52px;
+            height: 52px;
+            border-radius: 50%;
+            border: 1px solid var(--gold-mid);
+            background: var(--surface);
+            backdrop-filter: blur(20px);
+            cursor: pointer;
+            font-size: 18px;
+            color: var(--text);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .control-btn.muted { background: rgba(180,60,60,0.22); color: #e06060; }
+        .end-call { background: rgba(160,30,30,0.7); color: #fff; }
+        .chat-panel {
+            position: absolute;
+            bottom: 100px;
+            right: 16px;
+            width: 300px;
+            max-width: calc(100vw - 32px);
+            background: var(--surface-light);
+            backdrop-filter: blur(28px);
+            border-radius: var(--radius);
+            border: 1px solid rgba(201,169,110,0.18);
+            transform: translateX(calc(100% + 20px));
+            opacity: 0;
+            transition: 0.3s;
+            z-index: 25;
+        }
+        .chat-panel.open { transform: translateX(0); opacity: 1; }
+        .chat-header {
+            padding: 12px 16px;
+            border-bottom: 1px solid rgba(201,169,110,0.1);
+            display: flex;
+            justify-content: space-between;
+        }
+        .chat-messages-call {
+            height: 260px;
+            overflow-y: auto;
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .chat-message-call {
+            max-width: 80%;
+            padding: 8px 12px;
+            border-radius: 14px;
+            font-size: 12px;
+        }
+        .chat-message-call.outgoing {
+            align-self: flex-end;
+            background: rgba(201,169,110,0.18);
+            border-bottom-right-radius: 4px;
+        }
+        .chat-message-call.incoming {
+            align-self: flex-start;
+            background: rgba(255,255,255,0.06);
+            border-bottom-left-radius: 4px;
+        }
+        .chat-input-area-call {
+            display: flex;
+            gap: 8px;
+            padding: 10px;
+            border-top: 1px solid rgba(201,169,110,0.1);
+        }
+        .chat-input-area-call input {
+            flex: 1;
+            padding: 8px 12px;
+            border-radius: 24px;
+            border: 1px solid rgba(201,169,110,0.18);
+            background: rgba(255,255,255,0.04);
+            color: var(--text);
+            font-size: 12px;
+        }
+        .chat-input-area-call button {
+            background: var(--gold-dim);
+            border: 1px solid var(--gold-mid);
+            width: 34px;
+            border-radius: 50%;
+            cursor: pointer;
+            color: var(--gold);
+        }
+        .floating-call {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 160px;
+            background: var(--surface-light);
+            backdrop-filter: blur(24px);
+            border-radius: 16px;
+            border: 1px solid var(--gold-mid);
+            box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+            z-index: 2000;
+            display: none;
+            flex-direction: column;
+            overflow: hidden;
+            cursor: grab;
+        }
+        .floating-call:active { cursor: grabbing; }
+        .floating-header {
+            background: rgba(0,0,0,0.6);
+            padding: 6px 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: grab;
+            font-size: 11px;
+            color: var(--gold);
+        }
+        .floating-header button {
+            background: none;
+            border: none;
+            color: var(--text-dim);
+            cursor: pointer;
+        }
+        .floating-video {
+            aspect-ratio: 16 / 9;
+            background: #000;
+        }
+        .floating-video video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        .floating-controls {
+            display: flex;
+            justify-content: space-around;
+            padding: 6px;
+            background: rgba(0,0,0,0.7);
+        }
+        .floating-controls button {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background: var(--surface);
+            border: 1px solid var(--gold-mid);
+            color: var(--text);
+            font-size: 12px;
+        }
+        @media (max-width: 640px) {
+            .control-btn { width: 46px; height: 46px; font-size: 16px; }
+            .local-video-wrapper { width: 80px; height: 110px; bottom: 80px; }
+            .floating-call { width: 140px; }
+        }
+        :root {
+            --gold: #c9a96e;
+            --gold-mid: rgba(201,169,110,0.45);
+            --surface: rgba(12,14,13,0.88);
+            --surface-light: rgba(22,26,24,0.92);
+            --text: #e8e4dc;
+            --safe-top: env(safe-area-inset-top, 0px);
+            --safe-bottom: env(safe-area-inset-bottom, 0px);
+        }
+        /* ---------- КОНЕЦ СТИЛЕЙ ЗВОНКА ---------- */
         @media (max-width: 768px) {
             .modal-content { padding: 20px 16px 24px; }
             .btn-sm, .btn-login, .btn-register, .btn-logout { padding: 6px 14px; font-size: 12px; }
@@ -931,7 +1218,6 @@
             background: #8bca8b;
             color: #0d2010;
         }
-        /* Для PWA – чтобы фон не вылезал за пределы панели */
         .bottom-nav {
             border-radius: 0;
         }
@@ -960,6 +1246,67 @@
         <div class="nav-item" data-tab="profile"><i class="fas fa-user"></i><span>Профиль</span></div>
     </div>
 
+    <!-- Блок видеозвонка (интегрирован) -->
+    <div id="callContainer" class="call-container">
+        <div class="remote-video-wrapper">
+            <video id="remoteVideo" autoplay playsinline></video>
+        </div>
+        <div id="waitingMessageCall" class="waiting-message" style="display:none;">
+            <div class="waiting-ring"></div>
+            <p>Ожидание собеседника</p>
+        </div>
+        <div class="local-video-wrapper" id="localVideoWrapper">
+            <video id="localVideo" autoplay muted playsinline></video>
+        </div>
+        <div class="top-bar">
+            <div class="top-buttons">
+                <button id="minimizeCallBtn" class="top-btn"><i class="fas fa-window-minimize"></i> Свернуть</button>
+                <div class="menu-wrapper">
+                    <button id="menuCallBtn" class="top-btn"><i class="fas fa-bars"></i></button>
+                    <div id="extraMenuCall">
+                        <button id="recordCallBtn" class="top-btn"><i class="fas fa-circle"></i> Запись</button>
+                        <button id="reconnectCallBtn" class="top-btn"><i class="fas fa-sync-alt"></i> Переподключиться</button>
+                        <button id="goHomeCallBtn" class="top-btn"><i class="fas fa-home"></i> На главную</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="controls">
+            <button id="toggleMicCall" class="control-btn"><i class="fas fa-microphone"></i></button>
+            <button id="toggleCamCall" class="control-btn"><i class="fas fa-video"></i></button>
+            <button id="shareScreenCallBtn" class="control-btn"><i class="fas fa-desktop"></i></button>
+            <button id="chatToggleCallBtn" class="control-btn"><i class="fas fa-comment"></i></button>
+            <button id="endCallBtnMain" class="control-btn end-call"><i class="fas fa-phone-slash"></i></button>
+        </div>
+        <div id="chatPanelCall" class="chat-panel">
+            <div class="chat-header">
+                <span>Чат сессии</span>
+                <button id="closeChatCallBtn"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="chat-messages-call" id="chatMessagesCall"><div class="chat-empty">Сообщения появятся здесь</div></div>
+            <div class="chat-input-area-call">
+                <input type="text" id="chatInputCall" placeholder="Сообщение...">
+                <button id="sendChatCallBtn"><i class="fas fa-paper-plane"></i></button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Плавающее окно (свёрнутый звонок) -->
+    <div id="floatingCall" class="floating-call">
+        <div class="floating-header" id="floatingHeaderCall">
+            <span>🎥 Звонок</span>
+            <button id="restoreCallBtn"><i class="fas fa-expand"></i></button>
+        </div>
+        <div class="floating-video">
+            <video id="floatingRemoteVideo" autoplay playsinline muted></video>
+        </div>
+        <div class="floating-controls">
+            <button id="floatingMicCallBtn"><i class="fas fa-microphone"></i></button>
+            <button id="floatingCamCallBtn"><i class="fas fa-video"></i></button>
+            <button id="floatingEndCallBtn" class="end-call"><i class="fas fa-phone-slash"></i></button>
+        </div>
+    </div>
+
     <script src="/socket.io/socket.io.js"></script>
     <script>
         // ======================= ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ =======================
@@ -976,6 +1323,22 @@
         let feedOffset = 0;
         let feedHasMore = true;
         let feedPosts = [];
+
+        // Переменные для встроенного звонка
+        let currentCallRoomId = null;
+        let currentCallRole = null;
+        let localStream = null;
+        let peerConnection = null;
+        let callPartnerSocketId = null;
+        let isCallActive = false;
+        let isScreenSharing = false;
+        let screenStream = null;
+        let cameraTrack = null;
+        let remoteScreenMode = false;
+        let isRecordingCall = false;
+        let mediaRecorderCall = null;
+        let recordedChunks = [];
+        let callConnectionEstablished = false;
 
         // ======================= ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ =======================
         function showToast(msg, isErr = false) {
@@ -1477,7 +1840,7 @@
             initVideoObservers();
         }
 
-        // ======================= ПРОФИЛЬ (исправлен: инструменты вверху, посты внизу) =======================
+        // ======================= ПРОФИЛЬ =======================
         async function renderProfile() {
     if (!currentUser) { showToast('Войдите в аккаунт', true); return; }
     const isPsych = currentUser.role === 'psychologist';
@@ -1619,7 +1982,6 @@
         document.querySelectorAll('.profile-delete-post').forEach(b => { b.onclick = () => openConfirmModal('Удалить пост?', 'Это действие нельзя отменить.', async () => { await fetch(`/api/posts/${b.dataset.id}`, { method:'DELETE', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ authorId: currentUser.id }) }); renderProfile(); }); });
         document.querySelectorAll('.task-cb').forEach(cb => { cb.onchange = async () => { await fetch(`/api/tasks/${cb.dataset.id}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ completed: cb.checked }) }); const label = cb.closest('.task-item').querySelector('.task-text'); if (label) label.classList.toggle('task-completed', cb.checked); }; });
 
-        // Фильтры для "Записей клиентов"
         const aptFilterBtns = document.querySelectorAll('.filter-appointments-btn');
         if (aptFilterBtns.length) {
             aptFilterBtns.forEach(btn => {
@@ -1632,7 +1994,6 @@
             renderAppointmentsList('upcoming');
         }
 
-        // Фильтры для "Клиентов" (если функция renderClientsList существует)
         const clientFilterBtns = document.querySelectorAll('.filter-clients-btn');
         if (clientFilterBtns.length && typeof renderClientsList === 'function') {
             clientFilterBtns.forEach(btn => {
@@ -1648,59 +2009,58 @@
     checkUpcomingEvents();
 }
 
-        // Фильтрация и отображение списка записей клиентов (для психолога)
-function renderAppointmentsList(filter = 'upcoming') {
-    const container = document.getElementById('appointmentsList');
-    if (!container) return;
+        function renderAppointmentsList(filter = 'upcoming') {
+            const container = document.getElementById('appointmentsList');
+            if (!container) return;
 
-    const allAppointments = currentUser?.clients || [];
-    const now = new Date();
+            const allAppointments = currentUser?.clients || [];
+            const now = new Date();
 
-    let filtered = [];
-    if (filter === 'upcoming') {
-        filtered = allAppointments.filter(a => a.status === 'confirmed' && new Date(a.date + 'T' + a.time) >= now);
-    } else if (filter === 'past') {
-        filtered = allAppointments.filter(a => a.status === 'confirmed' && new Date(a.date + 'T' + a.time) < now);
-    } else if (filter === 'pending') {
-        filtered = allAppointments.filter(a => a.status === 'pending');
-    }
+            let filtered = [];
+            if (filter === 'upcoming') {
+                filtered = allAppointments.filter(a => a.status === 'confirmed' && new Date(a.date + 'T' + a.time) >= now);
+            } else if (filter === 'past') {
+                filtered = allAppointments.filter(a => a.status === 'confirmed' && new Date(a.date + 'T' + a.time) < now);
+            } else if (filter === 'pending') {
+                filtered = allAppointments.filter(a => a.status === 'pending');
+            }
 
-    const subtitle = document.getElementById('appointmentsSubtitle');
-    if (subtitle) {
-        if (filter === 'upcoming') subtitle.textContent = `${filtered.length} предстоящих`;
-        else if (filter === 'past') subtitle.textContent = `${filtered.length} прошедших`;
-        else subtitle.textContent = `${filtered.length} ожидают подтверждения`;
-    }
+            const subtitle = document.getElementById('appointmentsSubtitle');
+            if (subtitle) {
+                if (filter === 'upcoming') subtitle.textContent = `${filtered.length} предстоящих`;
+                else if (filter === 'past') subtitle.textContent = `${filtered.length} прошедших`;
+                else subtitle.textContent = `${filtered.length} ожидают подтверждения`;
+            }
 
-    if (filtered.length === 0) {
-        container.innerHTML = '<div class="empty-state" style="padding:20px;"><i class="fas fa-calendar-times"></i><div>Нет записей</div></div>';
-        return;
-    }
+            if (filtered.length === 0) {
+                container.innerHTML = '<div class="empty-state" style="padding:20px;"><i class="fas fa-calendar-times"></i><div>Нет записей</div></div>';
+                return;
+            }
 
-    let html = '';
-    filtered.forEach(apt => {
-        const isCompleted = apt.status === 'completed';
-        html += `
-            <div class="appointment-item">
-                <div class="appt-info">
-                    <div class="appt-name">${escapeHtml(apt.clientName)}</div>
-                    <div class="appt-time">📅 ${apt.date} в ${apt.time}</div>
-                    <div class="appt-status ${apt.status === 'confirmed' ? 'status-confirmed' : (apt.status === 'pending' ? 'status-pending' : 'status-completed')}">
-                        ${apt.status === 'confirmed' ? (isCompleted ? '✅ Завершён' : '✅ Подтверждено') : (apt.status === 'pending' ? '⏳ Ожидает' : '✅ Завершён')}
+            let html = '';
+            filtered.forEach(apt => {
+                const isCompleted = apt.status === 'completed';
+                html += `
+                    <div class="appointment-item">
+                        <div class="appt-info">
+                            <div class="appt-name">${escapeHtml(apt.clientName)}</div>
+                            <div class="appt-time">📅 ${apt.date} в ${apt.time}</div>
+                            <div class="appt-status ${apt.status === 'confirmed' ? 'status-confirmed' : (apt.status === 'pending' ? 'status-pending' : 'status-completed')}">
+                                ${apt.status === 'confirmed' ? (isCompleted ? '✅ Завершён' : '✅ Подтверждено') : (apt.status === 'pending' ? '⏳ Ожидает' : '✅ Завершён')}
+                            </div>
+                        </div>
+                        <div class="appt-actions">
+                            ${apt.status === 'pending' ? `<button class="btn-sm" onclick="confirmAppointment('${apt.appointmentId}','${apt.clientId}')">Подтвердить</button>` : ''}
+                            ${apt.status === 'confirmed' && !isCompleted ? `<button class="btn-sm" onclick="startCall('${apt.roomId}', 'psychologist')"><i class="fas fa-video"></i> Начать</button>` : ''}
+                            ${isCompleted ? '<i class="fas fa-check-circle" style="color:var(--green); font-size:20px;"></i>' : ''}
+                            <button class="btn-sm btn-outline" onclick="startChatWith('${apt.clientId}','${escapeHtml(apt.clientName)}')"><i class="fas fa-comment-dots"></i> Чат</button>
+                        </div>
                     </div>
-                </div>
-                <div class="appt-actions">
-                    ${apt.status === 'pending' ? `<button class="btn-sm" onclick="confirmAppointment('${apt.appointmentId}','${apt.clientId}')">Подтвердить</button>` : ''}
-                    ${apt.status === 'confirmed' && !isCompleted ? `<button class="btn-sm" onclick="startCall('${apt.roomId}', 'psychologist')"><i class="fas fa-video"></i> Начать</button>` : ''}
-                    ${isCompleted ? '<i class="fas fa-check-circle" style="color:var(--green); font-size:20px;"></i>' : ''}
-                    <button class="btn-sm btn-outline" onclick="startChatWith('${apt.clientId}','${escapeHtml(apt.clientName)}')"><i class="fas fa-comment-dots"></i> Чат</button>
-                </div>
-            </div>
-        `;
-    });
-    container.innerHTML = html;
-}
-        // ======================= ФИЛЬТРАЦИЯ КЛИЕНТОВ (для психолога) =======================
+                `;
+            });
+            container.innerHTML = html;
+        }
+
         function renderClientsList(filter = 'upcoming') {
             const container = document.getElementById('clientsList');
             if (!container) return;
@@ -2577,263 +2937,396 @@ function renderAppointmentsList(filter = 'upcoming') {
             });
         }
 
-        function startCall(roomId, role) {
-            window.location.href = `/call.html?room=${roomId}&role=${role}`;
+        // ======================= ВСТРОЕННЫЙ ВИДЕОЗВОНОК (startCall теперь интегрирован) =======================
+        async function getIceServers() {
+            return [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' },
+                { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+                { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' }
+            ];
         }
 
-        // ======================= ЧАТ =======================
-        async function renderChats() {
-            currentChatPartner = null;
-            if (!currentUser) { showToast('Войдите в аккаунт', true); return; }
-            await refreshUser();
-            document.getElementById('mainContent').innerHTML = `<div class="container"><div class="empty-state"><i class="fas fa-circle-notch fa-spin"></i></div></div>`;
-            const messagesRes = await fetchJSON(`/api/messages/${currentUser.id}`);
-            const messages = messagesRes.messages || [];
-            const usersFromServer = messagesRes.users || [];
-            const contactsMap = new Map();
-            const unreadCountsFromServer = currentUser.unreadCounts || {};
-            messages.forEach(msg => {
-                const contactId = msg.from_user === currentUser.id ? msg.to_user : msg.from_user;
-                if (!contactsMap.has(contactId)) {
-                    contactsMap.set(contactId, { lastMessage: msg.text || (msg.image ? '📷 Фото' : (msg.voice ? '🎤 Голосовое' : 'Вложение')), lastTime: msg.created_at });
-                } else {
-                    const existing = contactsMap.get(contactId);
-                    if (new Date(msg.created_at) > new Date(existing.lastTime)) {
-                        existing.lastMessage = msg.text || (msg.image ? '📷 Фото' : (msg.voice ? '🎤 Голосовое' : 'Вложение'));
-                        existing.lastTime = msg.created_at;
-                    }
-                }
-            });
-            const contacts = usersFromServer.map(u => {
-                const contactInfo = contactsMap.get(u.id) || { lastMessage: '', lastTime: new Date(0).toISOString() };
-                const unread = unreadCountsFromServer[u.id] || 0;
-                return { ...u, ...contactInfo, unread };
-            }).sort((a,b) => new Date(b.lastTime) - new Date(a.lastTime));
-            let html = `<div class="container"><div class="page-title">Сообщения</div><div class="chat-list">`;
-            for (const c of contacts) {
-                                html += `<div class="chat-contact glass-card" data-contact-id="${c.id}" onclick="openChat('${c.id}','${escapeHtml(c.fullName)}')">
-                            <img class="chat-contact-avatar" src="${escapeHtml(c.avatar)}" onerror="this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(c.fullName)}&background=8bca8b&color=fff'">
-                            <div class="chat-contact-info">
-                                <div class="chat-contact-name">${escapeHtml(c.fullName)}</div>
-                                <div class="chat-contact-last">${escapeHtml((c.lastMessage || '').substring(0, 40))}</div>
-                            </div>
-                            ${c.unread > 0 ? `<div class="unread-badge">${c.unread}</div>` : ''}
-                        </div>`;
-            }
-            if (contacts.length === 0) html += '<div class="empty-state glass-card" style="padding:40px;"><i class="fas fa-comment-slash"></i><div>Нет сообщений. Напишите психологу из раздела «Психологи»!</div></div>';
-            html += `</div></div>`;
-            document.getElementById('mainContent').innerHTML = html;
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-        }
-
-        async function openChat(userId, userName) {
-            currentChatPartner = { id: userId, name: userName };
-            await fetch('/api/messages/read', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: currentUser.id, fromUserId: userId }) });
-            if (currentUser.unreadCounts && currentUser.unreadCounts[userId]) delete currentUser.unreadCounts[userId];
-            if (currentTab === 'chats') {
-                const chatItems = document.querySelectorAll('.chat-contact');
-                for (const item of chatItems) {
-                    if (item.getAttribute('data-contact-id') === userId) { const badge = item.querySelector('.unread-badge'); if (badge) badge.remove(); break; }
-                }
-            }
-            document.getElementById('mainContent').innerHTML = `
-                <div class="chat-page">
-                    <div class="chat-messages-container">
-                        <div class="chat-messages-header">
-                            <button class="back-btn" onclick="renderChats()"><i class="fas fa-arrow-left"></i></button>
-                            <img src="" id="chatPartnerAvatar" style="width:36px;height:36px;border-radius:50%;object-fit:cover;border:2px solid var(--green-border);" onerror="this.style.display='none'">
-                            <div style="flex:1"><div style="font-weight:600;font-size:15px;">${escapeHtml(userName)}</div></div>
-                        </div>
-                        <div class="chat-messages-list" id="chatMessagesList"></div>
-                        <div class="chat-input-area">
-                            <div class="chat-controls">
-                                <button id="attachImageBtn" title="Фото"><i class="fas fa-image"></i></button>
-                                <button id="voiceRecordBtn" title="Голосовое"><i class="fas fa-microphone"></i></button>
-                            </div>
-                            <input type="file" id="imageInput" accept="image/*" style="display:none">
-                            <input type="text" id="chatMessageInput" placeholder="Сообщение...">
-                            <button class="send-btn-chat" id="sendMsgBtn"><i class="fas fa-paper-plane"></i></button>
-                        </div>
-                    </div>
-                </div>`;
-            await new Promise(resolve => setTimeout(resolve, 10));
-            fetch(`/api/user/${userId}`).then(r => r.json()).then(d => { const av = document.getElementById('chatPartnerAvatar'); if (av && d.success) av.src = d.user.avatar; }).catch(console.error);
-            await loadChatMessages();
-            scrollToBottom();
-            const sendBtn = document.getElementById('sendMsgBtn');
-            const chatInput = document.getElementById('chatMessageInput');
-            const attachBtn = document.getElementById('attachImageBtn');
-            const imageInput = document.getElementById('imageInput');
-            const voiceBtn = document.getElementById('voiceRecordBtn');
-            if (sendBtn) sendBtn.onclick = sendChatMessage;
-            if (chatInput) chatInput.onkeypress = (e) => { if (e.key === 'Enter') sendChatMessage(); };
-            if (attachBtn && imageInput) {
-                attachBtn.onclick = () => imageInput.click();
-                imageInput.onchange = async () => {
-                    const file = imageInput.files[0];
-                    if (!file || !file.type.startsWith('image/')) { showToast('Только изображения', true); return; }
-                    const compressedBlob = await compressImage(file, 1024, 0.8);
-                    const formData = new FormData();
-                    formData.append('image', compressedBlob, file.name);
-                    const res = await fetch('/api/upload-chat-image', { method: 'POST', body: formData });
-                    const data = await res.json();
-                    if (data.success) {
-                        await fetch('/api/messages', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ from: currentUser.id, to: currentChatPartner.id, text: '', image: data.imageUrl }) });
-                        await loadChatMessages();
-                        scrollToBottom();
-                    }
-                    imageInput.value = '';
-                };
-            }
-            if (voiceBtn) {
-                let mediaRecorder = null, audioChunks = [], isRecording = false;
-                voiceBtn.onclick = async () => {
-                    if (!isRecording) {
-                        try {
-                            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                            mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
-                            audioChunks = [];
-                            mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunks.push(e.data); };
-                            mediaRecorder.onstop = async () => {
-                                const blob = new Blob(audioChunks, { type: 'audio/webm' });
-                                const fd = new FormData();
-                                fd.append('voice', blob, 'voice.webm');
-                                const res = await fetch('/api/upload-voice', { method: 'POST', body: fd });
-                                const data = await res.json();
-                                if (data.success) {
-                                    await fetch('/api/messages', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ from: currentUser.id, to: currentChatPartner.id, text: '', voice: data.voiceUrl }) });
-                                    await loadChatMessages();
-                                    scrollToBottom();
-                                    showToast('Голосовое отправлено');
-                                }
-                                stream.getTracks().forEach(t => t.stop());
-                                voiceBtn.innerHTML = '<i class="fas fa-microphone"></i>';
-                                voiceBtn.classList.remove('recording-active');
-                                isRecording = false;
-                            };
-                            mediaRecorder.start();
-                            isRecording = true;
-                            voiceBtn.classList.add('recording-active');
-                            voiceBtn.innerHTML = '<i class="fas fa-stop"></i>';
-                            setTimeout(() => { if (mediaRecorder?.state === 'recording') mediaRecorder.stop(); }, 30000);
-                        } catch(e) { showToast('Нет доступа к микрофону', true); }
-                    } else { if (mediaRecorder?.state === 'recording') mediaRecorder.stop(); }
-                };
-            }
-        }
-
-        async function loadChatMessages() {
-            if (!currentChatPartner) return;
-            const res = await fetchJSON(`/api/messages/${currentUser.id}`);
-            const messages = (res.messages || []).filter(m => (m.from_user === currentChatPartner.id && m.to_user === currentUser.id) || (m.from_user === currentUser.id && m.to_user === currentChatPartner.id));
-            messages.sort((a,b) => new Date(a.created_at) - new Date(b.created_at));
-            const listDiv = document.getElementById('chatMessagesList');
-            if (!listDiv) return;
-            let html = '';
-            for (const m of messages) {
-                let voiceHtml = '';
-                if (m.voice) voiceHtml = `<div class="voice-message"><audio controls src="${escapeHtml(m.voice)}"></audio></div>`;
-                const isOutgoing = m.from_user === currentUser.id;
-                html += `<div class="message ${isOutgoing ? 'outgoing' : 'incoming'}">
-                            ${m.text ? `<div class="message-text">${escapeHtml(m.text)}</div>` : ''}
-                            ${m.image ? `<img class="chat-image" src="${escapeHtml(m.image)}" onclick="openImageModal('${escapeHtml(m.image)}')">` : ''}
-                            ${voiceHtml}
-                            <div class="message-time">${new Date(m.created_at).toLocaleTimeString()}</div>
-                        </div>`;
-            }
-            listDiv.innerHTML = html;
-            document.querySelectorAll('.voice-message').forEach(container => {
-                const audio = container.querySelector('audio');
-                if (audio && !container.querySelector('.speed-btn')) addSpeedButtonToAudio(audio);
-            });
-            scrollToBottom();
-        }
-
-        function addSpeedButtonToAudio(audio) {
-            const container = audio.closest('.voice-message');
-            if (!container || container.querySelector('.speed-btn')) return;
-            const speeds = [1, 1.5, 2];
-            let currentSpeed = 1;
-            const btn = document.createElement('button');
-            btn.className = 'speed-btn';
-            btn.textContent = `${currentSpeed}x`;
-            btn.onclick = (e) => {
-                e.stopPropagation();
-                let idx = speeds.indexOf(currentSpeed);
-                idx = (idx + 1) % speeds.length;
-                currentSpeed = speeds[idx];
-                audio.playbackRate = currentSpeed;
-                btn.textContent = `${currentSpeed}x`;
+        async function createPeerConnectionCall() {
+            if (peerConnection) peerConnection.close();
+            const config = { iceServers: await getIceServers(), iceTransportPolicy: 'all' };
+            peerConnection = new RTCPeerConnection(config);
+            if (localStream) localStream.getTracks().forEach(t => peerConnection.addTrack(t, localStream));
+            peerConnection.ontrack = (event) => {
+                const stream = event.streams[0];
+                const remoteVideoElem = document.getElementById('remoteVideo');
+                const floatingRemoteVideoElem = document.getElementById('floatingRemoteVideo');
+                if (remoteVideoElem) remoteVideoElem.srcObject = stream;
+                if (floatingRemoteVideoElem) floatingRemoteVideoElem.srcObject = stream;
+                const waitingMsgElem = document.getElementById('waitingMessageCall');
+                if (waitingMsgElem) waitingMsgElem.style.display = 'none';
+                callConnectionEstablished = true;
+                updateRemoteVideoMode(remoteScreenMode);
             };
-            container.appendChild(btn);
+            peerConnection.onicecandidate = (event) => {
+                if (event.candidate && socket && callPartnerSocketId)
+                    socket.emit('ice-candidate', { target: callPartnerSocketId, candidate: event.candidate });
+            };
+            peerConnection.oniceconnectionstatechange = () => {
+                if (!peerConnection) return;
+                const state = peerConnection.iceConnectionState;
+                if (state === 'connected') {
+                    callConnectionEstablished = true;
+                    const waitingMsgElem = document.getElementById('waitingMessageCall');
+                    if (waitingMsgElem) waitingMsgElem.style.display = 'none';
+                } else if (state === 'failed' || state === 'disconnected') {
+                    callConnectionEstablished = false;
+                    const waitingMsgElem = document.getElementById('waitingMessageCall');
+                    if (waitingMsgElem) waitingMsgElem.style.display = 'flex';
+                    setTimeout(() => { if (!callConnectionEstablished) reconnectCall(); }, 3000);
+                }
+            };
+            return peerConnection;
         }
 
-        function updateChatListUnread(contactId, count) {
-            const chatItems = document.querySelectorAll('.chat-contact');
-            for (const item of chatItems) {
-                if (item.getAttribute('data-contact-id') === contactId) {
-                    const existingBadge = item.querySelector('.unread-badge');
-                    if (count > 0) {
-                        if (existingBadge) existingBadge.textContent = count;
-                        else item.insertAdjacentHTML('beforeend', `<div class="unread-badge">${count}</div>`);
-                    } else { if (existingBadge) existingBadge.remove(); }
-                    break;
+        async function initWebRTCCall(createOffer = true) {
+            if (!localStream) return;
+            await createPeerConnectionCall();
+            if (createOffer && socket && callPartnerSocketId) {
+                const offer = await peerConnection.createOffer();
+                await peerConnection.setLocalDescription(offer);
+                socket.emit('offer', { target: callPartnerSocketId, sdp: offer });
+            }
+        }
+
+        async function startLocalStreamCall() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+                localStream = stream;
+                const localVideoElem = document.getElementById('localVideo');
+                if (localVideoElem) localVideoElem.srcObject = localStream;
+                cameraTrack = localStream.getVideoTracks()[0];
+                if (socket && callPartnerSocketId) await initWebRTCCall(currentCallRole === 'psychologist');
+            } catch (e) { showToast('Нет доступа к камере/микрофону', true); }
+        }
+
+        async function replaceVideoTrackCall(newTrack) {
+            if (!peerConnection) return;
+            const sender = peerConnection.getSenders().find(s => s.track?.kind === 'video');
+            if (sender) await sender.replaceTrack(newTrack);
+            else if (newTrack) peerConnection.addTrack(newTrack, localStream);
+            if (newTrack) {
+                const newStream = new MediaStream();
+                newStream.addTrack(newTrack);
+                if (localStream.getAudioTracks()[0]) newStream.addTrack(localStream.getAudioTracks()[0]);
+                const localVideoElem = document.getElementById('localVideo');
+                if (localVideoElem) localVideoElem.srcObject = newStream;
+            }
+        }
+
+        async function startScreenShareCall() {
+            if (isScreenSharing || !navigator.mediaDevices?.getDisplayMedia) return showToast('Не поддерживается', true);
+            try {
+                const screen = await navigator.mediaDevices.getDisplayMedia({ video: true });
+                screenStream = screen;
+                const track = screen.getVideoTracks()[0];
+                if (cameraTrack) cameraTrack.enabled = false;
+                await replaceVideoTrackCall(track);
+                isScreenSharing = true;
+                const shareBtn = document.getElementById('shareScreenCallBtn');
+                if (shareBtn) shareBtn.classList.add('share-active');
+                if (socket) socket.emit('call-message', { text: 'Начал трансляцию экрана' });
+                if (socket) socket.emit('screen-share-started', { roomId: currentCallRoomId });
+                track.onended = () => stopScreenShareCall();
+            } catch(e) { showToast('Ошибка трансляции', true); }
+        }
+
+        async function stopScreenShareCall() {
+            if (!isScreenSharing) return;
+            if (screenStream) screenStream.getTracks().forEach(t => t.stop());
+            screenStream = null;
+            if (cameraTrack) { cameraTrack.enabled = true; await replaceVideoTrackCall(cameraTrack); }
+            else await replaceVideoTrackCall(null);
+            isScreenSharing = false;
+            const shareBtn = document.getElementById('shareScreenCallBtn');
+            if (shareBtn) shareBtn.classList.remove('share-active');
+            if (socket) socket.emit('call-message', { text: 'Остановил трансляцию экрана' });
+            if (socket) socket.emit('screen-share-stopped', { roomId: currentCallRoomId });
+        }
+
+        function toggleScreenShareCall() { isScreenSharing ? stopScreenShareCall() : startScreenShareCall(); }
+
+        function addCallChatMessage(text, isOutgoing = false, time = null) {
+            const container = document.getElementById('chatMessagesCall');
+            if (!container) return;
+            const empty = container.querySelector('.chat-empty');
+            if (empty) empty.remove();
+            const div = document.createElement('div');
+            div.className = 'chat-message-call ' + (isOutgoing ? 'outgoing' : 'incoming');
+            const t = time ? new Date(time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            div.innerHTML = `<div>${escapeHtml(text)}</div><div class="chat-message-time">${t}</div>`;
+            container.appendChild(div);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function sendCallChatMessage() {
+            const input = document.getElementById('chatInputCall');
+            if (!input) return;
+            const text = input.value.trim();
+            if (text && socket && callPartnerSocketId) {
+                addCallChatMessage(text, true);
+                socket.emit('call-message', { text: text });
+                input.value = '';
+            }
+        }
+
+        function startCallRecording() {
+            if (!localStream) return;
+            recordedChunks = [];
+            const stream = new MediaStream([localStream.getAudioTracks()[0]]);
+            mediaRecorderCall = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+            mediaRecorderCall.ondataavailable = e => { if (e.data.size) recordedChunks.push(e.data); };
+            mediaRecorderCall.onstop = async () => {
+                const blob = new Blob(recordedChunks, { type: 'audio/webm' });
+                const fd = new FormData();
+                fd.append('recording', blob, `call_${Date.now()}.webm`);
+                fd.append('from', currentUser.id);
+                fd.append('to', callPartnerSocketId || 'unknown');
+                fd.append('roomId', currentCallRoomId);
+                try {
+                    await fetch('/api/upload-recording', { method: 'POST', body: fd });
+                    showToast('Запись сохранена');
+                } catch(e) {}
+            };
+            mediaRecorderCall.start(1000);
+            isRecordingCall = true;
+            const recordBtn = document.getElementById('recordCallBtn');
+            if (recordBtn) {
+                recordBtn.classList.add('recording-active');
+                recordBtn.innerHTML = '<span class="rec-dot"></span> Запись ...';
+            }
+        }
+
+        function stopCallRecording() {
+            if (mediaRecorderCall?.state === 'recording') {
+                mediaRecorderCall.stop();
+                isRecordingCall = false;
+                const recordBtn = document.getElementById('recordCallBtn');
+                if (recordBtn) {
+                    recordBtn.classList.remove('recording-active');
+                    recordBtn.innerHTML = '<i class="fas fa-circle"></i> Запись';
                 }
             }
         }
 
-        function updateChatListItem(msg, senderName, preview) {
-            const contactDiv = document.querySelector(`.chat-contact[data-contact-id="${msg.from}"]`);
-            if (!contactDiv) return;
-            const lastMsgSpan = contactDiv.querySelector('.chat-contact-last');
-            if (lastMsgSpan) lastMsgSpan.textContent = preview.length > 40 ? preview.substring(0,37)+'...' : preview;
-            let badge = contactDiv.querySelector('.unread-badge');
-            const currentCount = currentUser?.unreadCounts?.[msg.from] || 0;
-            if (currentCount > 0) {
-                if (badge) badge.textContent = currentCount;
-                else contactDiv.insertAdjacentHTML('beforeend', `<div class="unread-badge">${currentCount}</div>`);
-            } else { if (badge) badge.remove(); }
-            const parent = contactDiv.parentNode;
-            parent.insertBefore(contactDiv, parent.firstChild);
+        function toggleCallRecording() { isRecordingCall ? stopCallRecording() : startCallRecording(); }
+
+        function endCall() {
+            if (socket) socket.emit('end-call');
+            stopCallRecording();
+            if (peerConnection) peerConnection.close();
+            if (localStream) localStream.getTracks().forEach(t => t.stop());
+            if (screenStream) screenStream.getTracks().forEach(t => t.stop());
+            // Скрыть блок звонка и плавающее окно
+            const fullscreenCall = document.getElementById('callContainer');
+            const floatingCallElem = document.getElementById('floatingCall');
+            if (fullscreenCall) fullscreenCall.style.display = 'none';
+            if (floatingCallElem) floatingCallElem.style.display = 'none';
+            isCallActive = false;
+            currentCallRoomId = null;
+            currentCallRole = null;
+            callPartnerSocketId = null;
+            callConnectionEstablished = false;
+            // Вернуть основной контент на место (он уже виден, потому что звонок скрыт)
         }
 
-        async function sendChatMessage() {
-            const input = document.getElementById('chatMessageInput');
-            if (!input || !input.value.trim()) return;
-            const text = input.value.trim();
-            input.value = '';
-            const tempMsg = { id: Date.now().toString(), from: currentUser.id, to: currentChatPartner.id, text, created_at: new Date().toISOString() };
-            appendMessageToChat(tempMsg);
-            try {
-                await fetch('/api/messages', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ from: currentUser.id, to: currentChatPartner.id, text }) });
-            } catch(e) { showToast('Ошибка отправки', true); }
-            scrollToBottom();
-        }
-
-        function appendMessageToChat(msg) {
-            const listDiv = document.getElementById('chatMessagesList');
-            if (!listDiv) return;
-            const fromId = msg.from_user || msg.from;
-            const isOutgoing = fromId === currentUser.id;
-            let voiceHtml = '';
-            if (msg.voice) voiceHtml = `<div class="voice-message"><audio controls src="${escapeHtml(msg.voice)}"></audio></div>`;
-            const messageHtml = `<div class="message ${isOutgoing ? 'outgoing' : 'incoming'}">${msg.text ? `<div class="message-text">${escapeHtml(msg.text)}</div>` : ''}${msg.image ? `<img class="chat-image" src="${escapeHtml(msg.image)}" onclick="openImageModal('${escapeHtml(msg.image)}')">` : ''}${voiceHtml}<div class="message-time">${new Date(msg.created_at || msg.createdAt || Date.now()).toLocaleTimeString()}</div></div>`;
-            listDiv.insertAdjacentHTML('beforeend', messageHtml);
-            scrollToBottom();
-            if (msg.voice) {
-                const audio = listDiv.querySelector('.voice-message:last-child audio');
-                if (audio && !audio.parentElement.querySelector('.speed-btn')) addSpeedButtonToAudio(audio);
+        function reconnectCall() {
+            if (socket) socket.disconnect();
+            callPartnerSocketId = null;
+            if (peerConnection) peerConnection.close();
+            peerConnection = null;
+            // Переподключение сокета
+            if (socket) socket.connect();
+            const waitingMsgElem = document.getElementById('waitingMessageCall');
+            if (waitingMsgElem) waitingMsgElem.style.display = 'flex';
+            callConnectionEstablished = false;
+            // Повторная инициализация звонка (вызов startCallInWindow с тем же roomId)
+            if (currentCallRoomId && currentCallRole) {
+                startCallInWindow(currentCallRoomId, currentCallRole);
             }
         }
 
-        function startChatWith(userId, name) {
-            if (!currentUser) { showToast('Войдите в аккаунт', true); return; }
-            currentTab = 'chats';
-            document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
-            const chatNav = document.querySelector('.nav-item[data-tab="chats"]');
-            if (chatNav) chatNav.classList.add('active');
-            openChat(userId, name);
+        function updateRemoteVideoMode(isScreen) {
+            const remoteVideoElem = document.getElementById('remoteVideo');
+            if (!remoteVideoElem) return;
+            if (isScreen) {
+                remoteVideoElem.classList.remove('camera-mode');
+                remoteVideoElem.classList.add('screen-mode');
+            } else {
+                remoteVideoElem.classList.remove('screen-mode');
+                remoteVideoElem.classList.add('camera-mode');
+            }
         }
+
+        function minimizeCall() {
+            if (!isCallActive) return;
+            const fullscreenCall = document.getElementById('callContainer');
+            const floatingCallElem = document.getElementById('floatingCall');
+            if (fullscreenCall) fullscreenCall.style.display = 'none';
+            if (floatingCallElem) floatingCallElem.style.display = 'flex';
+            // Синхронизируем состояние микрофона и камеры с плавающими кнопками
+            const micEnabled = localStream?.getAudioTracks()[0]?.enabled ?? true;
+            const camEnabled = localStream?.getVideoTracks()[0]?.enabled ?? true;
+            const floatingMicBtn = document.getElementById('floatingMicCallBtn');
+            const floatingCamBtn = document.getElementById('floatingCamCallBtn');
+            if (floatingMicBtn) {
+                floatingMicBtn.innerHTML = micEnabled ? '<i class="fas fa-microphone"></i>' : '<i class="fas fa-microphone-slash"></i>';
+                floatingMicBtn.classList.toggle('muted', !micEnabled);
+            }
+            if (floatingCamBtn) {
+                floatingCamBtn.innerHTML = camEnabled ? '<i class="fas fa-video"></i>' : '<i class="fas fa-video-slash"></i>';
+                floatingCamBtn.classList.toggle('muted', !camEnabled);
+            }
+            // Переносим видео в мини-окно уже происходит через ontrack, но на всякий случай продублируем
+            const remoteVideoElem = document.getElementById('remoteVideo');
+            const floatingRemoteVideoElem = document.getElementById('floatingRemoteVideo');
+            if (remoteVideoElem && remoteVideoElem.srcObject && floatingRemoteVideoElem && floatingRemoteVideoElem.srcObject !== remoteVideoElem.srcObject) {
+                floatingRemoteVideoElem.srcObject = remoteVideoElem.srcObject;
+            }
+        }
+
+        function restoreCall() {
+            const fullscreenCall = document.getElementById('callContainer');
+            const floatingCallElem = document.getElementById('floatingCall');
+            if (fullscreenCall) fullscreenCall.style.display = 'flex';
+            if (floatingCallElem) floatingCallElem.style.display = 'none';
+            // Возвращаем видео обратно
+            const remoteVideoElem = document.getElementById('remoteVideo');
+            const floatingRemoteVideoElem = document.getElementById('floatingRemoteVideo');
+            if (floatingRemoteVideoElem && floatingRemoteVideoElem.srcObject && remoteVideoElem && remoteVideoElem.srcObject !== floatingRemoteVideoElem.srcObject) {
+                remoteVideoElem.srcObject = floatingRemoteVideoElem.srcObject;
+            }
+        }
+
+        async function startCallInWindow(roomId, role) {
+            if (isCallActive) {
+                showToast('Звонок уже активен. Сначала завершите его.', true);
+                return;
+            }
+            currentCallRoomId = roomId;
+            currentCallRole = role;
+            isCallActive = true;
+            // Показать полноэкранный блок звонка
+            const fullscreenCall = document.getElementById('callContainer');
+            const floatingCallElem = document.getElementById('floatingCall');
+            if (fullscreenCall) fullscreenCall.style.display = 'flex';
+            if (floatingCallElem) floatingCallElem.style.display = 'none';
+            // Сбросить состояние
+            callPartnerSocketId = null;
+            callConnectionEstablished = false;
+            const waitingMsgElem = document.getElementById('waitingMessageCall');
+            if (waitingMsgElem) waitingMsgElem.style.display = 'flex';
+            // Запросить локальные медиа
+            await startLocalStreamCall();
+            // Настроить сокетные обработчики для звонка (если ещё не настроены)
+            if (!socket) initSocket();
+            if (socket) {
+                socket.emit('join-call-room', roomId, currentUser.id, role);
+                // Обработчики (могут быть добавлены повторно, но лучше убедиться, что они не дублируются)
+                socket.off('room-joined');
+                socket.off('call-ready');
+                socket.off('offer');
+                socket.off('answer');
+                socket.off('ice-candidate');
+                socket.off('call-message');
+                socket.off('screen-share-started');
+                socket.off('screen-share-stopped');
+                socket.off('call-ended');
+                socket.off('partner-disconnected');
+                socket.on('room-joined', () => {
+                    waitingMsgElem.style.display = 'flex';
+                    callConnectionEstablished = false;
+                });
+                socket.on('call-ready', async (data) => {
+                    callPartnerSocketId = data.partnerId;
+                    waitingMsgElem.style.display = 'none';
+                    if (localStream) await initWebRTCCall(role === 'psychologist');
+                    else {
+                        const iv = setInterval(async () => {
+                            if (localStream) { clearInterval(iv); await initWebRTCCall(role === 'psychologist'); }
+                        }, 200);
+                    }
+                });
+                socket.on('offer', async (data) => {
+                    callPartnerSocketId = data.from;
+                    if (!peerConnection) await createPeerConnectionCall();
+                    await peerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp));
+                    const answer = await peerConnection.createAnswer();
+                    await peerConnection.setLocalDescription(answer);
+                    socket.emit('answer', { target: callPartnerSocketId, sdp: answer });
+                });
+                socket.on('answer', async (data) => { if (peerConnection) await peerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp)); });
+                socket.on('ice-candidate', async (data) => { if (peerConnection) try { await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate)); } catch(e) {} });
+                socket.on('call-message', (data) => addCallChatMessage(data.text, false, data.time));
+                socket.on('screen-share-started', () => { remoteScreenMode = true; updateRemoteVideoMode(true); });
+                socket.on('screen-share-stopped', () => { remoteScreenMode = false; updateRemoteVideoMode(false); });
+                socket.on('call-ended', () => { showToast('Сессия завершена'); endCall(); });
+                socket.on('partner-disconnected', () => { showToast('Собеседник отключился', true); waitingMsgElem.style.display = 'flex'; callConnectionEstablished = false; });
+            }
+            // Привязать обработчики кнопок управления звонком
+            const toggleMicCallBtn = document.getElementById('toggleMicCall');
+            const toggleCamCallBtn = document.getElementById('toggleCamCall');
+            const shareScreenCallBtn = document.getElementById('shareScreenCallBtn');
+            const recordCallBtn = document.getElementById('recordCallBtn');
+            const reconnectCallBtn = document.getElementById('reconnectCallBtn');
+            const endCallBtnMain = document.getElementById('endCallBtnMain');
+            const chatToggleCallBtn = document.getElementById('chatToggleCallBtn');
+            const closeChatCallBtn = document.getElementById('closeChatCallBtn');
+            const sendChatCallBtn = document.getElementById('sendChatCallBtn');
+            const chatInputCall = document.getElementById('chatInputCall');
+            const minimizeCallBtn = document.getElementById('minimizeCallBtn');
+            const menuCallBtn = document.getElementById('menuCallBtn');
+            const extraMenuCall = document.getElementById('extraMenuCall');
+            const recordCallBtnInMenu = document.getElementById('recordCallBtn');
+            const reconnectCallBtnInMenu = document.getElementById('reconnectCallBtn');
+            const goHomeCallBtn = document.getElementById('goHomeCallBtn');
+            const floatingMicCallBtn = document.getElementById('floatingMicCallBtn');
+            const floatingCamCallBtn = document.getElementById('floatingCamCallBtn');
+            const floatingEndCallBtn = document.getElementById('floatingEndCallBtn');
+            const restoreCallBtn = document.getElementById('restoreCallBtn');
+
+            // Функции управления звонком (локальные)
+            const toggleMic = () => { if (localStream) { const t = localStream.getAudioTracks()[0]; if (t) { t.enabled = !t.enabled; if (toggleMicCallBtn) toggleMicCallBtn.classList.toggle('muted'); if (toggleMicCallBtn) toggleMicCallBtn.innerHTML = t.enabled ? '<i class="fas fa-microphone"></i>' : '<i class="fas fa-microphone-slash"></i>'; const flMicBtn = document.getElementById('floatingMicCallBtn'); if (flMicBtn) { flMicBtn.innerHTML = t.enabled ? '<i class="fas fa-microphone"></i>' : '<i class="fas fa-microphone-slash"></i>'; flMicBtn.classList.toggle('muted', !t.enabled); } } } };
+            const toggleCam = () => { if (localStream) { const t = localStream.getVideoTracks()[0]; if (t) { t.enabled = !t.enabled; if (toggleCamCallBtn) toggleCamCallBtn.classList.toggle('muted'); if (toggleCamCallBtn) toggleCamCallBtn.innerHTML = t.enabled ? '<i class="fas fa-video"></i>' : '<i class="fas fa-video-slash"></i>'; const flCamBtn = document.getElementById('floatingCamCallBtn'); if (flCamBtn) { flCamBtn.innerHTML = t.enabled ? '<i class="fas fa-video"></i>' : '<i class="fas fa-video-slash"></i>'; flCamBtn.classList.toggle('muted', !t.enabled); } } } };
+            const toggleScreen = toggleScreenShareCall;
+            const toggleRecord = toggleCallRecording;
+            const reconnect = reconnectCall;
+            const end = endCall;
+            const toggleChatPanel = () => { const panel = document.getElementById('chatPanelCall'); if (panel) panel.classList.toggle('open'); };
+            const closeChatPanel = () => { const panel = document.getElementById('chatPanelCall'); if (panel) panel.classList.remove('open'); };
+            const sendMessage = sendCallChatMessage;
+
+            if (toggleMicCallBtn) toggleMicCallBtn.onclick = toggleMic;
+            if (toggleCamCallBtn) toggleCamCallBtn.onclick = toggleCam;
+            if (shareScreenCallBtn) shareScreenCallBtn.onclick = toggleScreen;
+            if (recordCallBtn) recordCallBtn.onclick = toggleRecord;
+            if (reconnectCallBtn) reconnectCallBtn.onclick = reconnect;
+            if (endCallBtnMain) endCallBtnMain.onclick = end;
+            if (chatToggleCallBtn) chatToggleCallBtn.onclick = toggleChatPanel;
+            if (closeChatCallBtn) closeChatCallBtn.onclick = closeChatPanel;
+            if (sendChatCallBtn) sendChatCallBtn.onclick = sendMessage;
+            if (chatInputCall) chatInputCall.onkeypress = (e) => { if (e.key === 'Enter') sendMessage(); };
+            if (minimizeCallBtn) minimizeCallBtn.onclick = minimizeCall;
+            if (restoreCallBtn) restoreCallBtn.onclick = restoreCall;
+            if (floatingMicCallBtn) floatingMicCallBtn.onclick = toggleMic;
+            if (floatingCamCallBtn) floatingCamCallBtn.onclick = toggleCam;
+            if (floatingEndCallBtn) floatingEndCallBtn.onclick = end;
+            if (goHomeCallBtn) goHomeCallBtn.onclick = () => { window.open('/', '_blank'); };
+            if (menuCallBtn && extraMenuCall) {
+                menuCallBtn.onclick = (e) => { e.stopPropagation(); const vis = extraMenuCall.style.display === 'flex'; extraMenuCall.style.display = vis ? 'none' : 'flex'; };
+                document.addEventListener('click', (e) => { if (!menuCallBtn.contains(e.target) && !extraMenuCall.contains(e.target)) extraMenuCall.style.display = 'none'; });
+            }
+            if (!navigator.mediaDevices?.getDisplayMedia && shareScreenCallBtn) shareScreenCallBtn.style.display = 'none';
+            updateRemoteVideoMode(false);
+        }
+
+        // Переопределяем глобальную startCall, чтобы использовать встроенный звонок
+        window.startCall = startCallInWindow;
 
         // ======================= УВЕДОМЛЕНИЯ =======================
         async function renderNotifications() {
@@ -3078,6 +3571,260 @@ function renderAppointmentsList(filter = 'upcoming') {
             });
         }
 
+        // ======================= ЧАТ (существующий) =======================
+        async function renderChats() {
+            currentChatPartner = null;
+            if (!currentUser) { showToast('Войдите в аккаунт', true); return; }
+            await refreshUser();
+            document.getElementById('mainContent').innerHTML = `<div class="container"><div class="empty-state"><i class="fas fa-circle-notch fa-spin"></i></div></div>`;
+            const messagesRes = await fetchJSON(`/api/messages/${currentUser.id}`);
+            const messages = messagesRes.messages || [];
+            const usersFromServer = messagesRes.users || [];
+            const contactsMap = new Map();
+            const unreadCountsFromServer = currentUser.unreadCounts || {};
+            messages.forEach(msg => {
+                const contactId = msg.from_user === currentUser.id ? msg.to_user : msg.from_user;
+                if (!contactsMap.has(contactId)) {
+                    contactsMap.set(contactId, { lastMessage: msg.text || (msg.image ? '📷 Фото' : (msg.voice ? '🎤 Голосовое' : 'Вложение')), lastTime: msg.created_at });
+                } else {
+                    const existing = contactsMap.get(contactId);
+                    if (new Date(msg.created_at) > new Date(existing.lastTime)) {
+                        existing.lastMessage = msg.text || (msg.image ? '📷 Фото' : (msg.voice ? '🎤 Голосовое' : 'Вложение'));
+                        existing.lastTime = msg.created_at;
+                    }
+                }
+            });
+            const contacts = usersFromServer.map(u => {
+                const contactInfo = contactsMap.get(u.id) || { lastMessage: '', lastTime: new Date(0).toISOString() };
+                const unread = unreadCountsFromServer[u.id] || 0;
+                return { ...u, ...contactInfo, unread };
+            }).sort((a,b) => new Date(b.lastTime) - new Date(a.lastTime));
+            let html = `<div class="container"><div class="page-title">Сообщения</div><div class="chat-list">`;
+            for (const c of contacts) {
+                html += `<div class="chat-contact glass-card" data-contact-id="${c.id}" onclick="openChat('${c.id}','${escapeHtml(c.fullName)}')">
+                            <img class="chat-contact-avatar" src="${escapeHtml(c.avatar)}" onerror="this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(c.fullName)}&background=8bca8b&color=fff'">
+                            <div class="chat-contact-info">
+                                <div class="chat-contact-name">${escapeHtml(c.fullName)}</div>
+                                <div class="chat-contact-last">${escapeHtml((c.lastMessage || '').substring(0, 40))}</div>
+                            </div>
+                            ${c.unread > 0 ? `<div class="unread-badge">${c.unread}</div>` : ''}
+                        </div>`;
+            }
+            if (contacts.length === 0) html += '<div class="empty-state glass-card" style="padding:40px;"><i class="fas fa-comment-slash"></i><div>Нет сообщений. Напишите психологу из раздела «Психологи»!</div></div>';
+            html += `</div></div>`;
+            document.getElementById('mainContent').innerHTML = html;
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        async function openChat(userId, userName) {
+            currentChatPartner = { id: userId, name: userName };
+            await fetch('/api/messages/read', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: currentUser.id, fromUserId: userId }) });
+            if (currentUser.unreadCounts && currentUser.unreadCounts[userId]) delete currentUser.unreadCounts[userId];
+            if (currentTab === 'chats') {
+                const chatItems = document.querySelectorAll('.chat-contact');
+                for (const item of chatItems) {
+                    if (item.getAttribute('data-contact-id') === userId) { const badge = item.querySelector('.unread-badge'); if (badge) badge.remove(); break; }
+                }
+            }
+            document.getElementById('mainContent').innerHTML = `
+                <div class="chat-page">
+                    <div class="chat-messages-container">
+                        <div class="chat-messages-header">
+                            <button class="back-btn" onclick="renderChats()"><i class="fas fa-arrow-left"></i></button>
+                            <img src="" id="chatPartnerAvatar" style="width:36px;height:36px;border-radius:50%;object-fit:cover;border:2px solid var(--green-border);" onerror="this.style.display='none'">
+                            <div style="flex:1"><div style="font-weight:600;font-size:15px;">${escapeHtml(userName)}</div></div>
+                        </div>
+                        <div class="chat-messages-list" id="chatMessagesList"></div>
+                        <div class="chat-input-area">
+                            <div class="chat-controls">
+                                <button id="attachImageBtn" title="Фото"><i class="fas fa-image"></i></button>
+                                <button id="voiceRecordBtn" title="Голосовое"><i class="fas fa-microphone"></i></button>
+                            </div>
+                            <input type="file" id="imageInput" accept="image/*" style="display:none">
+                            <input type="text" id="chatMessageInput" placeholder="Сообщение...">
+                            <button class="send-btn-chat" id="sendMsgBtn"><i class="fas fa-paper-plane"></i></button>
+                        </div>
+                    </div>
+                </div>`;
+            await new Promise(resolve => setTimeout(resolve, 10));
+            fetch(`/api/user/${userId}`).then(r => r.json()).then(d => { const av = document.getElementById('chatPartnerAvatar'); if (av && d.success) av.src = d.user.avatar; }).catch(console.error);
+            await loadChatMessages();
+            scrollToBottom();
+            const sendBtn = document.getElementById('sendMsgBtn');
+            const chatInput = document.getElementById('chatMessageInput');
+            const attachBtn = document.getElementById('attachImageBtn');
+            const imageInput = document.getElementById('imageInput');
+            const voiceBtn = document.getElementById('voiceRecordBtn');
+            if (sendBtn) sendBtn.onclick = sendChatMessage;
+            if (chatInput) chatInput.onkeypress = (e) => { if (e.key === 'Enter') sendChatMessage(); };
+            if (attachBtn && imageInput) {
+                attachBtn.onclick = () => imageInput.click();
+                imageInput.onchange = async () => {
+                    const file = imageInput.files[0];
+                    if (!file || !file.type.startsWith('image/')) { showToast('Только изображения', true); return; }
+                    const compressedBlob = await compressImage(file, 1024, 0.8);
+                    const formData = new FormData();
+                    formData.append('image', compressedBlob, file.name);
+                    const res = await fetch('/api/upload-chat-image', { method: 'POST', body: formData });
+                    const data = await res.json();
+                    if (data.success) {
+                        await fetch('/api/messages', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ from: currentUser.id, to: currentChatPartner.id, text: '', image: data.imageUrl }) });
+                        await loadChatMessages();
+                        scrollToBottom();
+                    }
+                    imageInput.value = '';
+                };
+            }
+            if (voiceBtn) {
+                let mediaRecorder = null, audioChunks = [], isRecording = false;
+                voiceBtn.onclick = async () => {
+                    if (!isRecording) {
+                        try {
+                            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                            mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+                            audioChunks = [];
+                            mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunks.push(e.data); };
+                            mediaRecorder.onstop = async () => {
+                                const blob = new Blob(audioChunks, { type: 'audio/webm' });
+                                const fd = new FormData();
+                                fd.append('voice', blob, 'voice.webm');
+                                const res = await fetch('/api/upload-voice', { method: 'POST', body: fd });
+                                const data = await res.json();
+                                if (data.success) {
+                                    await fetch('/api/messages', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ from: currentUser.id, to: currentChatPartner.id, text: '', voice: data.voiceUrl }) });
+                                    await loadChatMessages();
+                                    scrollToBottom();
+                                    showToast('Голосовое отправлено');
+                                }
+                                stream.getTracks().forEach(t => t.stop());
+                                voiceBtn.innerHTML = '<i class="fas fa-microphone"></i>';
+                                voiceBtn.classList.remove('recording-active');
+                                isRecording = false;
+                            };
+                            mediaRecorder.start();
+                            isRecording = true;
+                            voiceBtn.classList.add('recording-active');
+                            voiceBtn.innerHTML = '<i class="fas fa-stop"></i>';
+                            setTimeout(() => { if (mediaRecorder?.state === 'recording') mediaRecorder.stop(); }, 30000);
+                        } catch(e) { showToast('Нет доступа к микрофону', true); }
+                    } else { if (mediaRecorder?.state === 'recording') mediaRecorder.stop(); }
+                };
+            }
+        }
+
+        async function loadChatMessages() {
+            if (!currentChatPartner) return;
+            const res = await fetchJSON(`/api/messages/${currentUser.id}`);
+            const messages = (res.messages || []).filter(m => (m.from_user === currentChatPartner.id && m.to_user === currentUser.id) || (m.from_user === currentUser.id && m.to_user === currentChatPartner.id));
+            messages.sort((a,b) => new Date(a.created_at) - new Date(b.created_at));
+            const listDiv = document.getElementById('chatMessagesList');
+            if (!listDiv) return;
+            let html = '';
+            for (const m of messages) {
+                let voiceHtml = '';
+                if (m.voice) voiceHtml = `<div class="voice-message"><audio controls src="${escapeHtml(m.voice)}"></audio></div>`;
+                const isOutgoing = m.from_user === currentUser.id;
+                html += `<div class="message ${isOutgoing ? 'outgoing' : 'incoming'}">
+                            ${m.text ? `<div class="message-text">${escapeHtml(m.text)}</div>` : ''}
+                            ${m.image ? `<img class="chat-image" src="${escapeHtml(m.image)}" onclick="openImageModal('${escapeHtml(m.image)}')">` : ''}
+                            ${voiceHtml}
+                            <div class="message-time">${new Date(m.created_at).toLocaleTimeString()}</div>
+                        </div>`;
+            }
+            listDiv.innerHTML = html;
+            document.querySelectorAll('.voice-message').forEach(container => {
+                const audio = container.querySelector('audio');
+                if (audio && !container.querySelector('.speed-btn')) addSpeedButtonToAudio(audio);
+            });
+            scrollToBottom();
+        }
+
+        function addSpeedButtonToAudio(audio) {
+            const container = audio.closest('.voice-message');
+            if (!container || container.querySelector('.speed-btn')) return;
+            const speeds = [1, 1.5, 2];
+            let currentSpeed = 1;
+            const btn = document.createElement('button');
+            btn.className = 'speed-btn';
+            btn.textContent = `${currentSpeed}x`;
+            btn.onclick = (e) => {
+                e.stopPropagation();
+                let idx = speeds.indexOf(currentSpeed);
+                idx = (idx + 1) % speeds.length;
+                currentSpeed = speeds[idx];
+                audio.playbackRate = currentSpeed;
+                btn.textContent = `${currentSpeed}x`;
+            };
+            container.appendChild(btn);
+        }
+
+        function updateChatListUnread(contactId, count) {
+            const chatItems = document.querySelectorAll('.chat-contact');
+            for (const item of chatItems) {
+                if (item.getAttribute('data-contact-id') === contactId) {
+                    const existingBadge = item.querySelector('.unread-badge');
+                    if (count > 0) {
+                        if (existingBadge) existingBadge.textContent = count;
+                        else item.insertAdjacentHTML('beforeend', `<div class="unread-badge">${count}</div>`);
+                    } else { if (existingBadge) existingBadge.remove(); }
+                    break;
+                }
+            }
+        }
+
+        function updateChatListItem(msg, senderName, preview) {
+            const contactDiv = document.querySelector(`.chat-contact[data-contact-id="${msg.from}"]`);
+            if (!contactDiv) return;
+            const lastMsgSpan = contactDiv.querySelector('.chat-contact-last');
+            if (lastMsgSpan) lastMsgSpan.textContent = preview.length > 40 ? preview.substring(0,37)+'...' : preview;
+            let badge = contactDiv.querySelector('.unread-badge');
+            const currentCount = currentUser?.unreadCounts?.[msg.from] || 0;
+            if (currentCount > 0) {
+                if (badge) badge.textContent = currentCount;
+                else contactDiv.insertAdjacentHTML('beforeend', `<div class="unread-badge">${currentCount}</div>`);
+            } else { if (badge) badge.remove(); }
+            const parent = contactDiv.parentNode;
+            parent.insertBefore(contactDiv, parent.firstChild);
+        }
+
+        async function sendChatMessage() {
+            const input = document.getElementById('chatMessageInput');
+            if (!input || !input.value.trim()) return;
+            const text = input.value.trim();
+            input.value = '';
+            const tempMsg = { id: Date.now().toString(), from: currentUser.id, to: currentChatPartner.id, text, created_at: new Date().toISOString() };
+            appendMessageToChat(tempMsg);
+            try {
+                await fetch('/api/messages', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ from: currentUser.id, to: currentChatPartner.id, text }) });
+            } catch(e) { showToast('Ошибка отправки', true); }
+            scrollToBottom();
+        }
+
+        function appendMessageToChat(msg) {
+            const listDiv = document.getElementById('chatMessagesList');
+            if (!listDiv) return;
+            const fromId = msg.from_user || msg.from;
+            const isOutgoing = fromId === currentUser.id;
+            let voiceHtml = '';
+            if (msg.voice) voiceHtml = `<div class="voice-message"><audio controls src="${escapeHtml(msg.voice)}"></audio></div>`;
+            const messageHtml = `<div class="message ${isOutgoing ? 'outgoing' : 'incoming'}">${msg.text ? `<div class="message-text">${escapeHtml(msg.text)}</div>` : ''}${msg.image ? `<img class="chat-image" src="${escapeHtml(msg.image)}" onclick="openImageModal('${escapeHtml(msg.image)}')">` : ''}${voiceHtml}<div class="message-time">${new Date(msg.created_at || msg.createdAt || Date.now()).toLocaleTimeString()}</div></div>`;
+            listDiv.insertAdjacentHTML('beforeend', messageHtml);
+            scrollToBottom();
+            if (msg.voice) {
+                const audio = listDiv.querySelector('.voice-message:last-child audio');
+                if (audio && !audio.parentElement.querySelector('.speed-btn')) addSpeedButtonToAudio(audio);
+            }
+        }
+
+        function startChatWith(userId, name) {
+            if (!currentUser) { showToast('Войдите в аккаунт', true); return; }
+            currentTab = 'chats';
+            document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+            const chatNav = document.querySelector('.nav-item[data-tab="chats"]');
+            if (chatNav) chatNav.classList.add('active');
+            openChat(userId, name);
+        }
+
         // ======================= ВИДЕО НАБЛЮДАТЕЛЬ =======================
         function initVideoObservers() {
             if (videoObserver) videoObserver.disconnect();
@@ -3146,7 +3893,7 @@ function renderAppointmentsList(filter = 'upcoming') {
             document.querySelectorAll('.nav-item').forEach(el => { el.onclick = () => switchTab(el.dataset.tab); });
         }
 
-        // Глобальные привязки функций
+        // Глобальные привязки функций (сохраняем старые, добавляем новые)
         window.openLoginModal = openLoginModal;
         window.openRegisterModal = openRegisterModal;
         window.logout = logout;
@@ -3156,7 +3903,7 @@ function renderAppointmentsList(filter = 'upcoming') {
         window.bookPsychologist = bookPsychologist;
         window.openReviewModal = openReviewModal;
         window.confirmAppointment = confirmAppointment;
-        window.startCall = startCall;
+        window.startCall = startCallInWindow; // переопределён
         window.addComment = addComment;
         window.closeModal = closeModal;
         window.toggleSection = toggleSection;
