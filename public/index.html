@@ -79,16 +79,21 @@
         .main-content { padding-top: calc(var(--nav-h) + 12px); min-height: 100vh; }
         .container { max-width: 680px; margin: 0 auto; padding: 0 16px; }
         .bottom-nav {
-            position: fixed; bottom: 0; left: 0; right: 0;
-            height: var(--bottom-h);
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
             background: rgba(4,10,5,0.95);
             backdrop-filter: blur(28px);
             display: flex;
             justify-content: space-around;
             align-items: center;
-            padding: 8px 8px calc(8px + env(safe-area-inset-bottom));
+            padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
             border-top: 1px solid var(--border);
             z-index: 1000;
+            /* Убираем фиксированную высоту, пусть подстраивается под контент */
+            height: auto;
+            min-height: var(--bottom-h);
         }
         .nav-item {
             display: flex; flex-direction: column; align-items: center; gap: 3px;
@@ -925,6 +930,10 @@
         .comment-actions button:hover {
             background: #8bca8b;
             color: #0d2010;
+        }
+        /* Для PWA – чтобы фон не вылезал за пределы панели */
+        .bottom-nav {
+            border-radius: 0;
         }
     </style>
 </head>
