@@ -38,7 +38,7 @@
             background: #000;
         }
 
-        /* Контейнер удалённого видео с фиксированным соотношением 16:9 */
+        /* Контейнер удалённого видео с фиксированным соотношением 16:9 и центрированием */
         .remote-video-wrapper {
             position: absolute;
             inset: 0;
@@ -48,28 +48,23 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            /* Центрируем видео по вертикали и горизонтали */
         }
         #remoteVideo {
             max-width: 100%;
             max-height: 100%;
             width: auto;
             height: auto;
-            object-fit: contain; /* Сохраняем пропорции, не обрезаем */
+            object-fit: contain; /* Всегда сохраняем пропорции, не обрезаем */
             background: #000;
+            border-radius: 0;
         }
-        /* Для обычного видео (камера) – растягиваем на весь экран, но для трансляции экрана оставляем contain */
+        /* Для камеры – тоже contain, но чтобы не было чёрных полос, можно оставить contain */
+        /* Дополнительно: для камеры на телефоне можно оставить contain, но чтобы не было искажений */
         #remoteVideo.camera-mode {
-            object-fit: cover;
-            width: 100%;
-            height: 100%;
+            object-fit: contain;
         }
         #remoteVideo.screen-mode {
             object-fit: contain;
-            width: auto;
-            height: auto;
-            max-width: 100%;
-            max-height: 100%;
         }
 
         .vignette {
@@ -84,7 +79,7 @@
 
         .local-video-wrapper {
             position: absolute;
-            bottom: 110px;
+            bottom: calc(110px + env(safe-area-inset-bottom));
             right: 24px;
             width: 110px;
             height: 150px;
@@ -122,6 +117,7 @@
             left: 0;
             right: 0;
             padding: 20px 24px;
+            padding-top: max(20px, env(safe-area-inset-top));
             display: flex;
             justify-content: space-between;
             align-items: flex-start;
@@ -241,7 +237,7 @@
             align-items: center;
             gap: 14px;
             z-index: 20;
-            padding: 0 20px 24px;
+            padding: 0 20px calc(20px + env(safe-area-inset-bottom));
             background: linear-gradient(to top, rgba(0,0,0,0.72) 0%, transparent 100%);
         }
 
@@ -337,7 +333,7 @@
 
         .chat-panel {
             position: absolute;
-            bottom: 110px;
+            bottom: calc(110px + env(safe-area-inset-bottom));
             right: 24px;
             width: 310px;
             max-width: calc(100vw - 48px);
@@ -493,7 +489,7 @@
 
         .toast {
             position: fixed;
-            bottom: 110px;
+            bottom: calc(110px + env(safe-area-inset-bottom));
             left: 50%;
             transform: translateX(-50%) translateY(8px);
             background: var(--surface-light);
@@ -518,13 +514,13 @@
         }
 
         @media (max-width: 640px) {
-            .local-video-wrapper { width: 84px; height: 116px; bottom: 104px; right: 14px; }
+            .local-video-wrapper { width: 84px; height: 116px; bottom: calc(104px + env(safe-area-inset-bottom)); right: 14px; }
             .control-btn { width: 46px; height: 46px; font-size: 15px; }
             .end-call { width: 52px; height: 52px; font-size: 16px; }
-            .controls { gap: 10px; padding: 0 14px 20px; }
-            .chat-panel { width: calc(100vw - 28px); right: 14px; bottom: 104px; }
+            .controls { gap: 10px; padding: 0 14px calc(20px + env(safe-area-inset-bottom)); }
+            .chat-panel { width: calc(100vw - 28px); right: 14px; bottom: calc(104px + env(safe-area-inset-bottom)); }
             .chat-messages { height: 240px; }
-            .top-bar { padding: 14px 16px; }
+            .top-bar { padding: 14px 16px; padding-top: max(14px, env(safe-area-inset-top)); }
         }
     </style>
 </head>
@@ -641,14 +637,17 @@
     let isLocalLarge = false;
     let connectionEstablished = false;
 
-    // Для трансляции экрана
     let isScreenSharing = false;
     let screenStream = null;
-    let cameraTrack = null;      // сохраняем трек камеры, чтобы потом вернуть
-    // Для уведомления собеседника о режиме отображения
+    let cameraTrack = null;
     let remoteScreenMode = false;
 
+    // Устанавливаем contain для удалённого видео всегда (16:9)
+    remoteVideo.classList.add('camera-mode');
+    remoteVideo.classList.remove('screen-mode');
+
     function updateRemoteVideoMode(isScreen) {
+        // Оставляем contain в любом случае, просто меняем класс для возможных стилей
         if (isScreen) {
             remoteVideo.classList.remove('camera-mode');
             remoteVideo.classList.add('screen-mode');
@@ -696,11 +695,6 @@
             { urls: 'stun:stun2.l.google.com:19302' },
             { urls: 'stun:stun3.l.google.com:19302' },
             { urls: 'stun:stun4.l.google.com:19302' },
-            { urls: 'stun:stun.ekiga.net' },
-            { urls: 'stun:stun.ideasip.com' },
-            { urls: 'stun:stun.iptel.org' },
-            { urls: 'stun:stun.rixtelecom.se' },
-            { urls: 'stun:stun.schlund.de' },
             { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
             { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
             { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' }
@@ -719,7 +713,6 @@
             waitingMsg.style.display = 'none';
             connectionEstablished = true;
             updateStatus('Соединение установлено');
-            // По умолчанию считаем, что удалённое видео – это камера (растягиваем)
             updateRemoteVideoMode(remoteScreenMode);
         };
         peerConnection.onicecandidate = (event) => {
@@ -729,7 +722,6 @@
         peerConnection.oniceconnectionstatechange = () => {
             if (!peerConnection) return;
             const state = peerConnection.iceConnectionState;
-            console.log('ICE state:', state);
             if (state === 'connected') {
                 connectionEstablished = true;
                 updateStatus('Соединение установлено');
@@ -787,7 +779,6 @@
         } else {
             if (newTrack) peerConnection.addTrack(newTrack, localStream);
         }
-        // Обновляем локальное видео
         if (newTrack) {
             const newStream = new MediaStream();
             newStream.addTrack(newTrack);
@@ -808,7 +799,6 @@
             }
             screenStream = screenStreamObj;
             const screenTrack = screenStream.getVideoTracks()[0];
-            // Отключаем камеру
             if (cameraTrack) {
                 cameraTrack.enabled = false;
             }
@@ -816,15 +806,10 @@
             isScreenSharing = true;
             shareScreenBtn.classList.add('share-active');
             showToast('Трансляция экрана включена');
-            // Уведомляем собеседника о начале трансляции экрана
             if (socket && partnerSocketId) {
                 socket.emit('call-message', { text: '🖥️ Начал трансляцию экрана' });
                 socket.emit('screen-share-started', { roomId });
             }
-            // Принудительно включаем режим contain для удалённого видео у собеседника
-            // (на стороне отправителя не нужно, но уведомление отправим)
-            // Также меняем локальный режим отображения для себя (не обязательно)
-            // Когда пользователь остановит трансляцию через системный UI
             screenTrack.onended = () => {
                 if (isScreenSharing) stopScreenShare();
             };
@@ -849,7 +834,6 @@
         isScreenSharing = false;
         shareScreenBtn.classList.remove('share-active');
         showToast('Трансляция экрана выключена');
-        // Уведомляем собеседника
         if (socket && partnerSocketId) {
             socket.emit('call-message', { text: '🖥️ Остановил трансляцию экрана' });
             socket.emit('screen-share-stopped', { roomId });
@@ -869,7 +853,6 @@
             socket.disconnect();
             socket = null;
         }
-        
         socket = io({
             transports: ['websocket', 'polling'],
             reconnection: true,
@@ -877,24 +860,20 @@
             reconnectionDelay: 1000,
             reconnectionDelayMax: 5000
         });
-        
         socket.on('connect', () => {
             updateStatus('Соединение с сервером');
             socket.emit('register_user', currentUserId);
             socket.emit('join-call-room', roomId, currentUserId, userRole);
         });
-        
         socket.on('connect_error', (err) => {
             console.error('Socket connection error:', err);
             updateStatus('Ошибка соединения', true);
         });
-        
         socket.on('room-joined', () => {
             updateStatus('Ожидание собеседника…');
             waitingMsg.style.display = 'flex';
             connectionEstablished = false;
         });
-        
         socket.on('call-ready', async (data) => {
             updateStatus('Собеседник найден…');
             partnerSocketId = data.partnerId;
@@ -907,7 +886,6 @@
                 }, 200);
             }
         });
-        
         socket.on('offer', async (data) => {
             partnerSocketId = data.from;
             if (!peerConnection) await createPeerConnection();
@@ -918,40 +896,33 @@
                 socket.emit('answer', { target: partnerSocketId, sdp: answer });
             }
         });
-        
         socket.on('answer', async (data) => {
             if (peerConnection) await peerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp));
         });
-        
         socket.on('ice-candidate', async (data) => {
             if (peerConnection) {
                 try { await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate)); }
                 catch(e) { console.warn('ICE add error', e); }
             }
         });
-        
         socket.on('call-message', (data) => {
             addChatMessage(data.text, false, data.time);
         });
-        
         socket.on('screen-share-started', () => {
             remoteScreenMode = true;
             updateRemoteVideoMode(true);
             showToast('Собеседник начал трансляцию экрана');
         });
-        
         socket.on('screen-share-stopped', () => {
             remoteScreenMode = false;
             updateRemoteVideoMode(false);
             showToast('Собеседник остановил трансляцию экрана');
         });
-        
         socket.on('call-ended', () => {
             updateStatus('Звонок завершён');
             showToast('Сессия завершена');
             setTimeout(() => window.location.href = '/', 1500);
         });
-        
         socket.on('partner-disconnected', () => {
             updateStatus('Собеседник отключился', true);
             showToast('Собеседник покинул сессию', true);
@@ -1101,7 +1072,6 @@
                 }
             }
         };
-        
         toggleCamBtn.onclick = () => {
             if (localStream) {
                 const t = localStream.getVideoTracks()[0];
@@ -1114,27 +1084,21 @@
                 }
             }
         };
-        
         shareScreenBtn.onclick = toggleScreenShare;
         recordBtn.onclick = toggleRecording;
         reconnectBtnTop.onclick = reconnect;
         endCallBtn.onclick = endCall;
         sendChatBtn.onclick = sendChatMessage;
         chatInput.onkeypress = e => { if (e.key === 'Enter') sendChatMessage(); };
-        
         chatToggleBtn.onclick = () => {
             chatPanel.classList.toggle('open');
             chatToggleBtn.classList.toggle('chat-active', chatPanel.classList.contains('open'));
         };
-        
         closeChatBtn.onclick = () => {
             chatPanel.classList.remove('open');
             chatToggleBtn.classList.remove('chat-active');
         };
-        
         localVideoWrapper.onclick = swapVideoSize;
-        
-        // Начальный режим удалённого видео – камера
         updateRemoteVideoMode(false);
     }
 
