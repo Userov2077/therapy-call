@@ -3725,19 +3725,23 @@ if (!isPsych && currentUser.appointments && currentUser.appointments.length > 0)
                     </div>
                 </div>
                 <div>
-                    <div class="section-header-row"><h3>⭐ Отзывы (${reviews.length})</h3></div>
-                    ${reviews.map(r => `
-                        <div class="review-card glass-card">
-                            <div class="review-header">
-                                <span class="review-name">${escapeHtml(r.clientName)}</span>
-                                ${renderStars(r.rating)}
-                            </div>
-                            <div class="review-text">${escapeHtml(r.text)}</div>
-                            <div class="review-time">${new Date(r.createdAt).toLocaleString()}</div>
-                        </div>
-                    `).join('')}
-                    ${reviews.length === 0 ? '<div class="empty-state glass-card" style="padding:20px;"><i class="fas fa-star"></i><div>Нет отзывов</div></div>' : ''}
-                </div>
+    <div class="section-header-row">
+        <h3>⭐ Отзывы (${reviews.length})</h3>
+        ${reviews.length > 3 ? `<button class="btn-sm btn-outline" onclick="showAllReviews(${JSON.stringify(reviews).replace(/"/g, '&quot;')}, '${escapeHtml(p.fullName)}')">Все отзывы</button>` : ''}
+    </div>
+    ${reviews.slice(0, 3).map(r => `
+        <div class="review-card glass-card">
+            <div class="review-header">
+                <span class="review-name">${escapeHtml(r.clientName)}</span>
+                ${renderStars(r.rating)}
+            </div>
+            <div class="review-text">${escapeHtml(r.text)}</div>
+            <div class="review-time">${new Date(r.createdAt).toLocaleString()}</div>
+        </div>
+    `).join('')}
+    ${reviews.length === 0 ? '<div class="empty-state glass-card" style="padding:20px;"><i class="fas fa-star"></i><div>Нет отзывов</div></div>' : ''}
+    ${reviews.length > 3 ? `<div style="text-align:center; margin-top:12px;"><button class="btn-sm btn-outline" onclick="showAllReviews(${JSON.stringify(reviews).replace(/"/g, '&quot;')}, '${escapeHtml(p.fullName)}')">Показать все (${reviews.length})</button></div>` : ''}
+</div>
             </div>`;
             document.getElementById('mainContent').innerHTML = html;
         }
@@ -4207,6 +4211,35 @@ if (!isPsych && currentUser.appointments && currentUser.appointments.length > 0)
     header.addEventListener('touchstart', onStart);
     window.addEventListener('touchmove', onMove);
     window.addEventListener('touchend', onEnd);
+}
+
+function showAllReviews(reviews, psychologistName) {
+    const modalId = 'allReviewsModal';
+    const html = `
+        <div class="modal" id="${modalId}">
+            <div class="modal-content" style="max-height: 70vh;">
+                <div class="modal-handle"></div>
+                <h3>Все отзывы о ${escapeHtml(psychologistName)}</h3>
+                <div style="max-height: 60vh; overflow-y: auto; padding-right: 8px;">
+                    ${reviews.map(r => `
+                        <div class="review-card glass-card" style="margin-bottom:12px;">
+                            <div class="review-header">
+                                <span class="review-name">${escapeHtml(r.clientName)}</span>
+                                ${renderStars(r.rating)}
+                            </div>
+                            <div class="review-text">${escapeHtml(r.text)}</div>
+                            <div class="review-time">${new Date(r.createdAt).toLocaleString()}</div>
+                        </div>
+                    `).join('')}
+                </div>
+                <div class="modal-buttons">
+                    <button class="btn-secondary" onclick="closeModal('${modalId}')">Закрыть</button>
+                </div>
+            </div>
+        </div>
+    `;
+    document.body.insertAdjacentHTML('beforeend', html);
+    setTimeout(() => document.getElementById(modalId).classList.add('active'), 10);
 }
 
         // ======================= ИНИЦИАЛИЗАЦИЯ =======================

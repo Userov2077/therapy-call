@@ -1050,19 +1050,11 @@ app.post('/api/reviews', async (req, res) => {
         };
         await pool.query(`INSERT INTO reviews (id,psychologist_id,client_id,client_name,rating,text,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
             [newReview.id, newReview.psychologist_id, newReview.client_id, newReview.client_name, newReview.rating, newReview.text, newReview.created_at]);
-        const reviewsRes = await pool.query('SELECT rating FROM reviews WHERE psychologist_id=$1', [psychologistId]);
-        const sum = reviewsRes.rows.reduce((s, r) => s + r.rating, 0);
-        const avgRating = reviewsRes.rows.length ? sum / reviewsRes.rows.length : 0;
-        const postsRes = await pool.query('SELECT id FROM posts WHERE author_id=$1', [psychologistId]);
-        let totalLikes = 0;
-        if (postsRes.rows.length > 0) {
-            const pids = postsRes.rows.map(p => p.id);
-            const likesRes = await pool.query('SELECT COUNT(*)::int AS cnt FROM likes WHERE post_id=ANY($1::text[])', [pids]);
-            totalLikes = likesRes.rows[0].cnt;
+        const newRating = await recalcPsychologistRating(psychologistId);
+        if (newRating !== null) {
+            psychologist.rating = newRating;
+            await updateUser(psychologist);
         }
-        const bonus = Math.min(1, totalLikes * 0.01);
-        psychologist.rating = Math.min(5, avgRating + bonus);
-        await updateUser(psychologist);
         res.json({ success: true, review: newReview, newRating: psychologist.rating });
     } catch (err) {
         console.error('Review error:', err);
@@ -1371,6 +1363,15 @@ io.on('connection', (socket) => {
                         }
                         io.to(apt.psychologist_id).emit('appointment_completed', apt.id);
                         io.to(apt.client_id).emit('appointment_completed', apt.id);
+                        // Отправляем клиенту уведомление с предложением оставить отзыв
+                        io.to(apt.client_id).emit('notification', {
+                            type: 'request_review',
+                            title: 'Оцените сессию',
+                            message: `Как прошла сессия с ${psychologist.fullName}? Пожалуйста, оставьте отзыв.`,
+                            appointmentId: apt.id,
+                            psychologistId: apt.psychologist_id,
+                            psychologistName: psychologist.fullName
+                        });
                     }
                 } catch (err) { console.error('end-call DB error:', err); }
             }
@@ -1399,7 +1400,47 @@ io.on('connection', (socket) => {
     });
 });
 
-
+// ========== ПЕРЕСЧЁТ РЕЙТИНГА ПСИХОЛОГА (с учётом отзывов за 30 дней) ==========
+async function recalcPsychologistRating(psychologistId) {
+    try {
+        // Получаем все отзывы за последние 30 дней
+        const thirtyDaysAgo = new Date();
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+        
+        const reviewsRes = await pool.query(
+            `SELECT rating, created_at FROM reviews 
+             WHERE psychologist_id = $1 AND created_at >= $2 
+             ORDER BY created_at ASC`,
+            [psychologistId, thirtyDaysAgo.toISOString()]
+        );
+        
+        const reviews = reviewsRes.rows;
+        const totalReviews = reviews.length;
+        
+        if (totalReviews === 0) {
+            // Нет отзывов за 30 дней – рейтинг 0 (или null, но пока оставим 0)
+            await pool.query('UPDATE users SET rating = 0 WHERE id = $1', [psychologistId]);
+            return 0;
+        }
+        
+        // Среднее арифметическое за последние 30 дней
+        const sum = reviews.reduce((acc, r) => acc + r.rating, 0);
+        let newRating = sum / totalReviews;
+        
+        // Ограничиваем 5
+        newRating = Math.min(5, Math.max(0, newRating));
+        
+        // Дополнительно: если отзывов меньше 5, можно не показывать рейтинг? 
+        // Но по заданию – первые 5 формируют рейтинг, значит показываем всегда, 
+        // но если меньше 5 – всё равно среднее.
+        
+        await pool.query('UPDATE users SET rating = $1 WHERE id = $2', [newRating, psychologistId]);
+        return newRating;
+    } catch (err) {
+        console.error('recalcPsychologistRating error:', err);
+        return null;
+    }
+}
 
 // ========== ЗАПУСК ==========
 app.get('/health', (req, res) => res.status(200).send('OK'));
@@ -1407,6 +1448,15 @@ const PORT = process.env.PORT || 3000;
 
 async function startServer() {
     await initDatabase();
+    // Ежедневный пересчёт рейтингов (в 3 часа ночи по серверу)
+setInterval(async () => {
+    console.log('Running daily rating recalculation...');
+    const psychologistsRes = await pool.query('SELECT id FROM users WHERE role = $1', ['psychologist']);
+    for (const row of psychologistsRes.rows) {
+        await recalcPsychologistRating(row.id);
+    }
+    console.log('Daily rating recalculation finished.');
+}, 24 * 60 * 60 * 1000); // 24 часа – неточный, лучше использовать cron, но для простоты так
     server.listen(PORT, '0.0.0.0', () => console.log(`✅ Сервер запущен на порту ${PORT}`));
 }
 
