@@ -266,6 +266,9 @@ async function getUser(id) {
         const unreadsRes = await pool.query('SELECT from_user_id, count FROM user_unreads WHERE user_id = $1', [id]);
         const unreadCounts = {};
         unreadsRes.rows.forEach(row => { unreadCounts[row.from_user_id] = row.count; });
+        // Получаем список психологов, на которых подписан пользователь
+        const followingRes = await pool.query('SELECT following_id FROM subscriptions WHERE follower_id = $1', [id]);
+        const following = followingRes.rows.map(row => row.following_id);
         return {
             id: r.id,
             fullName: r.full_name,
@@ -286,6 +289,7 @@ async function getUser(id) {
             clients: safeJSONParse(r.clients, []),
             notifications: safeJSONParse(r.notifications, []),
             unreadCounts,
+            following, 
             createdAt: r.created_at
         };
     } catch (err) { console.error('getUser error:', err); return null; }
