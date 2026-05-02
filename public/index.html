@@ -1962,56 +1962,30 @@ const totalLikesOnPosts = statsRes.success ? statsRes.totalLikes : 0;
     
     let appointmentsHtml = '';
 if (!isPsych && currentUser.appointments && currentUser.appointments.length > 0) {
-    const now = new Date();
-    const upcoming = currentUser.appointments.filter(a => {
-        const aptDate = new Date(a.date + 'T' + a.time);
-        return a.status === 'confirmed' && aptDate >= now;
-    });
-    const past = currentUser.appointments.filter(a => {
-        const aptDate = new Date(a.date + 'T' + a.time);
-        return a.status === 'completed' || (a.status === 'confirmed' && aptDate < now);
-    });
-    appointmentsHtml = `<div class="profile-sections">
-        <div class="collapsible-section open">
-            <div class="collapsible-header" onclick="toggleSection(this)">
-                <div class="collapsible-header-left">
-                    <div class="collapsible-icon">📅</div>
-                    <div>
-                        <div class="collapsible-title">Мои записи</div>
-                        <div class="collapsible-subtitle">${upcoming.length} предстоящих, ${past.length} завершённых</div>
+    appointmentsHtml = `
+        <div class="profile-sections">
+            <div class="collapsible-section open" id="sec-client-appointments">
+                <div class="collapsible-header" onclick="toggleSection(this)">
+                    <div class="collapsible-header-left">
+                        <div class="collapsible-icon">📅</div>
+                        <div>
+                            <div class="collapsible-title">Мои записи</div>
+                            <div class="collapsible-subtitle" id="clientAppointmentsSubtitle"></div>
+                        </div>
                     </div>
+                    <i class="fas fa-chevron-down collapsible-chevron"></i>
                 </div>
-                <i class="fas fa-chevron-down collapsible-chevron"></i>
-            </div>
-            <div class="collapsible-body">
-                ${upcoming.length > 0 ? `<div style="margin-bottom:16px;"><strong>✅ Предстоящие</strong></div>` + upcoming.map(apt => `
-                    <div class="appointment-item">
-                        <div class="appt-info">
-                            <div class="appt-name">${escapeHtml(apt.psychologistName)}</div>
-                            <div class="appt-time">📅 ${apt.date} в ${apt.time}</div>
-                            <div class="appt-status status-confirmed">✅ Подтверждён</div>
-                        </div>
-                        <div class="appt-actions">
-                            <button class="btn-sm" onclick="startCall('${apt.roomId}', 'client')"><i class="fas fa-video"></i> Войти</button>
-                        </div>
+                <div class="collapsible-body">
+                    <div style="margin-bottom: 12px; display: flex; gap: 8px; flex-wrap: wrap;">
+                        <button class="btn-sm btn-outline filter-client-appointments-btn active" data-filter="upcoming">Предстоящие</button>
+                        <button class="btn-sm btn-outline filter-client-appointments-btn" data-filter="past">Прошедшие</button>
+                        <button class="btn-sm btn-outline filter-client-appointments-btn" data-filter="pending">Ожидают</button>
                     </div>
-                `).join('') : ''}
-                ${past.length > 0 ? `<div style="margin:16px 0 8px;"><strong>✅ Завершённые</strong></div>` + past.map(apt => `
-                    <div class="appointment-item">
-                        <div class="appt-info">
-                            <div class="appt-name">${escapeHtml(apt.psychologistName)}</div>
-                            <div class="appt-time">📅 ${apt.date} в ${apt.time}</div>
-                            <div class="appt-status status-completed">✅ Завершён</div>
-                        </div>
-                        <div class="appt-actions">
-                            <i class="fas fa-check-circle" style="color:var(--green); font-size:20px;"></i>
-                        </div>
-                    </div>
-                `).join('') : ''}
-                ${upcoming.length === 0 && past.length === 0 ? '<div class="empty-state" style="padding:16px;"><i class="fas fa-calendar-times"></i><div>Нет записей</div></div>' : ''}
+                    <div id="clientAppointmentsList" style="max-height: 300px; overflow-y: auto; padding-right: 4px;"></div>
+                </div>
             </div>
         </div>
-    </div>`;
+    `;
 }
 
     let psychSections = '';
@@ -2128,6 +2102,21 @@ if (!isPsych && currentUser.appointments && currentUser.appointments.length > 0)
     `;
     document.getElementById('mainContent').innerHTML = html;
 
+    // Инициализация фильтров для клиента (если не психолог и есть записи)
+if (!isPsych && currentUser.appointments && currentUser.appointments.length > 0) {
+    const filterBtns = document.querySelectorAll('.filter-client-appointments-btn');
+    if (filterBtns.length) {
+        filterBtns.forEach(btn => {
+            btn.onclick = () => {
+                filterBtns.forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                renderClientAppointmentsList(btn.dataset.filter);
+            };
+        });
+        renderClientAppointmentsList('upcoming');
+    }
+}
+
     if (isPsych) {
         document.querySelectorAll('.profile-edit-post').forEach(b => { b.onclick = () => openEditPostModal(b.dataset.id, b.dataset.text); });
         document.querySelectorAll('.profile-delete-post').forEach(b => { b.onclick = () => openConfirmModal('Удалить пост?', 'Это действие нельзя отменить.', async () => { await fetch(`/api/posts/${b.dataset.id}`, { method:'DELETE', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ authorId: currentUser.id }) }); renderProfile(); }); });
@@ -2211,6 +2200,57 @@ if (!isPsych && currentUser.appointments && currentUser.appointments.length > 0)
             });
             container.innerHTML = html;
         }
+
+        function renderClientAppointmentsList(filter = 'upcoming') {
+    const container = document.getElementById('clientAppointmentsList');
+    if (!container) return;
+
+    const allAppointments = currentUser?.appointments || [];
+    const now = new Date();
+
+    let filtered = [];
+    if (filter === 'upcoming') {
+        filtered = allAppointments.filter(a => a.status === 'confirmed' && new Date(a.date + 'T' + a.time) >= now);
+    } else if (filter === 'past') {
+        filtered = allAppointments.filter(a => a.status === 'confirmed' && new Date(a.date + 'T' + a.time) < now);
+    } else if (filter === 'pending') {
+        filtered = allAppointments.filter(a => a.status === 'pending');
+    }
+
+    const subtitle = document.getElementById('clientAppointmentsSubtitle');
+    if (subtitle) {
+        if (filter === 'upcoming') subtitle.textContent = `${filtered.length} предстоящих`;
+        else if (filter === 'past') subtitle.textContent = `${filtered.length} прошедших`;
+        else subtitle.textContent = `${filtered.length} ожидают`;
+    }
+
+    if (filtered.length === 0) {
+        container.innerHTML = '<div class="empty-state" style="padding:20px;"><i class="fas fa-calendar-times"></i><div>Нет записей</div></div>';
+        return;
+    }
+
+    let html = '';
+    filtered.forEach(apt => {
+        const isCompleted = apt.status === 'completed';
+        html += `
+            <div class="appointment-item">
+                <div class="appt-info">
+                    <div class="appt-name">${escapeHtml(apt.psychologistName)}</div>
+                    <div class="appt-time">📅 ${apt.date} в ${apt.time}</div>
+                    <div class="appt-status ${apt.status === 'confirmed' ? (isCompleted ? 'status-completed' : 'status-confirmed') : 'status-pending'}">
+                        ${apt.status === 'confirmed' ? (isCompleted ? '✅ Завершён' : '✅ Подтверждён') : '⏳ Ожидает подтверждения'}
+                    </div>
+                </div>
+                <div class="appt-actions">
+                    ${apt.status === 'confirmed' && !isCompleted ? `<button class="btn-sm" onclick="startCall('${apt.roomId}', 'client')"><i class="fas fa-video"></i> Войти</button>` : ''}
+                    ${isCompleted ? '<i class="fas fa-check-circle" style="color:var(--green); font-size:20px;"></i>' : ''}
+                    ${apt.status === 'pending' ? '<span style="color:var(--text-muted); font-size:12px;">Ожидает подтверждения</span>' : ''}
+                </div>
+            </div>
+        `;
+    });
+    container.innerHTML = html;
+}
 
         function renderClientsList(filter = 'upcoming') {
             const container = document.getElementById('clientsList');
