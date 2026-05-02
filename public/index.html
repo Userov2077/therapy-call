@@ -1284,54 +1284,6 @@
         .floating-call.dragging .floating-header {
             cursor: grabbing;
         }
-        /* Режимы для контейнеров видео */
-        .remote-video-wrapper.big {
-            flex: 1;
-            position: static;
-            width: 100%;
-            height: auto;
-        }
-        .remote-video-wrapper.small {
-            position: absolute;
-            bottom: 20px;
-            right: 20px;
-            width: 140px;
-            height: 180px;
-            border-radius: 16px;
-            overflow: hidden;
-            border: 2px solid var(--gold-mid);
-            z-index: 10;
-            background: #000;
-        }
-        .remote-video-wrapper.small #remoteVideo {
-            object-fit: cover;
-        }
-        .local-video-wrapper.small {
-            position: absolute;
-            width: 110px;
-            height: 150px;
-            bottom: calc(100px + var(--safe-bottom));
-            right: 16px;
-            z-index: 10;
-            border-radius: 16px;
-            overflow: hidden;
-            border: 1px solid var(--gold-mid);
-        }
-        .local-video-wrapper.big {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            bottom: auto;
-            right: auto;
-            border: none;
-            border-radius: 0;
-            z-index: 2;
-        }
-        .local-video-wrapper.big #localVideo {
-            object-fit: contain;
-        }
     </style>
 </head>
 <body>
@@ -1361,7 +1313,7 @@
     <div id="callContainer" class="call-container">
         <div class="remote-video-wrapper">
             <video id="remoteVideo" autoplay playsinline></video>
-        </div>>
+        </div>
         <div id="waitingMessageCall" class="waiting-message" style="display:none;">
             <div class="waiting-ring"></div>
             <p>Ожидание собеседника</p>
@@ -3337,19 +3289,17 @@
     currentCallRole = role;
     isCallActive = true;
 
-    // Показать полноэкранный блок звонка
     const fullscreenCall = document.getElementById('callContainer');
     const floatingCallElem = document.getElementById('floatingCall');
     if (fullscreenCall) fullscreenCall.style.display = 'flex';
     if (floatingCallElem) floatingCallElem.style.display = 'none';
 
-    // Сбросить состояние
     callPartnerSocketId = null;
     callConnectionEstablished = false;
     const waitingMsgElem = document.getElementById('waitingMessageCall');
     if (waitingMsgElem) waitingMsgElem.style.display = 'flex';
 
-    // Инициализация классов видео-врапперов (удалённое видео – большое, своё – маленькое)
+    // Инициализация видео-врапперов
     const remoteWrapper = document.querySelector('.remote-video-wrapper');
     const localWrapper = document.querySelector('.local-video-wrapper');
     if (remoteWrapper) {
@@ -3361,18 +3311,83 @@
         localWrapper.classList.remove('big');
     }
 
-    // Запросить локальные медиа
     await startLocalStreamCall();
 
-    // Настройка сокета (сохраните ваши существующие обработчики, они здесь не показаны для краткости)
     if (!socket) initSocket();
     if (socket) {
         socket.emit('join-call-room', roomId, currentUser.id, role);
-        // ВАЖНО: сюда вставьте все ваши socket.on(...) (room-joined, call-ready, offer, answer и т.д.)
-        // Они должны быть такими же, как в вашем оригинальном коде.
+
+        // ========== ВСЕ ОБРАБОТЧИКИ СОКЕТОВ (ОБЯЗАТЕЛЬНО) ==========
+        socket.off('room-joined');
+        socket.off('call-ready');
+        socket.off('offer');
+        socket.off('answer');
+        socket.off('ice-candidate');
+        socket.off('call-message');
+        socket.off('screen-share-started');
+        socket.off('screen-share-stopped');
+        socket.off('call-ended');
+        socket.off('partner-disconnected');
+
+        socket.on('room-joined', () => {
+            waitingMsgElem.style.display = 'flex';
+            callConnectionEstablished = false;
+        });
+
+        socket.on('call-ready', async (data) => {
+            callPartnerSocketId = data.partnerId;
+            waitingMsgElem.style.display = 'none';
+            if (localStream) await initWebRTCCall(role === 'psychologist');
+            else {
+                const iv = setInterval(async () => {
+                    if (localStream) {
+                        clearInterval(iv);
+                        await initWebRTCCall(role === 'psychologist');
+                    }
+                }, 200);
+            }
+        });
+
+        socket.on('offer', async (data) => {
+            callPartnerSocketId = data.from;
+            if (!peerConnection) await createPeerConnectionCall();
+            await peerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp));
+            const answer = await peerConnection.createAnswer();
+            await peerConnection.setLocalDescription(answer);
+            socket.emit('answer', { target: callPartnerSocketId, sdp: answer });
+        });
+
+        socket.on('answer', async (data) => {
+            if (peerConnection) await peerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp));
+        });
+
+        socket.on('ice-candidate', async (data) => {
+            if (peerConnection) {
+                try { await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate)); } catch(e) {}
+            }
+        });
+
+        socket.on('call-message', (data) => addCallChatMessage(data.text, false, data.time));
+        socket.on('screen-share-started', () => {
+            remoteScreenMode = true;
+            updateRemoteVideoMode(true);
+        });
+        socket.on('screen-share-stopped', () => {
+            remoteScreenMode = false;
+            updateRemoteVideoMode(false);
+        });
+        socket.on('call-ended', () => {
+            showToast('Сессия завершена');
+            endCall();
+        });
+        socket.on('partner-disconnected', () => {
+            showToast('Собеседник отключился', true);
+            waitingMsgElem.style.display = 'flex';
+            callConnectionEstablished = false;
+        });
     }
 
-    // Привязка обработчиков кнопок управления (оставьте как есть – здесь только пример)
+    // ========== ПРИВЯЗКА КНОПОК УПРАВЛЕНИЯ ==========
     const toggleMicCallBtn = document.getElementById('toggleMicCall');
     const toggleCamCallBtn = document.getElementById('toggleCamCall');
     const shareScreenCallBtn = document.getElementById('shareScreenCallBtn');
@@ -3392,18 +3407,49 @@
     const floatingEndCallBtn = document.getElementById('floatingEndCallBtn');
     const restoreCallBtn = document.getElementById('restoreCallBtn');
 
-    // Функции управления (определите их до этого места или оставьте как есть)
-    const toggleMic = () => { /* ваш код */ };
-    const toggleCam = () => { /* ваш код */ };
+    // Функции управления (рабочие, не пустые)
+    const toggleMic = () => {
+        if (localStream) {
+            const t = localStream.getAudioTracks()[0];
+            if (t) {
+                t.enabled = !t.enabled;
+                if (toggleMicCallBtn) toggleMicCallBtn.classList.toggle('muted');
+                if (toggleMicCallBtn) toggleMicCallBtn.innerHTML = t.enabled ? '<i class="fas fa-microphone"></i>' : '<i class="fas fa-microphone-slash"></i>';
+                if (floatingMicCallBtn) {
+                    floatingMicCallBtn.innerHTML = t.enabled ? '<i class="fas fa-microphone"></i>' : '<i class="fas fa-microphone-slash"></i>';
+                    floatingMicCallBtn.classList.toggle('muted', !t.enabled);
+                }
+            }
+        }
+    };
+    const toggleCam = () => {
+        if (localStream) {
+            const t = localStream.getVideoTracks()[0];
+            if (t) {
+                t.enabled = !t.enabled;
+                if (toggleCamCallBtn) toggleCamCallBtn.classList.toggle('muted');
+                if (toggleCamCallBtn) toggleCamCallBtn.innerHTML = t.enabled ? '<i class="fas fa-video"></i>' : '<i class="fas fa-video-slash"></i>';
+                if (floatingCamCallBtn) {
+                    floatingCamCallBtn.innerHTML = t.enabled ? '<i class="fas fa-video"></i>' : '<i class="fas fa-video-slash"></i>';
+                    floatingCamCallBtn.classList.toggle('muted', !t.enabled);
+                }
+            }
+        }
+    };
     const toggleScreen = toggleScreenShareCall;
     const toggleRecord = toggleCallRecording;
     const reconnect = reconnectCall;
     const end = endCall;
-    const toggleChatPanel = () => { /* ваш код */ };
-    const closeChatPanel = () => { /* ваш код */ };
+    const toggleChatPanel = () => {
+        const panel = document.getElementById('chatPanelCall');
+        if (panel) panel.classList.toggle('open');
+    };
+    const closeChatPanel = () => {
+        const panel = document.getElementById('chatPanelCall');
+        if (panel) panel.classList.remove('open');
+    };
     const sendMessage = sendCallChatMessage;
 
-    // Назначение обработчиков
     if (toggleMicCallBtn) toggleMicCallBtn.onclick = toggleMic;
     if (toggleCamCallBtn) toggleCamCallBtn.onclick = toggleCam;
     if (shareScreenCallBtn) shareScreenCallBtn.onclick = toggleScreen;
@@ -3433,7 +3479,7 @@
     if (!navigator.mediaDevices?.getDisplayMedia && shareScreenCallBtn) shareScreenCallBtn.style.display = 'none';
     updateRemoteVideoMode(false);
 
-    // Функция переключения окон (большое/маленькое)
+    // Переключение окон (клик по маленькому видео)
     function swapVideoRoles() {
         if (!remoteWrapper || !localWrapper) return;
         const isLocalBig = localWrapper.classList.contains('big');
@@ -3450,12 +3496,10 @@
         }
         updateLocalVideoMode(isScreenSharing);
     }
-
     if (localWrapper) {
         localWrapper.onclick = swapVideoRoles;
     }
 }
-
 
 
         // Переопределяем глобальную startCall, чтобы использовать встроенный звонок
