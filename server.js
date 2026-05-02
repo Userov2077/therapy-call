@@ -244,6 +244,8 @@ async function initDatabase() {
         `CREATE INDEX IF NOT EXISTS idx_users_role ON users(role)`,
         `CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)`,
         `CREATE INDEX IF NOT EXISTS idx_time_slots_psychologist ON time_slots(psychologist_id)`
+        `ALTER TABLE reviews ADD COLUMN IF NOT EXISTS appointment_id VARCHAR(50) REFERENCES appointments(id) ON DELETE SET NULL`,
+        `CREATE INDEX IF NOT EXISTS idx_reviews_appointment_id ON reviews(appointment_id)`
     ];
     for (const q of queries) {
         try { await pool.query(q); } catch (err) { console.error('Ошибка создания таблицы:', err.message); }
@@ -1030,34 +1032,123 @@ app.delete('/api/notes/:noteId', async (req, res) => {
 
 // ========== ОТЗЫВЫ ==========
 app.post('/api/reviews', async (req, res) => {
+    const client = await pool.connect();
     try {
-        const { psychologistId, clientId, rating, text } = req.body;
-        const client = await getUser(clientId);
-        const psychologist = await getUser(psychologistId);
-        if (!client || !psychologist) return res.json({ success: false, error: 'Пользователь не найден' });
-        const hasAppointment = (client.appointments || []).some(a => a.psychologistId === psychologistId && a.status === 'confirmed');
-        if (!hasAppointment) return res.json({ success: false, error: 'Вы можете оставить отзыв только после подтверждённого звонка' });
-        const existing = await pool.query('SELECT 1 FROM reviews WHERE psychologist_id=$1 AND client_id=$2', [psychologistId, clientId]);
-        if (existing.rows.length > 0) return res.json({ success: false, error: 'Вы уже оставляли отзыв этому психологу' });
+        await client.query('BEGIN');
+        const { psychologistId, clientId, rating, text, appointmentId } = req.body;
+        
+        // Проверяем, что запись существует, принадлежит клиенту и завершена
+        const aptRes = await client.query(
+            `SELECT id FROM appointments WHERE id = $1 AND client_id = $2 AND status = 'completed'`,
+            [appointmentId, clientId]
+        );
+        if (aptRes.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.json({ success: false, error: 'Нет завершённой сессии для этого отзыва' });
+        }
+        
+        // Проверяем, нет ли уже отзыва на эту запись
+        const existingReview = await client.query(
+            `SELECT id FROM reviews WHERE appointment_id = $1`,
+            [appointmentId]
+        );
+        if (existingReview.rows.length > 0) {
+            await client.query('ROLLBACK');
+            return res.json({ success: false, error: 'Вы уже оставили отзыв на эту сессию' });
+        }
+        
+        const clientUser = await getUser(clientId);
+        if (!clientUser) {
+            await client.query('ROLLBACK');
+            return res.json({ success: false, error: 'Пользователь не найден' });
+        }
+        
         const newReview = {
             id: nanoid(12),
             psychologist_id: psychologistId,
             client_id: clientId,
-            client_name: client.fullName,
+            client_name: clientUser.fullName,
             rating: Math.min(5, Math.max(1, rating)),
             text,
+            appointment_id: appointmentId,
             created_at: new Date().toISOString()
         };
-        await pool.query(`INSERT INTO reviews (id,psychologist_id,client_id,client_name,rating,text,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-            [newReview.id, newReview.psychologist_id, newReview.client_id, newReview.client_name, newReview.rating, newReview.text, newReview.created_at]);
-        const newRating = await recalcPsychologistRating(psychologistId);
-        if (newRating !== null) {
-            psychologist.rating = newRating;
-            await updateUser(psychologist);
-        }
-        res.json({ success: true, review: newReview, newRating: psychologist.rating });
+        
+        await client.query(
+            `INSERT INTO reviews (id, psychologist_id, client_id, client_name, rating, text, appointment_id, created_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+            [newReview.id, newReview.psychologist_id, newReview.client_id, newReview.client_name, newReview.rating, newReview.text, newReview.appointment_id, newReview.created_at]
+        );
+        
+        // Пересчитываем рейтинг
+        await recalcPsychologistRating(psychologistId);
+        
+        await client.query('COMMIT');
+        
+        const updatedPsychologist = await getUser(psychologistId);
+        res.json({ success: true, review: newReview, newRating: updatedPsychologist.rating });
     } catch (err) {
+        await client.query('ROLLBACK');
         console.error('Review error:', err);
+        res.json({ success: false, error: 'Ошибка сервера' });
+    } finally {
+        client.release();
+    }
+});
+
+// Редактирование отзыва
+app.put('/api/reviews/:reviewId', async (req, res) => {
+    try {
+        const { reviewId } = req.params;
+        const { userId, rating, text } = req.body;
+        
+        const reviewRes = await pool.query(
+            'SELECT client_id, psychologist_id FROM reviews WHERE id = $1',
+            [reviewId]
+        );
+        if (reviewRes.rows.length === 0) {
+            return res.json({ success: false, error: 'Отзыв не найден' });
+        }
+        const review = reviewRes.rows[0];
+        if (review.client_id !== userId) {
+            return res.json({ success: false, error: 'Нет прав' });
+        }
+        
+        await pool.query(
+            'UPDATE reviews SET rating = $1, text = $2 WHERE id = $3',
+            [rating, text, reviewId]
+        );
+        await recalcPsychologistRating(review.psychologist_id);
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Update review error:', err);
+        res.json({ success: false });
+    }
+});
+
+// Удаление отзыва
+app.delete('/api/reviews/:reviewId', async (req, res) => {
+    try {
+        const { reviewId } = req.params;
+        const { userId } = req.body;
+        
+        const reviewRes = await pool.query(
+            'SELECT client_id, psychologist_id FROM reviews WHERE id = $1',
+            [reviewId]
+        );
+        if (reviewRes.rows.length === 0) {
+            return res.json({ success: false, error: 'Отзыв не найден' });
+        }
+        const review = reviewRes.rows[0];
+        if (review.client_id !== userId) {
+            return res.json({ success: false, error: 'Нет прав' });
+        }
+        
+        await pool.query('DELETE FROM reviews WHERE id = $1', [reviewId]);
+        await recalcPsychologistRating(review.psychologist_id);
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Delete review error:', err);
         res.json({ success: false });
     }
 });
@@ -1363,16 +1454,24 @@ io.on('connection', (socket) => {
                         }
                         io.to(apt.psychologist_id).emit('appointment_completed', apt.id);
                         io.to(apt.client_id).emit('appointment_completed', apt.id);
-                        // Отправляем клиенту уведомление с предложением оставить отзыв
-                        io.to(apt.client_id).emit('notification', {
+                        if (psychologist && client) {
+                        const notif = {
+                            id: nanoid(12),
                             type: 'request_review',
                             title: 'Оцените сессию',
                             message: `Как прошла сессия с ${psychologist.fullName}? Пожалуйста, оставьте отзыв.`,
                             appointmentId: apt.id,
                             psychologistId: apt.psychologist_id,
-                            psychologistName: psychologist.fullName
-                        });
+                            psychologistName: psychologist.fullName,
+                            createdAt: new Date().toISOString()
+                        };
+                        if (!client.notifications) client.notifications = [];
+                        client.notifications.unshift(notif);
+                        await updateUser(client);
+                        io.to(apt.client_id).emit('notification', notif);
                     }
+                    // ========== КОНЕЦ ФРАГМЕНТА ==========
+                }
                 } catch (err) { console.error('end-call DB error:', err); }
             }
             if (room) {
@@ -1441,6 +1540,23 @@ async function recalcPsychologistRating(psychologistId) {
         return null;
     }
 }
+
+app.get('/api/can-review/:psychologistId/:clientId', async (req, res) => {
+    try {
+        const { psychologistId, clientId } = req.params;
+        const result = await pool.query(
+            `SELECT a.id FROM appointments a
+             LEFT JOIN reviews r ON r.appointment_id = a.id
+             WHERE a.psychologist_id = $1 AND a.client_id = $2 AND a.status = 'completed'
+             AND r.id IS NULL`,
+            [psychologistId, clientId]
+        );
+        res.json({ success: true, canReview: result.rows.length > 0, appointmentId: result.rows[0]?.id || null });
+    } catch (err) {
+        console.error('can-review error:', err);
+        res.json({ success: false });
+    }
+});
 
 // ========== ЗАПУСК ==========
 app.get('/health', (req, res) => res.status(200).send('OK'));
