@@ -243,7 +243,7 @@ async function initDatabase() {
         `CREATE INDEX IF NOT EXISTS idx_appointments_client ON appointments(client_id)`,
         `CREATE INDEX IF NOT EXISTS idx_users_role ON users(role)`,
         `CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)`,
-        `CREATE INDEX IF NOT EXISTS idx_time_slots_psychologist ON time_slots(psychologist_id)`
+        `CREATE INDEX IF NOT EXISTS idx_time_slots_psychologist ON time_slots(psychologist_id)`,
         `ALTER TABLE reviews ADD COLUMN IF NOT EXISTS appointment_id VARCHAR(50) REFERENCES appointments(id) ON DELETE SET NULL`,
         `CREATE INDEX IF NOT EXISTS idx_reviews_appointment_id ON reviews(appointment_id)`
     ];
