@@ -934,7 +934,7 @@
     .local-video-wrapper.small {
         width: 100px;
         height: 130px;
-        bottom: 10px;
+        bottom: 80px;
         right: 10px;
     }
 }
@@ -1142,12 +1142,40 @@
     color: var(--green);
 }
 
+
+
+/* Анимация */
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+@keyframes pulse {
+    0%,100% { opacity: 1; }
+    50% { opacity: 0.55; }
+}
+/* Кнопка закрытия чата */
+.chat-header button {
+    background: rgba(0,0,0,0.6);
+    border: none;
+    color: var(--green);
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: 0.2s;
+}
+.chat-header button:hover {
+    background: var(--green-dim);
+}
 /* Плавающее окно (свёрнутый звонок) */
 .floating-call {
     position: fixed;
     bottom: 20px;
     right: 20px;
-    width: 160px;
+    width: 140px;
     background: rgba(0,0,0,0.85);
     backdrop-filter: blur(24px);
     border-radius: 16px;
@@ -1169,6 +1197,23 @@
     font-size: 11px;
     color: var(--green);
 }
+.floating-header button {
+    background: rgba(255,255,255,0.2);
+    border: none;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: white;
+    font-size: 12px;
+}
+.floating-header button:hover {
+    background: var(--green-dim);
+    color: var(--green);
+}
 .floating-video {
     aspect-ratio: 16 / 9;
     background: #000;
@@ -1185,23 +1230,42 @@
     background: rgba(0,0,0,0.7);
 }
 .floating-controls button {
-    width: 32px;
-    height: 32px;
+    width: 28px;
+    height: 28px;
     border-radius: 50%;
     background: rgba(255,255,255,0.2);
     border: none;
     color: white;
-    font-size: 12px;
+    font-size: 11px;
+    cursor: pointer;
+}
+.floating-controls button:hover {
+    background: var(--green-dim);
+    color: var(--green);
+}
+.floating-call.dragging {
+    cursor: grabbing;
+}
+.floating-call.dragging .floating-header {
+    cursor: grabbing;
 }
 
-/* Анимация */
-@keyframes spin {
-    to { transform: rotate(360deg); }
-}
-
-@keyframes pulse {
-    0%,100% { opacity: 1; }
-    50% { opacity: 0.55; }
+@media (max-width: 768px) {
+    .floating-call {
+        width: 110px;
+        bottom: 10px;
+        right: 10px;
+    }
+    .floating-header button {
+        width: 32px;
+        height: 32px;
+        font-size: 14px;
+    }
+    .floating-controls button {
+        width: 32px;
+        height: 32px;
+        font-size: 12px;
+    }
 }
 /* ---------- КОНЕЦ СТИЛЕЙ ЗВОНКА ---------- */
         @media (max-width: 768px) {
@@ -1256,33 +1320,6 @@
         }
         .bottom-nav {
             border-radius: 0;
-        }
-        .floating-header button {
-            background: rgba(255,255,255,0.2);
-            min-width: 44px;
-            min-height: 44px;
-            width: 44px;
-            height: 44px;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 20px;
-            cursor: pointer;
-            padding: 0;
-        }
-        @media (max-width: 768px) {
-            .floating-header button {
-                min-width: 52px;
-                min-height: 52px;
-                font-size: 24px;
-            }
-        }
-        .floating-call.dragging {
-            cursor: grabbing;
-        }
-        .floating-call.dragging .floating-header {
-            cursor: grabbing;
         }
     </style>
 </head>
@@ -4048,6 +4085,8 @@
     const header = element.querySelector('.floating-header');
     if (!header) return;
     const onStart = (e) => {
+        // Не перетаскиваем, если клик на кнопке (в том числе на кнопке восстановления)
+        if (e.target.closest('.floating-controls button') || e.target.closest('#restoreCallBtn')) return;
         e.preventDefault();
         const touch = e.touches ? e.touches[0] : e;
         startX = touch.clientX;
