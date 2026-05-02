@@ -1947,23 +1947,72 @@
     if (!currentUser) { showToast('Войдите в аккаунт', true); return; }
     const isPsych = currentUser.role === 'psychologist';
     document.getElementById('mainContent').innerHTML = `<div class="container"><div class="empty-state"><i class="fas fa-circle-notch fa-spin"></i></div></div>`;
-    const [postsRes, tasksRes, notesRes, subsRes] = await Promise.all([
-        fetchJSON(`/api/posts?userId=${currentUser.id}`),
-        isPsych ? fetchJSON(`/api/tasks/${currentUser.id}`) : Promise.resolve({ tasks: [] }),
-        isPsych ? fetchJSON(`/api/notes/${currentUser.id}`) : Promise.resolve({ notes: [] }),
-        fetchJSON(`/api/subscriptions/${currentUser.id}`)
-    ]);
-    const myPosts = (postsRes.posts || []).filter(p => p.author.id === currentUser.id);
-    const tasks = tasksRes.tasks || [];
-    const notes = notesRes.notes || [];
-    const followersCount = subsRes.followers?.length || 0;
-    const totalLikesOnPosts = myPosts.reduce((sum, p) => sum + (p.likesCount || 0), 0);
+    const [postsRes, tasksRes, notesRes, subsRes, statsRes] = await Promise.all([
+    fetchJSON(`/api/posts?userId=${currentUser.id}`),
+    isPsych ? fetchJSON(`/api/tasks/${currentUser.id}`) : Promise.resolve({ tasks: [] }),
+    isPsych ? fetchJSON(`/api/notes/${currentUser.id}`) : Promise.resolve({ notes: [] }),
+    fetchJSON(`/api/subscriptions/${currentUser.id}`),
+    isPsych ? fetchJSON(`/api/psychologist/${currentUser.id}/stats`) : Promise.resolve({ success: false })
+]);
+const myPosts = (postsRes.posts || []).filter(p => p.author.id === currentUser.id);
+const tasks = tasksRes.tasks || [];
+const notes = notesRes.notes || [];
+const followersCount = subsRes.followers?.length || 0;
+const totalLikesOnPosts = statsRes.success ? statsRes.totalLikes : 0;
     
     let appointmentsHtml = '';
-    if (!isPsych && currentUser.appointments && currentUser.appointments.length > 0) {
-        const appointments = currentUser.appointments.filter(a => a.status === 'confirmed' || a.status === 'completed');
-        appointmentsHtml = `<div class="profile-sections"><div class="collapsible-section open"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">📅</div><div><div class="collapsible-title">Мои записи</div><div class="collapsible-subtitle">${appointments.length} сеансов</div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body">${appointments.map(apt => { const isCompleted = apt.status === 'completed'; return `<div class="appointment-item"><div class="appt-info"><div class="appt-name">${escapeHtml(apt.psychologistName)}</div><div class="appt-time">📅 ${apt.date} в ${apt.time}</div><div class="appt-status ${isCompleted ? 'status-completed' : (apt.status === 'confirmed' ? 'status-confirmed' : 'status-pending')}">${isCompleted ? '✅ Завершён' : (apt.status === 'confirmed' ? '✅ Подтверждён' : '⏳ Ожидает')}</div></div><div class="appt-actions">${!isCompleted && apt.status === 'confirmed' ? `<button class="btn-sm" onclick="startCall('${apt.roomId}', 'client')"><i class="fas fa-video"></i> Войти</button>` : ''}${isCompleted ? '<i class="fas fa-check-circle" style="color:var(--green); font-size:20px;"></i>' : ''}</div></div>`; }).join('')}${appointments.length === 0 ? '<div class="empty-state" style="padding:16px;"><i class="fas fa-calendar-times"></i><div>Нет записей</div></div>' : ''}</div></div></div>`;
-    }
+if (!isPsych && currentUser.appointments && currentUser.appointments.length > 0) {
+    const now = new Date();
+    const upcoming = currentUser.appointments.filter(a => {
+        const aptDate = new Date(a.date + 'T' + a.time);
+        return a.status === 'confirmed' && aptDate >= now;
+    });
+    const past = currentUser.appointments.filter(a => {
+        const aptDate = new Date(a.date + 'T' + a.time);
+        return a.status === 'completed' || (a.status === 'confirmed' && aptDate < now);
+    });
+    appointmentsHtml = `<div class="profile-sections">
+        <div class="collapsible-section open">
+            <div class="collapsible-header" onclick="toggleSection(this)">
+                <div class="collapsible-header-left">
+                    <div class="collapsible-icon">📅</div>
+                    <div>
+                        <div class="collapsible-title">Мои записи</div>
+                        <div class="collapsible-subtitle">${upcoming.length} предстоящих, ${past.length} завершённых</div>
+                    </div>
+                </div>
+                <i class="fas fa-chevron-down collapsible-chevron"></i>
+            </div>
+            <div class="collapsible-body">
+                ${upcoming.length > 0 ? `<div style="margin-bottom:16px;"><strong>✅ Предстоящие</strong></div>` + upcoming.map(apt => `
+                    <div class="appointment-item">
+                        <div class="appt-info">
+                            <div class="appt-name">${escapeHtml(apt.psychologistName)}</div>
+                            <div class="appt-time">📅 ${apt.date} в ${apt.time}</div>
+                            <div class="appt-status status-confirmed">✅ Подтверждён</div>
+                        </div>
+                        <div class="appt-actions">
+                            <button class="btn-sm" onclick="startCall('${apt.roomId}', 'client')"><i class="fas fa-video"></i> Войти</button>
+                        </div>
+                    </div>
+                `).join('') : ''}
+                ${past.length > 0 ? `<div style="margin:16px 0 8px;"><strong>✅ Завершённые</strong></div>` + past.map(apt => `
+                    <div class="appointment-item">
+                        <div class="appt-info">
+                            <div class="appt-name">${escapeHtml(apt.psychologistName)}</div>
+                            <div class="appt-time">📅 ${apt.date} в ${apt.time}</div>
+                            <div class="appt-status status-completed">✅ Завершён</div>
+                        </div>
+                        <div class="appt-actions">
+                            <i class="fas fa-check-circle" style="color:var(--green); font-size:20px;"></i>
+                        </div>
+                    </div>
+                `).join('') : ''}
+                ${upcoming.length === 0 && past.length === 0 ? '<div class="empty-state" style="padding:16px;"><i class="fas fa-calendar-times"></i><div>Нет записей</div></div>' : ''}
+            </div>
+        </div>
+    </div>`;
+}
 
     let psychSections = '';
     if (isPsych) {

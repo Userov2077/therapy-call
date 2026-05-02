@@ -940,6 +940,40 @@ app.delete('/api/tasks/:taskId', async (req, res) => {
     }
 });
 
+// ========== СТАТИСТИКА ПСИХОЛОГА ==========
+app.get('/api/psychologist/:id/stats', async (req, res) => {
+    try {
+        const { id } = req.params;
+        
+        // Посты психолога
+        const postsRes = await pool.query('SELECT id FROM posts WHERE author_id = $1', [id]);
+        const postIds = postsRes.rows.map(p => p.id);
+        
+        let totalLikes = 0;
+        if (postIds.length > 0) {
+            const likesRes = await pool.query('SELECT COUNT(*)::int AS cnt FROM likes WHERE post_id = ANY($1::text[])', [postIds]);
+            totalLikes = likesRes.rows[0].cnt;
+        }
+        
+        // Количество подписчиков
+        const followersRes = await pool.query('SELECT COUNT(*)::int AS cnt FROM subscriptions WHERE following_id = $1', [id]);
+        const followersCount = followersRes.rows[0].cnt;
+        
+        // Количество постов
+        const postsCount = postIds.length;
+        
+        res.json({
+            success: true,
+            totalLikes,
+            followersCount,
+            postsCount
+        });
+    } catch (err) {
+        console.error('Stats error:', err);
+        res.json({ success: false, error: err.message });
+    }
+});
+
 // ========== ЗАМЕТКИ ==========
 app.get('/api/notes/:psychologistId', async (req, res) => {
     try {
@@ -1360,6 +1394,8 @@ io.on('connection', (socket) => {
         }
     });
 });
+
+
 
 // ========== ЗАПУСК ==========
 app.get('/health', (req, res) => res.status(200).send('OK'));
