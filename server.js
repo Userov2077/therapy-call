@@ -1107,25 +1107,32 @@ app.put('/api/reviews/:reviewId', async (req, res) => {
             [reviewId]
         );
         if (reviewRes.rows.length === 0) {
-            return res.json({ success: false, error: 'Отзыв не найден' });
+            return res.status(404).json({ success: false, error: 'Отзыв не найден' });
         }
         const review = reviewRes.rows[0];
         if (review.client_id !== userId) {
-            return res.json({ success: false, error: 'Нет прав' });
+            return res.status(403).json({ success: false, error: 'Нет прав' });
         }
         
         await pool.query(
             'UPDATE reviews SET rating = $1, text = $2 WHERE id = $3',
             [rating, text, reviewId]
         );
-        await recalcPsychologistRating(review.psychologist_id);
-        res.json({ success: true });
+        
+        // Пересчёт рейтинга (должен быть асинхронным, но не возвращать ошибку)
+        try {
+            await recalcPsychologistRating(review.psychologist_id);
+        } catch (err) {
+            console.error('Rating recalculation error:', err);
+            // Не прерываем выполнение, просто логируем
+        }
+        
+        res.status(200).json({ success: true });
     } catch (err) {
         console.error('Update review error:', err);
-        res.json({ success: false });
+        res.status(500).json({ success: false, error: err.message });
     }
 });
-
 // Удаление отзыва
 app.delete('/api/reviews/:reviewId', async (req, res) => {
     try {
@@ -1137,19 +1144,25 @@ app.delete('/api/reviews/:reviewId', async (req, res) => {
             [reviewId]
         );
         if (reviewRes.rows.length === 0) {
-            return res.json({ success: false, error: 'Отзыв не найден' });
+            return res.status(404).json({ success: false, error: 'Отзыв не найден' });
         }
         const review = reviewRes.rows[0];
         if (review.client_id !== userId) {
-            return res.json({ success: false, error: 'Нет прав' });
+            return res.status(403).json({ success: false, error: 'Нет прав' });
         }
         
         await pool.query('DELETE FROM reviews WHERE id = $1', [reviewId]);
-        await recalcPsychologistRating(review.psychologist_id);
-        res.json({ success: true });
+        
+        try {
+            await recalcPsychologistRating(review.psychologist_id);
+        } catch (err) {
+            console.error('Rating recalculation error:', err);
+        }
+        
+        res.status(200).json({ success: true });
     } catch (err) {
         console.error('Delete review error:', err);
-        res.json({ success: false });
+        res.status(500).json({ success: false, error: err.message });
     }
 });
 

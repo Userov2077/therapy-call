@@ -3676,64 +3676,100 @@ if (!isPsych && currentUser.appointments && currentUser.appointments.length > 0)
             const isOwn = currentUser && currentUser.id === psychologistId;
             const certificates = p.certificates || [];
             const html = `<div class="container">
-                <div class="psych-page-header">
-                    <button class="back-btn" onclick="switchTab('psychologists')"><i class="fas fa-arrow-left"></i></button>
-                    <span style="font-size:14px;color:var(--text-muted);">Профиль</span>
+    <div class="psych-page-header">
+        <button class="back-btn" onclick="switchTab('psychologists')"><i class="fas fa-arrow-left"></i></button>
+        <span style="font-size:14px;color:var(--text-muted);">Профиль</span>
+    </div>
+    <div class="profile-header">
+        <img class="profile-avatar-lg" src="${escapeHtml(p.avatar)}" onerror="this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(p.fullName)}&background=8bca8b&color=fff'">
+        <div class="profile-name">${escapeHtml(p.fullName)}</div>
+        <div class="profile-role-badge">🧠 Психолог</div>
+        ${p.about ? `<div class="profile-bio">${escapeHtml(p.about)}</div>` : ''}
+        ${renderStars(p.rating || 0)}
+        <div class="psych-actions-row">
+            ${!isOwn && currentUser ? `
+                <button class="btn-sm btn-outline" onclick="toggleSubscription('${psychologistId}')" id="subsBtn${psychologistId}">
+                ${currentUser.following && currentUser.following.includes(psychologistId) ? 'Отписаться' : 'Подписаться'}
+                </button>
+                <button class="btn-sm btn-outline" onclick="startChatWith('${psychologistId}','${escapeHtml(p.fullName)}')"><i class="fas fa-comment-dots"></i> Написать</button>
+                <button class="btn-sm" onclick="bookPsychologist('${psychologistId}','${escapeHtml(p.fullName)}')"><i class="fas fa-calendar-plus"></i> Записаться</button>
+                <button class="btn-sm btn-outline" onclick="openReviewModal('${psychologistId}','${escapeHtml(p.fullName)}')"><i class="fas fa-star"></i> Оценить</button>
+            ` : ''}
+            ${isOwn ? `<button class="btn-sm btn-outline" onclick="switchTab('profile')"><i class="fas fa-pen"></i> Редактировать</button>` : ''}
+        </div>
+    </div>
+    ${p.specialization || p.experience || p.price ? `
+    <div style="margin-bottom:16px;">
+        ${p.specialization ? `<div class="info-row"><i class="fas fa-brain"></i> ${escapeHtml(p.specialization)}</div>` : ''}
+        ${p.experience ? `<div class="info-row"><i class="fas fa-briefcase"></i> Опыт: ${escapeHtml(p.experience)}</div>` : ''}
+        ${p.price ? `<div class="info-row"><i class="fas fa-tag"></i> ${p.price} ₸ / час</div>` : ''}
+    </div>` : ''}
+
+    <!-- ========== НОВЫЙ БЛОК ОТЗЫВОВ (на видном месте) ========== -->
+    <div style="margin-bottom: 24px;">
+        <div class="section-header-row">
+            <div>
+                <h3>⭐ Отзывы (${reviews.length})</h3>
+                <div class="rating-stats" style="font-size: 14px; margin-top: 4px;">
+                    ${renderStars(p.rating || 0)} <span style="color: var(--text-muted);">${(p.rating || 0).toFixed(1)} из 5</span>
                 </div>
-                <div class="profile-header">
-                    <img class="profile-avatar-lg" src="${escapeHtml(p.avatar)}" onerror="this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(p.fullName)}&background=8bca8b&color=fff'">
-                    <div class="profile-name">${escapeHtml(p.fullName)}</div>
-                    <div class="profile-role-badge">🧠 Психолог</div>
-                    ${p.about ? `<div class="profile-bio">${escapeHtml(p.about)}</div>` : ''}
-                    ${renderStars(p.rating || 0)}
-                    <div class="psych-actions-row">
-                        ${!isOwn && currentUser ? `
-                            <button class="btn-sm btn-outline" onclick="toggleSubscription('${psychologistId}')" id="subsBtn${psychologistId}">
-                            ${currentUser.following && currentUser.following.includes(psychologistId) ? 'Отписаться' : 'Подписаться'}
-                            </button>
-                            <button class="btn-sm btn-outline" onclick="startChatWith('${psychologistId}','${escapeHtml(p.fullName)}')"><i class="fas fa-comment-dots"></i> Написать</button>
-                            <button class="btn-sm" onclick="bookPsychologist('${psychologistId}','${escapeHtml(p.fullName)}')"><i class="fas fa-calendar-plus"></i> Записаться</button>
-                            <button class="btn-sm btn-outline" onclick="openReviewModal('${psychologistId}','${escapeHtml(p.fullName)}')"><i class="fas fa-star"></i> Оценить</button>
-                        ` : ''}
-                        ${isOwn ? `<button class="btn-sm btn-outline" onclick="switchTab('profile')"><i class="fas fa-pen"></i> Редактировать</button>` : ''}
+            </div>
+            <div>
+                ${canReview ? `<button class="btn-sm" onclick="openReviewModalWithAppointment('${psychologistId}','${escapeHtml(p.fullName)}','${availableAppointmentId}')"><i class="fas fa-star"></i> Оставить отзыв</button>` : ''}
+            </div>
+        </div>
+        ${reviews.slice(0, 3).map(r => `
+            <div class="review-card glass-card" data-review-id="${r.id}" data-client-id="${r.clientId}">
+                <div class="review-header">
+                    <span class="review-name">${escapeHtml(r.clientName)}</span>
+                    ${renderStars(r.rating)}
+                    ${currentUser && currentUser.id === r.clientId ? `
+                        <div style="display: flex; gap: 6px;">
+                            <button class="btn-sm btn-outline" style="padding: 2px 8px;" onclick="editReviewModal('${r.id}', ${r.rating}, '${escapeHtml(r.text).replace(/'/g, "\\'")}')">✏️</button>
+                            <button class="btn-sm btn-outline" style="padding: 2px 8px; color: #ff6b6b;" onclick="deleteReview('${r.id}')">🗑️</button>
+                        </div>
+                    ` : ''}
+                </div>
+                <div class="review-text">${escapeHtml(r.text)}</div>
+                <div class="review-time">${new Date(r.createdAt).toLocaleString()}</div>
+            </div>
+        `).join('')}
+        ${reviews.length === 0 ? '<div class="empty-state glass-card" style="padding:20px;"><i class="fas fa-star"></i><div>Нет отзывов</div></div>' : ''}
+        ${reviews.length > 3 ? `<div style="text-align:center; margin-top:12px;"><button class="btn-sm btn-outline" onclick="showAllReviews(${JSON.stringify(reviews).replace(/"/g, '&quot;')}, '${escapeHtml(p.fullName)}')">Показать все (${reviews.length})</button></div>` : ''}
+    </div>
+    <!-- ========== КОНЕЦ БЛОКА ОТЗЫВОВ ========== -->
+
+    ${certificates.length > 0 ? `
+    <div style="margin-bottom:20px;">
+        <div class="section-header-row"><h3>📜 Сертификаты</h3></div>
+        <div class="certificates-grid">
+            ${certificates.map(c => `
+                <div class="certificate-card">
+                    <img src="${escapeHtml(c.image)}" onerror="this.src='https://placehold.co/100x80/1a2e1a/8bca8b?text=📜'">
+                    <div class="certificate-title">${escapeHtml(c.title)}</div>
+                </div>
+            `).join('')}
+        </div>
+    </div>` : ''}
+
+    <div style="margin-bottom:20px;">
+        <div class="section-header-row"><h3>📝 Посты</h3></div>
+        <div class="posts-grid">
+            ${psychPosts.map(pst => `
+                <div class="post-card glass-card">
+                    <div class="post-text">${escapeHtml(pst.text)}</div>
+                    ${pst.image ? `<img class="post-image" src="${escapeHtml(pst.image)}" onclick="openImageModal('${escapeHtml(pst.image)}')">` : ''}
+                    ${pst.video ? `<video class="post-video" controls preload="metadata"><source src="${escapeHtml(pst.video)}" type="video/mp4"></video>` : ''}
+                    <div class="post-stats">
+                        <span style="color:var(--text-muted);font-size:13px;display:flex;gap:6px;align-items:center;"><i class="fa-regular fa-heart"></i> ${pst.likesCount||0}</span>
+                        <span style="color:var(--text-muted);font-size:13px;display:flex;gap:6px;align-items:center;"><i class="fa-regular fa-comment"></i> ${pst.commentsCount||0}</span>
                     </div>
                 </div>
-                ${p.specialization || p.experience || p.price ? `
-                <div style="margin-bottom:16px;">
-                    ${p.specialization ? `<div class="info-row"><i class="fas fa-brain"></i> ${escapeHtml(p.specialization)}</div>` : ''}
-                    ${p.experience ? `<div class="info-row"><i class="fas fa-briefcase"></i> Опыт: ${escapeHtml(p.experience)}</div>` : ''}
-                    ${p.price ? `<div class="info-row"><i class="fas fa-tag"></i> ${p.price} ₸ / час</div>` : ''}
-                </div>` : ''}
-                ${certificates.length > 0 ? `
-                <div style="margin-bottom:20px;">
-                    <div class="section-header-row"><h3>📜 Сертификаты</h3></div>
-                    <div class="certificates-grid">
-                        ${certificates.map(c => `
-                            <div class="certificate-card">
-                                <img src="${escapeHtml(c.image)}" onerror="this.src='https://placehold.co/100x80/1a2e1a/8bca8b?text=📜'">
-                                <div class="certificate-title">${escapeHtml(c.title)}</div>
-                            </div>
-                        `).join('')}
-                    </div>
-                </div>` : ''}
-                <div style="margin-bottom:20px;">
-                    <div class="section-header-row"><h3>📝 Посты</h3></div>
-                    <div class="posts-grid">
-                        ${psychPosts.map(pst => `
-                            <div class="post-card glass-card">
-                                <div class="post-text">${escapeHtml(pst.text)}</div>
-                                ${pst.image ? `<img class="post-image" src="${escapeHtml(pst.image)}" onclick="openImageModal('${escapeHtml(pst.image)}')">` : ''}
-                                ${pst.video ? `<video class="post-video" controls preload="metadata"><source src="${escapeHtml(pst.video)}" type="video/mp4"></video>` : ''}
-                                <div class="post-stats">
-                                    <span style="color:var(--text-muted);font-size:13px;display:flex;gap:6px;align-items:center;"><i class="fa-regular fa-heart"></i> ${pst.likesCount||0}</span>
-                                    <span style="color:var(--text-muted);font-size:13px;display:flex;gap:6px;align-items:center;"><i class="fa-regular fa-comment"></i> ${pst.commentsCount||0}</span>
-                                </div>
-                            </div>
-                        `).join('')}
-                        ${psychPosts.length === 0 ? '<div class="empty-state glass-card" style="padding:20px;"><i class="fas fa-newspaper"></i><div>Нет постов</div></div>' : ''}
-                    </div>
-                </div>
-                <div>
+            `).join('')}
+            ${psychPosts.length === 0 ? '<div class="empty-state glass-card" style="padding:20px;"><i class="fas fa-newspaper"></i><div>Нет постов</div></div>' : ''}
+        </div>
+    </div>
+</div>`;
     <div style="margin-top: 24px;">
     <div class="section-header-row">
         <div>
@@ -4485,19 +4521,26 @@ async function updateReview(modalId, reviewId) {
     const modal = document.getElementById(modalId);
     const rating = modal.querySelectorAll('#starsContainer i.fas').length;
     const text = modal.querySelector('#reviewText').value;
-    const res = await fetch(`/api/reviews/${reviewId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: currentUser.id, rating, text })
-    });
-    const data = await res.json();
-    if (data.success) {
-        showToast('Отзыв обновлён');
-        closeModal(modalId);
-        const psychId = window.location.pathname.split('/').pop(); // упрощённо, лучше передать
-        viewPsychologistPage(psychId);
-    } else {
-        showToast(data.error || 'Ошибка', true);
+    try {
+        const res = await fetch(`/api/reviews/${reviewId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId: currentUser.id, rating, text })
+        });
+        const data = await res.json();
+        if (data.success) {
+            showToast('Отзыв обновлён');
+            closeModal(modalId);
+            // Обновить страницу психолога (ID нужно передать или взять из URL)
+            const psychId = window.currentPsychId || (new URLSearchParams(window.location.search).get('id'));
+            if (psychId) viewPsychologistPage(psychId);
+            else location.reload();
+        } else {
+            showToast(data.error || 'Ошибка при обновлении', true);
+        }
+    } catch (err) {
+        console.error('Update review fetch error:', err);
+        showToast('Ошибка соединения', true);
     }
 }
 
