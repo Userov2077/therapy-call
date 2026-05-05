@@ -98,29 +98,27 @@ const uploadDoc = multer({ storage: docStorage, limits: { fileSize: 5 * 1024 * 1
 async function initDatabase() {
     const queries = [
         `CREATE TABLE IF NOT EXISTS users (
-        id VARCHAR(50) PRIMARY KEY,
-        full_name TEXT NOT NULL,
-        email TEXT UNIQUE NOT NULL,
-        phone TEXT,
-        password TEXT NOT NULL,
-        role TEXT NOT NULL,
-        specialization TEXT,
-        experience TEXT,
-        about TEXT,
-        price INTEGER DEFAULT 0,
-        topics JSONB DEFAULT '[]',
-        schedule JSONB DEFAULT '{}',
-        certificates JSONB DEFAULT '[]',
-        rating FLOAT DEFAULT 0,
-        avatar TEXT,
-        appointments JSONB DEFAULT '[]',
-        clients JSONB DEFAULT '[]',
-        notifications JSONB DEFAULT '[]',
-        emergency_contacts JSONB DEFAULT '[]',
-        created_at TIMESTAMP DEFAULT NOW()
+            id VARCHAR(50) PRIMARY KEY,
+            full_name TEXT NOT NULL,
+            email TEXT UNIQUE NOT NULL,
+            phone TEXT,
+            password TEXT NOT NULL,
+            role TEXT NOT NULL,
+            specialization TEXT,
+            experience TEXT,
+            about TEXT,
+            price INTEGER DEFAULT 0,
+            topics JSONB DEFAULT '[]',
+            schedule JSONB DEFAULT '{}',
+            certificates JSONB DEFAULT '[]',
+            rating FLOAT DEFAULT 0,
+            avatar TEXT,
+            appointments JSONB DEFAULT '[]',
+            clients JSONB DEFAULT '[]',
+            notifications JSONB DEFAULT '[]',
+            emergency_contacts JSONB DEFAULT '[]',
+            created_at TIMESTAMP DEFAULT NOW()
         )`,
-        // И отдельно:
-        `ALTER TABLE users ADD COLUMN IF NOT EXISTS emergency_contacts JSONB DEFAULT '[]'`,
         `CREATE TABLE IF NOT EXISTS user_unreads (
             user_id VARCHAR(50) REFERENCES users(id) ON DELETE CASCADE,
             from_user_id VARCHAR(50) REFERENCES users(id) ON DELETE CASCADE,
@@ -294,7 +292,6 @@ async function initDatabase() {
             answer_value TEXT,
             created_at TIMESTAMP DEFAULT NOW()
         )`,
-        await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS emergency_contacts JSONB DEFAULT '[]'`);
         // Индексы
         `CREATE INDEX IF NOT EXISTS idx_posts_author_id ON posts(author_id)`,
         `CREATE INDEX IF NOT EXISTS idx_posts_created_at ON posts(created_at DESC)`,
@@ -313,10 +310,25 @@ async function initDatabase() {
         `CREATE INDEX IF NOT EXISTS idx_client_progress_client ON client_progress(client_id)`,
         `CREATE INDEX IF NOT EXISTS idx_answers_client ON answers(client_id)`
     ];
+    
     for (const q of queries) {
-        try { await pool.query(q); } catch (err) { console.error('Ошибка создания таблицы:', err.message); }
+        try {
+            await pool.query(q);
+        } catch (err) {
+            console.error('Ошибка создания таблицы или индекса:', err.message);
+        }
     }
+    
+    // Дополнительная проверка для старых баз данных, где колонка могла отсутствовать
+    try {
+        await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS emergency_contacts JSONB DEFAULT '[]'`);
+    } catch (err) {
+        // Игнорируем, колонка уже есть
+        console.log('Колонка emergency_contacts уже существует или не может быть добавлена');
+    }
+    
     console.log('✅ База данных инициализирована');
+}
 }
 
 // ========== Вспомогательные функции ==========
