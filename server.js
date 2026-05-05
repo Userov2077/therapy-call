@@ -294,6 +294,7 @@ async function initDatabase() {
             answer_value TEXT,
             created_at TIMESTAMP DEFAULT NOW()
         )`,
+        await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS emergency_contacts JSONB DEFAULT '[]'`);
         // Индексы
         `CREATE INDEX IF NOT EXISTS idx_posts_author_id ON posts(author_id)`,
         `CREATE INDEX IF NOT EXISTS idx_posts_created_at ON posts(created_at DESC)`,
@@ -1267,6 +1268,39 @@ app.post('/api/messages/read', async (req, res) => {
     } finally { client.release(); }
 });
 
+// ========== ПРОФИЛЬ КЛИЕНТА (регистрационная анкета) ==========
+app.post('/api/client-profile', async (req, res) => {
+    try {
+        const { userId, birthDate, gender, emergencyContacts, complaints, goals } = req.body;
+        // Проверяем, что пользователь существует и он клиент
+        const user = await getUser(userId);
+        if (!user || user.role !== 'client') {
+            return res.json({ success: false, error: 'Доступ запрещён' });
+        }
+        // Сохраняем в таблицу client_profiles
+        await pool.query(`
+            INSERT INTO client_profiles (user_id, birth_date, gender, emergency_phone, complaints, goals, updated_at)
+            VALUES ($1, $2, $3, $4, $5, $6, NOW())
+            ON CONFLICT (user_id) DO UPDATE SET
+                birth_date = EXCLUDED.birth_date,
+                gender = EXCLUDED.gender,
+                emergency_phone = EXCLUDED.emergency_phone,
+                complaints = EXCLUDED.complaints,
+                goals = EXCLUDED.goals,
+                updated_at = NOW()
+        `, [userId, birthDate || null, gender || null, JSON.stringify(emergencyContacts || []), complaints || '', goals || '']);
+        
+        // Обновляем emergency_contacts в таблице users
+        user.emergencyContacts = emergencyContacts || [];
+        await updateUser(user);
+        
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Save client profile error:', err);
+        res.json({ success: false, error: err.message });
+    }
+});
+
 // ========== ПСИХОЛОГИ, ПОИСК ==========
 app.get('/api/psychologists', async (req, res) => {
     try {
@@ -1290,6 +1324,8 @@ app.get('/api/search/psychologists', async (req, res) => {
         res.json({ success: false });
     }
 });
+
+
 
 // ========== КАРТА КЛИЕНТА ==========
 app.get('/api/client-card/:clientId', async (req, res) => {
@@ -1437,6 +1473,45 @@ app.post('/api/questionnaires/:id/submit', async (req, res) => {
         res.json({ success: true });
     } catch (err) {
         console.error('Submit answers error:', err);
+        res.json({ success: false });
+    }
+});
+
+app.get('/api/questionnaires/psychologist/:psychologistId', async (req, res) => {
+    try {
+        const result = await pool.query(`SELECT id, title, description, is_published, created_at FROM questionnaires WHERE psychologist_id=$1 ORDER BY created_at DESC`, [req.params.psychologistId]);
+        res.json({ success: true, questionnaires: result.rows });
+    } catch (err) {
+        console.error('Get psychologist questionnaires error:', err);
+        res.json({ success: false });
+    }
+});
+
+app.post('/api/questionnaires/publish/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { is_published } = req.body;
+        await pool.query(`UPDATE questionnaires SET is_published=$1, updated_at=NOW() WHERE id=$2`, [is_published, id]);
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Publish questionnaire error:', err);
+        res.json({ success: false });
+    }
+});
+
+// ⬇️ НОВЫЙ МАРШРУТ для получения вопросов ⬇️
+app.get('/api/questionnaires/:id/questions', async (req, res) => {
+    try {
+        const result = await pool.query(`SELECT id, text, type, options, sort_order FROM questions WHERE questionnaire_id=$1 ORDER BY sort_order`, [req.params.id]);
+        const questions = result.rows.map(q => ({
+            id: q.id,
+            text: q.text,
+            type: q.type,
+            options: safeJSONParse(q.options, [])
+        }));
+        res.json({ success: true, questions });
+    } catch (err) {
+        console.error('Get questions error:', err);
         res.json({ success: false });
     }
 });

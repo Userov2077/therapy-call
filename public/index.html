@@ -938,6 +938,11 @@
         async function renderProfile() {
             if (!currentUser) { showToast('Войдите в аккаунт', true); return; }
             const isPsych = currentUser.role === 'psychologist';
+            let myQuestionnaires = [];
+            if (isPsych) {
+                const questRes = await fetchJSON(`/api/questionnaires/psychologist/${currentUser.id}`);
+                if (questRes.success) myQuestionnaires = questRes.questionnaires || [];
+            }
             document.getElementById('mainContent').innerHTML = `<div class="container"><div class="empty-state"><i class="fas fa-circle-notch fa-spin"></i></div></div>`;
             
             const [postsRes, tasksRes, notesRes, subsRes, statsRes] = await Promise.all([
@@ -995,7 +1000,32 @@
                         <div class="collapsible-section" id="sec-clients"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">👥</div><div><div class="collapsible-title">Клиенты</div><div class="collapsible-subtitle" id="clientsSubtitle"></div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body"><div style="margin-bottom:12px;display:flex;gap:8px;"><button class="btn-sm btn-outline filter-clients-btn active" data-filter="upcoming">Предстоящие</button><button class="btn-sm btn-outline filter-clients-btn" data-filter="past">Прошедшие</button></div><div id="clientsList"></div></div></div>
                         <div class="collapsible-section" id="sec-notes"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">📝</div><div><div class="collapsible-title">Заметки</div><div class="collapsible-subtitle">${notes.length} заметок</div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body"><div class="notes-grid" id="notesGridProfile">${notes.map(n => `<div class="note-card" onclick="openNoteModal('${n.id}','${escapeHtml(n.title)}','${escapeHtml(n.content)}','${n.attachment || ''}')"><div class="note-title">${escapeHtml(n.title)}</div><div class="note-preview">${escapeHtml((n.content || '').substring(0, 70))}${(n.content || '').length > 70 ? '…' : ''}</div></div>`).join('')}${notes.length === 0 ? '<div class="empty-state" style="padding:16px;"><i class="fas fa-sticky-note"></i><div>Нет заметок</div></div>' : ''}</div><button class="section-add-btn" onclick="openAddNoteModal()"><i class="fas fa-plus"></i> Добавить заметку</button></div></div>
                         <div class="collapsible-section" id="sec-certs"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">📜</div><div><div class="collapsible-title">Сертификаты и дипломы</div><div class="collapsible-subtitle">${certificates.length} документов</div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body"><div class="certificates-grid" id="certsGridProfile">${certificates.map(c => `<div class="certificate-card"><img src="${escapeHtml(c.image)}" onerror="this.src='https://placehold.co/100x80/1a2e1a/8bca8b?text=📜'"><div class="certificate-title">${escapeHtml(c.title)}</div><button class="delete-cert-btn" onclick="deleteCertificateProfile('${c.id}')"><i class="fas fa-times"></i></button></div>`).join('')}<div class="certificate-card add-cert-card" onclick="addCertificateProfile()"><i class="fas fa-plus"></i><span>Добавить</span></div></div></div></div>
-                        <div class="collapsible-section" id="sec-questionnaires"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">📋</div><div><div class="collapsible-title">Опросники</div><div class="collapsible-subtitle">Создавайте и управляйте анкетами</div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body"><button class="section-add-btn" onclick="createQuestionnaire()"><i class="fas fa-plus"></i> Создать опросник</button><div id="psychQuestionnairesList" style="margin-top:12px;"><div class="empty-state"><i class="fas fa-info-circle"></i><div>Пока нет анкет</div></div></div></div></div>
+                        <div class="collapsible-section" id="sec-questionnaires">
+    <div class="collapsible-header" onclick="toggleSection(this)">
+        <div class="collapsible-header-left">
+            <div class="collapsible-icon">📋</div>
+            <div>
+                <div class="collapsible-title">Опросники</div>
+                <div class="collapsible-subtitle">Создавайте и управляйте анкетами</div>
+            </div>
+        </div>
+        <i class="fas fa-chevron-down collapsible-chevron"></i>
+    </div>
+    <div class="collapsible-body">
+        <button class="section-add-btn" onclick="createQuestionnaire()"><i class="fas fa-plus"></i> Создать опросник</button>
+        <div id="psychQuestionnairesList" style="margin-top: 12px;">
+            ${myQuestionnaires.map(q => `
+                <div class="task-item" style="justify-content: space-between;">
+                    <div>
+                        <div class="task-text">${escapeHtml(q.title)}</div>
+                        <div class="task-due">${q.is_published ? '✅ Опубликован' : '⛔ Черновик'}</div>
+                    </div>
+                    <button class="btn-sm btn-outline" onclick="togglePublishQuestionnaire('${q.id}', ${!q.is_published})">${q.is_published ? 'Снять с публикации' : 'Опубликовать'}</button>
+                </div>
+            `).join('') || '<div class="empty-state" style="padding:16px;"><i class="fas fa-info-circle"></i><div>Нет созданных опросников</div></div>'}
+        </div>
+    </div>
+</div>
                     </div>
                 `;
             }
@@ -1995,8 +2025,108 @@
             const r = await fetch('/api/register', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
             const d = await r.json();
             if (d.success) { showToast('Регистрация успешна! Войдите'); closeModal('regM'); openLoginModal(); }
+            if (body.role === 'client') {
+            // Сразу открываем форму заполнения профиля
+                setTimeout(() => {
+                    openClientProfileModal(d.userId);
+                }, 500);
+            }
+            showToast('Регистрация успешна! Войдите');
+            closeModal('regM');
+            openLoginModal();  // Эта строка уже есть, но мы не удаляем её
             else showToast(d.error || 'Ошибка регистрации', true);
         }
+
+        function openClientProfileModal(userId) {
+    const modalId = 'clientProfileModal';
+    let emergencyContacts = [{ name: '', phone: '' }];
+    
+    const renderEmergency = () => {
+        return emergencyContacts.map((c, idx) => `
+            <div style="display:flex; gap:8px; margin-bottom:8px;">
+                <input type="text" placeholder="Имя контакта" value="${escapeHtml(c.name)}" data-idx="${idx}" class="emerg-name">
+                <input type="tel" placeholder="Телефон" value="${escapeHtml(c.phone)}" data-idx="${idx}" class="emerg-phone">
+                <button onclick="removeEmergencyContact(${idx})">✕</button>
+            </div>
+        `).join('');
+    };
+    
+    const html = `
+        <div class="modal" id="${modalId}">
+            <div class="modal-content">
+                <div class="modal-handle"></div>
+                <h3>Заполните профиль</h3>
+                <label>Дата рождения</label>
+                <input type="date" id="profileBirthDate">
+                <label>Пол</label>
+                <select id="profileGender">
+                    <option value="">Не указан</option>
+                    <option value="male">Мужской</option>
+                    <option value="female">Женский</option>
+                    <option value="other">Другой</option>
+                </select>
+                <label>Экстренные контакты (близкие, к кому можно обратиться)</label>
+                <div id="emergencyList">${renderEmergency()}</div>
+                <button class="btn-sm btn-outline" onclick="addEmergencyContact()">+ Добавить контакт</button>
+                <label>Жалобы (кратко)</label>
+                <textarea id="profileComplaints" rows="2" placeholder="Что вас беспокоит?"></textarea>
+                <label>Цели терапии</label>
+                <textarea id="profileGoals" rows="2" placeholder="Чего хотите достичь?"></textarea>
+                <div class="modal-buttons">
+                    <button class="btn-secondary" onclick="closeModal('${modalId}')">Пропустить</button>
+                    <button class="btn-primary" onclick="saveClientProfile('${userId}')">Сохранить</button>
+                </div>
+            </div>
+        </div>
+    `;
+    document.body.insertAdjacentHTML('beforeend', html);
+    setTimeout(() => document.getElementById(modalId).classList.add('active'), 10);
+    
+    window.addEmergencyContact = () => {
+        emergencyContacts.push({ name: '', phone: '' });
+        document.getElementById('emergencyList').innerHTML = renderEmergency();
+    };
+    window.removeEmergencyContact = (idx) => {
+        emergencyContacts.splice(idx, 1);
+        document.getElementById('emergencyList').innerHTML = renderEmergency();
+    };
+    
+    window.saveClientProfile = async (uid) => {
+        // Собираем контакты из полей
+        const names = document.querySelectorAll('.emerg-name');
+        const phones = document.querySelectorAll('.emerg-phone');
+        const contacts = [];
+        for (let i = 0; i < names.length; i++) {
+            if (names[i].value.trim() && phones[i].value.trim()) {
+                contacts.push({ name: names[i].value.trim(), phone: phones[i].value.trim() });
+            }
+        }
+        const birthDate = document.getElementById('profileBirthDate').value;
+        const gender = document.getElementById('profileGender').value;
+        const complaints = document.getElementById('profileComplaints').value;
+        const goals = document.getElementById('profileGoals').value;
+        
+        const res = await fetch('/api/client-profile', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                userId: uid,
+                birthDate,
+                gender,
+                emergencyContacts: contacts,
+                complaints,
+                goals
+            })
+        });
+        const data = await res.json();
+        if (data.success) {
+            showToast('Профиль сохранён');
+            closeModal(modalId);
+        } else {
+            showToast('Ошибка сохранения', true);
+        }
+    };
+}
         
         function logout() {
             openConfirmModal('Выйти из аккаунта?', '', () => {
@@ -2296,10 +2426,44 @@
             setTimeout(() => document.getElementById(modalId).classList.add('active'), 10);
         }
         
-        function openClientCardInCall() {
-            if (!currentClientIdInCall) { showToast('Клиент не определён', true); return; }
-            window.open(`/client-card/${currentClientIdInCall}?psychologistId=${currentUser.id}`, '_blank');
-        }
+        async function openClientCardInCall() {
+    if (!currentClientIdInCall) { showToast('Клиент не определён', true); return; }
+    const data = await fetchJSON(`/api/client-card/${currentClientIdInCall}?psychologistId=${currentUser.id}`);
+    if (!data.success) { showToast('Не удалось загрузить карту клиента', true); return; }
+    const { client, profile, notes, homeworks, progress } = data;
+    let emergencyHtml = '';
+    if (profile && profile.emergency_phone) {
+        try {
+            const contacts = JSON.parse(profile.emergency_phone);
+            emergencyHtml = contacts.map(c => `${escapeHtml(c.name)}: ${escapeHtml(c.phone)}`).join(', ');
+        } catch(e) { emergencyHtml = profile.emergency_phone; }
+    }
+    const modalId = 'clientCardModal_' + Date.now();
+    const html = `
+        <div class="modal" id="${modalId}">
+            <div class="modal-content" style="max-width: 500px; max-height: 80vh; overflow-y: auto;">
+                <div class="modal-handle"></div>
+                <h3>Карта клиента: ${escapeHtml(client.fullName)}</h3>
+                <div><strong>Телефон:</strong> ${escapeHtml(client.phone || '—')}</div>
+                <div><strong>Дата рождения:</strong> ${profile?.birth_date || '—'}</div>
+                <div><strong>Пол:</strong> ${profile?.gender || '—'}</div>
+                <div><strong>Экстренные контакты:</strong> ${emergencyHtml || '—'}</div>
+                <div><strong>Жалобы:</strong> ${escapeHtml(profile?.complaints || '—')}</div>
+                <div><strong>Цели:</strong> ${escapeHtml(profile?.goals || '—')}</div>
+                <hr>
+                <h4>Домашние задания</h4>
+                <div id="clientHomeworksList">${homeworks.map(h => `<div>${escapeHtml(h.text)} — ${h.status === 'pending' ? '⏳ ожидает' : '✅ выполнено'} ${h.due_date ? `(до ${h.due_date})` : ''}</div>`).join('') || 'Нет заданий'}</div>
+                <h4>Заметки психолога</h4>
+                <div id="clientNotesList">${notes.map(n => `<div><strong>${new Date(n.created_at).toLocaleString()}</strong><br>${escapeHtml(n.note)}</div>`).join('') || 'Нет заметок'}</div>
+                <h4>Прогресс</h4>
+                <div id="clientProgressList">${progress.map(p => `<div>${p.date}: ${p.value}/10 (${p.type === 'psychologist' ? 'оценка психолога' : 'самооценка'})${p.notes ? ` — ${escapeHtml(p.notes)}` : ''}</div>`).join('') || 'Нет данных'}</div>
+                <div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('${modalId}')">Закрыть</button></div>
+            </div>
+        </div>
+    `;
+    document.body.insertAdjacentHTML('beforeend', html);
+    setTimeout(() => document.getElementById(modalId).classList.add('active'), 10);
+}
         
         async function addHomeworkToClientInCall() {
             if (!currentClientIdInCall) { showToast('Клиент не определён', true); return; }
@@ -2751,13 +2915,199 @@
             document.getElementById('mainContent').innerHTML = html;
         }
         
-        function startQuestionnaire(questionnaireId) {
-            showToast('Функция прохождения анкет будет реализована позже', true);
+        async function startQuestionnaire(questionnaireId) {
+    // Загружаем вопросы опросника
+    const res = await fetchJSON(`/api/questionnaires/${questionnaireId}/questions`);
+    if (!res.success || !res.questions) { showToast('Не удалось загрузить опросник', true); return; }
+    const questions = res.questions;
+    const answers = [];
+    
+    const modalId = 'takeQuestModal';
+    const renderForm = () => {
+        return questions.map((q, idx) => {
+            let inputHtml = '';
+            if (q.type === 'text') {
+                inputHtml = `<textarea data-qidx="${idx}" class="answer-text" rows="2" style="width:100%; margin-top:5px;"></textarea>`;
+            } else if (q.type === 'number') {
+                inputHtml = `<input type="number" data-qidx="${idx}" class="answer-number" style="width:100%; margin-top:5px;">`;
+            } else if (q.type === 'choice') {
+                const options = q.options || [];
+                inputHtml = `<select data-qidx="${idx}" class="answer-choice" style="width:100%; margin-top:5px;"><option value="">Выберите</option>${options.map(opt => `<option value="${escapeHtml(opt)}">${escapeHtml(opt)}</option>`).join('')}</select>`;
+            }
+            return `
+                <div style="margin-bottom: 20px;">
+                    <div style="font-weight: 600;">${escapeHtml(q.text)}</div>
+                    ${inputHtml}
+                </div>
+            `;
+        }).join('');
+    };
+    
+    const html = `
+        <div class="modal" id="${modalId}">
+            <div class="modal-content" style="max-height: 80vh; overflow-y: auto;">
+                <div class="modal-handle"></div>
+                <h3>Анкета</h3>
+                <form id="questForm">${renderForm()}</form>
+                <div class="modal-buttons">
+                    <button class="btn-secondary" onclick="closeModal('${modalId}')">Отмена</button>
+                    <button class="btn-primary" onclick="submitQuestionnaireAnswers('${questionnaireId}', '${modalId}')">Отправить</button>
+                </div>
+            </div>
+        </div>
+    `;
+    document.body.insertAdjacentHTML('beforeend', html);
+    setTimeout(() => document.getElementById(modalId).classList.add('active'), 10);
+}
+
+async function submitQuestionnaireAnswers(questionnaireId, modalId) {
+    const answers = [];
+    document.querySelectorAll('.answer-text, .answer-number, .answer-choice').forEach(input => {
+        const value = input.value.trim();
+        if (value) {
+            answers.push({ questionId: input.dataset.qidx, value });
         }
-        
+    });
+    if (answers.length === 0) { showToast('Ответьте хотя бы на один вопрос', true); return; }
+    const res = await fetch(`/api/questionnaires/${questionnaireId}/submit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clientId: currentUser.id, answers })
+    });
+    const data = await res.json();
+    if (data.success) {
+        showToast('Анкета отправлена');
+        closeModal(modalId);
+        renderQuestionnaires();
+    } else {
+        showToast('Ошибка', true);
+    }
+}
+
         function createQuestionnaire() {
-            showToast('Функция создания опросников будет реализована позже', true);
+    const modalId = 'createQuestModal';
+    let questions = [];
+    
+    const renderQuestions = () => {
+        return questions.map((q, idx) => `
+            <div style="margin-bottom: 12px; border-bottom: 1px solid var(--border); padding-bottom: 8px;">
+                <input type="text" placeholder="Текст вопроса" value="${escapeHtml(q.text)}" data-idx="${idx}" class="quest-text" style="width: 100%; margin-bottom: 5px;">
+                <div style="display: flex; gap: 8px;">
+                    <select data-idx="${idx}" class="quest-type">
+                        <option value="text" ${q.type === 'text' ? 'selected' : ''}>Текст</option>
+                        <option value="number" ${q.type === 'number' ? 'selected' : ''}>Число</option>
+                        <option value="choice" ${q.type === 'choice' ? 'selected' : ''}>Выбор (через запятую)</option>
+                    </select>
+                    <button class="btn-sm btn-outline" onclick="removeQuestion(${idx})">Удалить</button>
+                </div>
+                ${q.type === 'choice' ? `<input type="text" placeholder="Варианты через запятую" value="${escapeHtml(q.options.join(','))}" data-idx="${idx}" class="quest-options" style="width: 100%; margin-top: 5px;">` : ''}
+            </div>
+        `).join('');
+    };
+    
+    const html = `
+        <div class="modal" id="${modalId}">
+            <div class="modal-content">
+                <div class="modal-handle"></div>
+                <h3>Создать опросник</h3>
+                <input type="text" id="questTitle" placeholder="Название опросника" style="margin-bottom: 12px;">
+                <textarea id="questDesc" placeholder="Описание (необязательно)" rows="2" style="margin-bottom: 12px;"></textarea>
+                <div id="questionsContainer"></div>
+                <button class="btn-sm" onclick="addQuestion()" style="margin-top: 8px;">+ Добавить вопрос</button>
+                <div class="modal-buttons" style="margin-top: 20px;">
+                    <button class="btn-secondary" onclick="closeModal('${modalId}')">Отмена</button>
+                    <button class="btn-primary" onclick="saveQuestionnaire()">Сохранить</button>
+                </div>
+            </div>
+        </div>
+    `;
+    document.body.insertAdjacentHTML('beforeend', html);
+    const modal = document.getElementById(modalId);
+    setTimeout(() => modal.classList.add('active'), 10);
+    
+    window.addQuestion = () => {
+        questions.push({ text: '', type: 'text', options: [] });
+        document.getElementById('questionsContainer').innerHTML = renderQuestions();
+        attachQuestionEvents();
+    };
+    window.removeQuestion = (idx) => {
+        questions.splice(idx, 1);
+        document.getElementById('questionsContainer').innerHTML = renderQuestions();
+        attachQuestionEvents();
+    };
+    
+    function attachQuestionEvents() {
+        document.querySelectorAll('.quest-type').forEach(select => {
+            select.onchange = (e) => {
+                const idx = parseInt(e.target.dataset.idx);
+                questions[idx].type = e.target.value;
+                document.getElementById('questionsContainer').innerHTML = renderQuestions();
+                attachQuestionEvents();
+            };
+        });
+        document.querySelectorAll('.quest-text').forEach(input => {
+            input.oninput = (e) => {
+                const idx = parseInt(e.target.dataset.idx);
+                questions[idx].text = e.target.value;
+            };
+        });
+        document.querySelectorAll('.quest-options').forEach(input => {
+            input.oninput = (e) => {
+                const idx = parseInt(e.target.dataset.idx);
+                questions[idx].options = e.target.value.split(',').map(s => s.trim()).filter(s => s);
+            };
+        });
+    }
+    
+    window.saveQuestionnaire = async () => {
+        const title = document.getElementById('questTitle').value.trim();
+        if (!title) { showToast('Введите название опросника', true); return; }
+        const description = document.getElementById('questDesc').value;
+        const qs = [];
+        for (let i = 0; i < questions.length; i++) {
+            const text = questions[i].text;
+            if (!text) continue;
+            qs.push({
+                text: text,
+                type: questions[i].type,
+                options: questions[i].type === 'choice' ? questions[i].options : []
+            });
         }
+        if (qs.length === 0) { showToast('Добавьте хотя бы один вопрос', true); return; }
+        const res = await fetch('/api/questionnaires', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ psychologistId: currentUser.id, title, description, questions: qs })
+        });
+        const data = await res.json();
+        if (data.success) {
+            showToast('Опросник создан');
+            closeModal(modalId);
+            renderProfile(); // обновить страницу профиля
+        } else {
+            showToast('Ошибка при создании', true);
+        }
+    };
+    
+    attachQuestionEvents();
+    document.getElementById('questionsContainer').innerHTML = renderQuestions();
+}
+
+
+        async function togglePublishQuestionnaire(id, publish) {
+    const res = await fetch(`/api/questionnaires/publish/${id}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_published: publish })
+    });
+    const data = await res.json();
+    if (data.success) {
+        showToast(publish ? 'Опросник опубликован' : 'Публикация отменена');
+        renderProfile(); // обновить профиль
+    } else {
+        showToast('Ошибка', true);
+    }
+}
         
         // ======================= ВИДЕО НАБЛЮДАТЕЛЬ =======================
         function initVideoObservers() {
