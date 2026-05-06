@@ -1138,6 +1138,16 @@ app.put('/api/homeworks/:id', async (req, res) => {
     } catch (err) { console.error('Update homework error:', err); res.json({ success: false }); }
 });
 
+app.get('/api/client-homeworks/:clientId', async (req, res) => {
+    try {
+        const result = await pool.query(`SELECT id, text, due_date, status FROM client_homeworks WHERE client_id=$1 ORDER BY due_date ASC`, [req.params.clientId]);
+        res.json({ success: true, homeworks: result.rows });
+    } catch (err) {
+        console.error('Get client homeworks error:', err);
+        res.json({ success: false });
+    }
+});
+
 // ========== ЗАМЕТКИ ПСИХОЛОГА О КЛИЕНТЕ ==========
 app.post('/api/client-notes', async (req, res) => {
     try {
@@ -1344,6 +1354,14 @@ io.on('connection', (socket) => {
                 else room.client = null;
                 if (room.users.size === 0) setTimeout(() => { const r = activeRooms.get(socket.roomId); if (r && r.users.size === 0) activeRooms.delete(socket.roomId); }, 10000);
             }
+        }
+    });
+    socket.on('request-reconnect', ({ roomId, role }) => {
+        const room = activeRooms.get(roomId);
+        if (!room) return;
+        const targetId = (role === 'psychologist') ? room.client : room.psychologist;
+        if (targetId) {
+            io.to(targetId).emit('request-reconnect');
         }
     });
 });
