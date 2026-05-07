@@ -455,7 +455,15 @@
         let feedHasMore = true;
         let cachedProfileData = null;       // хранит данные профиля (объект с результатами запросов)
         let cachedProfileHtml = null;       // опционально, но для простоты будем перерисовывать из данных
-        let isProfileCacheValid = false;    // флаг, что кеш актуален
+        let isProfileCacheValid = false;
+        let cachedPsychologistsHtml = null;
+        let isPsychologistsCacheValid = false;
+        let cachedChatsHtml = null;
+        let isChatsCacheValid = false;
+        let cachedNotificationsHtml = null;
+        let isNotificationsCacheValid = false;
+        let cachedQuestionnairesHtml = null;
+        let isQuestionnairesCacheValid = false;    // флаг, что кеш актуален
         let feedPosts = [];
         let isFeedCacheValid = true; 
 
@@ -844,32 +852,40 @@
         }
 
         // ======================= ПСИХОЛОГИ =======================
-        async function renderPsychologistsList() {
-            document.getElementById('mainContent').innerHTML = `<div class="container"><div class="empty-state"><i class="fas fa-circle-notch fa-spin"></i></div></div>`;
-            const data = await fetchJSON('/api/psychologists');
-            allPsychologists = data.psychologists || [];
-            let html = `<div class="container"><div class="page-title">Психологи</div><div class="psychologists-list">`;
-            for (const p of allPsychologists) {
-                html += `
-                    <div class="psychologist-item glass-card" onclick="viewPsychologistPage('${p.id}')">
-                        <img class="psychologist-avatar-list" src="${escapeHtml(p.avatar)}" onerror="this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(p.full_name)}&background=8bca8b&color=fff'">
-                        <div class="psychologist-info">
-                            <div class="psychologist-name">${escapeHtml(p.full_name)}</div>
-                            <div class="psychologist-spec">${escapeHtml(p.specialization || 'Психолог')}</div>
-                            <div style="display:flex;align-items:center;gap:8px;margin-top:5px;">
-                                ${renderStars(p.rating || 0)}
-                                <span class="psychologist-price">💰 ${p.price || 0} ₸/час</span>
-                            </div>
-                        </div>
-                        <i class="fas fa-chevron-right psychologist-chevron"></i>
+        async function renderPsychologistsList(forceRefresh = false) {
+    if (!forceRefresh && isPsychologistsCacheValid && cachedPsychologistsHtml) {
+        document.getElementById('mainContent').innerHTML = cachedPsychologistsHtml;
+        return;
+    }
+    
+    document.getElementById('mainContent').innerHTML = `<div class="container"><div class="empty-state"><i class="fas fa-circle-notch fa-spin"></i></div></div>`;
+    const data = await fetchJSON('/api/psychologists');
+    allPsychologists = data.psychologists || [];
+    let html = `<div class="container"><div class="page-title">Психологи</div><div class="psychologists-list">`;
+    for (const p of allPsychologists) {
+        html += `
+            <div class="psychologist-item glass-card" onclick="viewPsychologistPage('${p.id}')">
+                <img class="psychologist-avatar-list" src="${escapeHtml(p.avatar)}" onerror="this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(p.full_name)}&background=8bca8b&color=fff'">
+                <div class="psychologist-info">
+                    <div class="psychologist-name">${escapeHtml(p.full_name)}</div>
+                    <div class="psychologist-spec">${escapeHtml(p.specialization || 'Психолог')}</div>
+                    <div style="display:flex;align-items:center;gap:8px;margin-top:5px;">
+                        ${renderStars(p.rating || 0)}
+                        <span class="psychologist-price">💰 ${p.price || 0} ₸/час</span>
                     </div>
-                `;
-            }
-            if (allPsychologists.length === 0) html += '<div class="empty-state glass-card"><i class="fas fa-users"></i><div>Пока нет психологов</div></div>';
-            html += `</div></div>`;
-            document.getElementById('mainContent').innerHTML = html;
-            initVideoObservers();
-        }
+                </div>
+                <i class="fas fa-chevron-right psychologist-chevron"></i>
+            </div>
+        `;
+    }
+    if (allPsychologists.length === 0) html += '<div class="empty-state glass-card"><i class="fas fa-users"></i><div>Пока нет психологов</div></div>';
+    html += `</div></div>`;
+    
+    cachedPsychologistsHtml = html;
+    isPsychologistsCacheValid = true;
+    document.getElementById('mainContent').innerHTML = html;
+    initVideoObservers();
+}
 
         // ======================= ПРОФИЛЬ (начало) =======================
         async function renderProfile(forceRefresh = false) {
@@ -1570,6 +1586,7 @@
                 showToast('Запись подтверждена');
                 await refreshUser();
                 renderProfile(true);
+                isNotificationsCacheValid = false;
             } else { showToast('Ошибка подтверждения', true); }
         }
         
@@ -1611,6 +1628,7 @@
                 });
                 const d = await r.json();
                 if (d.success) { showToast('Заявка отправлена!'); closeModal(mid); await refreshUser(); if (currentTab === 'profile') renderProfile(); }
+                isNotificationsCacheValid = false;
                 else showToast(d.error || 'Ошибка', true);
             };
         }
@@ -2003,6 +2021,13 @@
         function logout() {
             openConfirmModal('Выйти из аккаунта?', '', () => {
                 if (socket) socket.disconnect();
+                // Сброс кешей
+                isFeedCacheValid = false;
+                isProfileCacheValid = false;
+                isPsychologistsCacheValid = false;
+                isChatsCacheValid = false;
+                isNotificationsCacheValid = false;
+                isQuestionnairesCacheValid = false;
                 localStorage.clear();
                 location.reload();
             });
@@ -2556,18 +2581,31 @@ modal.querySelectorAll('.homework-cb-card').forEach(cb => {
         }
         
         // ======================= УВЕДОМЛЕНИЯ =======================
-        async function renderNotifications() {
-            if (!currentUser) { showToast('Войдите в аккаунт', true); return; }
-            const notifs = currentUser.notifications || [];
-            let html = `<div class="container"><div class="page-title">Уведомления</div><div class="notifications-list">`;
-            for (const n of notifs) {
-                const isAppointmentNotif = n.type === 'new_appointment' && currentUser.role === 'psychologist';
-                html += `<div class="notification-item glass-card"><div class="notif-title">${escapeHtml(n.title)}</div><div class="notif-msg">${escapeHtml(n.message)}</div><div class="notif-time">${new Date(n.createdAt).toLocaleString()}</div>${isAppointmentNotif ? `<div style="margin-top:10px;"><button class="btn-sm" onclick="confirmAppointmentFromNotif('${n.appointmentId}')">✅ Подтвердить</button></div>` : ''}${n.roomId && !isAppointmentNotif ? `<div style="margin-top:10px;"><button class="btn-sm" onclick="startCall('${n.roomId}', '${currentUser.role}')"><i class="fas fa-video"></i> Войти в звонок</button></div>` : ''}</div>`;
-            }
-            if (notifs.length === 0) html += '<div class="empty-state glass-card" style="padding:40px;"><i class="fas fa-bell-slash"></i><div>Нет уведомлений</div></div>';
-            html += `</div></div>`;
-            document.getElementById('mainContent').innerHTML = html;
-        }
+        async function renderNotifications(forceRefresh = false) {
+    if (!forceRefresh && isNotificationsCacheValid && cachedNotificationsHtml) {
+        document.getElementById('mainContent').innerHTML = cachedNotificationsHtml;
+        return;
+    }
+    if (!currentUser) { showToast('Войдите в аккаунт', true); return; }
+    const notifs = currentUser.notifications || [];
+    let html = `<div class="container"><div class="page-title">Уведомления</div><div class="notifications-list">`;
+    for (const n of notifs) {
+        const isAppointmentNotif = n.type === 'new_appointment' && currentUser.role === 'psychologist';
+        html += `<div class="notification-item glass-card">
+                    <div class="notif-title">${escapeHtml(n.title)}</div>
+                    <div class="notif-msg">${escapeHtml(n.message)}</div>
+                    <div class="notif-time">${new Date(n.createdAt).toLocaleString()}</div>
+                    ${isAppointmentNotif ? `<div style="margin-top:10px;"><button class="btn-sm" onclick="confirmAppointmentFromNotif('${n.appointmentId}')">✅ Подтвердить</button></div>` : ''}
+                    ${n.roomId && !isAppointmentNotif ? `<div style="margin-top:10px;"><button class="btn-sm" onclick="startCall('${n.roomId}', '${currentUser.role}')"><i class="fas fa-video"></i> Войти в звонок</button></div>` : ''}
+                </div>`;
+    }
+    if (notifs.length === 0) html += '<div class="empty-state glass-card" style="padding:40px;"><i class="fas fa-bell-slash"></i><div>Нет уведомлений</div></div>';
+    html += `</div></div>`;
+    
+    cachedNotificationsHtml = html;
+    isNotificationsCacheValid = true;
+    document.getElementById('mainContent').innerHTML = html;
+}
         
         async function confirmAppointmentFromNotif(appointmentId) {
             const apt = currentUser.clients.find(a => a.appointmentId === appointmentId);
@@ -2652,31 +2690,65 @@ modal.querySelectorAll('.homework-cb-card').forEach(cb => {
             socket.on('post_liked', ({ postId, likesCount, userId, liked }) => { const likeBtn = document.querySelector(`.like-btn[data-id="${postId}"]`); if (likeBtn) { const span = likeBtn.querySelector('span'); if (span) span.textContent = likesCount; if (liked) { likeBtn.classList.add('liked'); likeBtn.querySelector('i').className = 'fa-solid fa-heart'; } else { likeBtn.classList.remove('liked'); likeBtn.querySelector('i').className = 'fa-regular fa-heart'; } const post = feedPosts.find(p => p.id === postId); if (post) { post.likesCount = likesCount; post.userLiked = liked; } } else if (currentTab === 'feed') renderFeed(); });
             socket.on('appointment_updated', (apt) => { if (currentTab === 'profile') renderProfile(); if (currentTab === 'notifications') renderNotifications(); });
             socket.on('appointment_completed', (appointmentId) => { if (currentTab === 'profile') renderProfile(); if (currentTab === 'notifications') renderNotifications(); showFloatingNotification('Сеанс завершён', 'Запись отмечена как завершённая', 'info'); });
-            socket.on('new_message', async (msg) => { let preview = ''; if (msg.text) preview = msg.text.substring(0,50); else if (msg.image) preview = '📷 Фото'; else if (msg.voice) preview = '🎤 Голосовое'; else preview = 'Вложение'; if (currentChatPartner && msg.from === currentChatPartner.id) { appendMessageToChat(msg); scrollToBottom(); await fetch('/api/messages/read', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: currentUser.id, fromUserId: msg.from }) }).catch(console.error); if (currentUser.unreadCounts) delete currentUser.unreadCounts[msg.from]; updateChatListUnread(msg.from, 0); return; } if (currentUser && currentUser.unreadCounts) { currentUser.unreadCounts[msg.from] = (currentUser.unreadCounts[msg.from] || 0) + 1; } fetch(`/api/user/${msg.from}`).then(r => r.json()).then(userData => { const senderName = userData.success ? userData.user.fullName : 'Новое сообщение'; showFloatingNotification('Новое сообщение', `${senderName}: ${preview}`); if ('Notification' in window && Notification.permission === 'granted') { new Notification('Новое сообщение', { body: `${senderName}: ${preview}` }); } if (!currentChatPartner && currentTab === 'chats') { renderChats(); } else if (!currentChatPartner) { const chatListExists = document.querySelector('.chat-list'); if (chatListExists) { updateChatListItem(msg, senderName, preview); } } }).catch(console.error); });
+            socket.on('new_message', async (msg) => { let preview = ''; if (msg.text) preview = msg.text.substring(0,50); else if (msg.image) preview = '📷 Фото'; else if (msg.voice) preview = '🎤 Голосовое'; else preview = 'Вложение'; if (currentChatPartner && msg.from === currentChatPartner.id) { appendMessageToChat(msg); scrollToBottom(); await fetch('/api/messages/read', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: currentUser.id, fromUserId: msg.from }) }).catch(console.error); if (currentUser.unreadCounts) delete currentUser.unreadCounts[msg.from]; updateChatListUnread(msg.from, 0); return; } if (currentUser && currentUser.unreadCounts) { currentUser.unreadCounts[msg.from] = (currentUser.unreadCounts[msg.from] || 0) + 1; }
+                isChatsCacheValid = false;
+                fetch(`/api/user/${msg.from}`).then(r => r.json()).then(userData => { const senderName = userData.success ? userData.user.fullName : 'Новое сообщение'; showFloatingNotification('Новое сообщение', `${senderName}: ${preview}`); if ('Notification' in window && Notification.permission === 'granted') { new Notification('Новое сообщение', { body: `${senderName}: ${preview}` }); } if (!currentChatPartner && currentTab === 'chats') { renderChats(); } else if (!currentChatPartner) { const chatListExists = document.querySelector('.chat-list'); if (chatListExists) { updateChatListItem(msg, senderName, preview); } } }).catch(console.error); });
             socket.on('notification', (notif) => { if (notif.type === 'request_review') { showFloatingNotification(notif.title, notif.message, 'info'); setTimeout(() => { if (confirm(`${notif.message}\nОставить отзыв сейчас?`)) { viewPsychologistPage(notif.psychologistId); setTimeout(() => { if (typeof openReviewModalWithAppointment === 'function') { openReviewModalWithAppointment(notif.psychologistId, notif.psychologistName, notif.appointmentId); } }, 500); } }, 500); return; } showFloatingNotification(notif.title, notif.message); if (currentUser) refreshUser(); if (currentTab === 'notifications') renderNotifications(); });
             socket.on('unread_update', (data) => { if (currentUser && data.from && data.count !== undefined) { if (!currentUser.unreadCounts) currentUser.unreadCounts = {}; currentUser.unreadCounts[data.from] = data.count; if (!currentChatPartner && currentTab === 'chats') { renderChats(); } else if (!currentChatPartner) { updateChatListUnread(data.from, data.count); } } });
         }
         
         // ======================= ЧАТ =======================
-        async function renderChats() {
-            currentChatPartner = null;
-            if (!currentUser) { showToast('Войдите в аккаунт', true); return; }
-            await refreshUser();
-            document.getElementById('mainContent').innerHTML = `<div class="container"><div class="empty-state"><i class="fas fa-circle-notch fa-spin"></i></div></div>`;
-            const messagesRes = await fetchJSON(`/api/messages/${currentUser.id}`);
-            const messages = messagesRes.messages || [];
-            const usersFromServer = messagesRes.users || [];
-            const contactsMap = new Map();
-            const unreadCountsFromServer = currentUser.unreadCounts || {};
-            messages.forEach(msg => { const contactId = msg.from_user === currentUser.id ? msg.to_user : msg.from_user; if (!contactsMap.has(contactId)) { contactsMap.set(contactId, { lastMessage: msg.text || (msg.image ? '📷 Фото' : (msg.voice ? '🎤 Голосовое' : 'Вложение')), lastTime: msg.created_at }); } else { const existing = contactsMap.get(contactId); if (new Date(msg.created_at) > new Date(existing.lastTime)) { existing.lastMessage = msg.text || (msg.image ? '📷 Фото' : (msg.voice ? '🎤 Голосовое' : 'Вложение')); existing.lastTime = msg.created_at; } } });
-            const contacts = usersFromServer.map(u => { const contactInfo = contactsMap.get(u.id) || { lastMessage: '', lastTime: new Date(0).toISOString() }; const unread = unreadCountsFromServer[u.id] || 0; return { ...u, ...contactInfo, unread }; }).sort((a,b) => new Date(b.lastTime) - new Date(a.lastTime));
-            let html = `<div class="container"><div class="page-title">Сообщения</div><div class="chat-list">`;
-            for (const c of contacts) { html += `<div class="chat-contact glass-card" data-contact-id="${c.id}" onclick="openChat('${c.id}','${escapeHtml(c.fullName)}')"><img class="chat-contact-avatar" src="${escapeHtml(c.avatar)}" onerror="this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(c.fullName)}&background=8bca8b&color=fff'"><div class="chat-contact-info"><div class="chat-contact-name">${escapeHtml(c.fullName)}</div><div class="chat-contact-last">${escapeHtml((c.lastMessage || '').substring(0, 40))}</div></div>${c.unread > 0 ? `<div class="unread-badge">${c.unread}</div>` : ''}</div>`; }
-            if (contacts.length === 0) html += '<div class="empty-state glass-card" style="padding:40px;"><i class="fas fa-comment-slash"></i><div>Нет сообщений. Напишите психологу из раздела «Психологи»!</div></div>';
-            html += `</div></div>`;
-            document.getElementById('mainContent').innerHTML = html;
-            window.scrollTo({ top: 0, behavior: 'smooth' });
+        async function renderChats(forceRefresh = false) {
+    if (!forceRefresh && isChatsCacheValid && cachedChatsHtml) {
+        document.getElementById('mainContent').innerHTML = cachedChatsHtml;
+        return;
+    }
+    currentChatPartner = null;
+    if (!currentUser) { showToast('Войдите в аккаунт', true); return; }
+    await refreshUser();
+    document.getElementById('mainContent').innerHTML = `<div class="container"><div class="empty-state"><i class="fas fa-circle-notch fa-spin"></i></div></div>`;
+    const messagesRes = await fetchJSON(`/api/messages/${currentUser.id}`);
+    const messages = messagesRes.messages || [];
+    const usersFromServer = messagesRes.users || [];
+    const contactsMap = new Map();
+    const unreadCountsFromServer = currentUser.unreadCounts || {};
+    messages.forEach(msg => {
+        const contactId = msg.from_user === currentUser.id ? msg.to_user : msg.from_user;
+        if (!contactsMap.has(contactId)) {
+            contactsMap.set(contactId, { lastMessage: msg.text || (msg.image ? '📷 Фото' : (msg.voice ? '🎤 Голосовое' : 'Вложение')), lastTime: msg.created_at });
+        } else {
+            const existing = contactsMap.get(contactId);
+            if (new Date(msg.created_at) > new Date(existing.lastTime)) {
+                existing.lastMessage = msg.text || (msg.image ? '📷 Фото' : (msg.voice ? '🎤 Голосовое' : 'Вложение'));
+                existing.lastTime = msg.created_at;
+            }
         }
+    });
+    const contacts = usersFromServer.map(u => {
+        const contactInfo = contactsMap.get(u.id) || { lastMessage: '', lastTime: new Date(0).toISOString() };
+        const unread = unreadCountsFromServer[u.id] || 0;
+        return { ...u, ...contactInfo, unread };
+    }).sort((a,b) => new Date(b.lastTime) - new Date(a.lastTime));
+    
+    let html = `<div class="container"><div class="page-title">Сообщения</div><div class="chat-list">`;
+    for (const c of contacts) {
+        html += `<div class="chat-contact glass-card" data-contact-id="${c.id}" onclick="openChat('${c.id}','${escapeHtml(c.fullName)}')">
+                    <img class="chat-contact-avatar" src="${escapeHtml(c.avatar)}" onerror="this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(c.fullName)}&background=8bca8b&color=fff'">
+                    <div class="chat-contact-info">
+                        <div class="chat-contact-name">${escapeHtml(c.fullName)}</div>
+                        <div class="chat-contact-last">${escapeHtml((c.lastMessage || '').substring(0, 40))}</div>
+                    </div>
+                    ${c.unread > 0 ? `<div class="unread-badge">${c.unread}</div>` : ''}
+                </div>`;
+    }
+    if (contacts.length === 0) html += '<div class="empty-state glass-card" style="padding:40px;"><i class="fas fa-comment-slash"></i><div>Нет сообщений. Напишите психологу из раздела «Психологи»!</div></div>';
+    html += `</div></div>`;
+    
+    cachedChatsHtml = html;
+    isChatsCacheValid = true;
+    document.getElementById('mainContent').innerHTML = html;
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+}
         
         async function openChat(userId, userName) {
             currentChatPartner = { id: userId, name: userName };
@@ -2836,6 +2908,7 @@ modal.querySelectorAll('.homework-cb-card').forEach(cb => {
             appendMessageToChat(tempMsg);
             try {
                 await fetch('/api/messages', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ from: currentUser.id, to: currentChatPartner.id, text }) });
+                isChatsCacheValid = false;
             } catch(e) { showToast('Ошибка отправки', true); }
             scrollToBottom();
         }
@@ -2871,26 +2944,33 @@ modal.querySelectorAll('.homework-cb-card').forEach(cb => {
         }
         
         // ======================= АНКЕТЫ (опросники) =======================
-        async function renderQuestionnaires() {
-            if (!currentUser || currentUser.role !== 'client') { showToast('Раздел доступен только клиентам', true); return; }
-            document.getElementById('mainContent').innerHTML = `<div class="container"><div class="empty-state"><i class="fas fa-circle-notch fa-spin"></i></div></div>`;
-            const data = await fetchJSON('/api/questionnaires/available');
-            const questionnaires = data.questionnaires || [];
-            let html = `<div class="container"><div class="page-title">Анкеты</div><div class="questionnaires-list">`;
-            if (questionnaires.length === 0) {
-                html += '<div class="empty-state glass-card"><i class="fas fa-clipboard-list"></i><div>Нет доступных анкет</div></div>';
-            } else {
-                for (const q of questionnaires) {
-                    html += `<div class="glass-card" style="padding: 16px; margin-bottom: 12px;">
-                                <div style="font-weight: 600; font-size: 16px;">${escapeHtml(q.title)}</div>
-                                <div style="color: var(--text-muted); font-size: 13px; margin-top: 4px;">${escapeHtml(q.description || '')}</div>
-                                <button class="btn-sm" style="margin-top: 12px;" onclick="startQuestionnaire('${q.id}')">Пройти анкету</button>
-                            </div>`;
-                }
-            }
-            html += `</div></div>`;
-            document.getElementById('mainContent').innerHTML = html;
+        async function renderQuestionnaires(forceRefresh = false) {
+    if (!forceRefresh && isQuestionnairesCacheValid && cachedQuestionnairesHtml) {
+        document.getElementById('mainContent').innerHTML = cachedQuestionnairesHtml;
+        return;
+    }
+    if (!currentUser || currentUser.role !== 'client') { showToast('Раздел доступен только клиентам', true); return; }
+    document.getElementById('mainContent').innerHTML = `<div class="container"><div class="empty-state"><i class="fas fa-circle-notch fa-spin"></i></div></div>`;
+    const data = await fetchJSON('/api/questionnaires/available');
+    const questionnaires = data.questionnaires || [];
+    let html = `<div class="container"><div class="page-title">Анкеты</div><div class="questionnaires-list">`;
+    if (questionnaires.length === 0) {
+        html += '<div class="empty-state glass-card"><i class="fas fa-clipboard-list"></i><div>Нет доступных анкет</div></div>';
+    } else {
+        for (const q of questionnaires) {
+            html += `<div class="glass-card" style="padding: 16px; margin-bottom: 12px;">
+                        <div style="font-weight: 600; font-size: 16px;">${escapeHtml(q.title)}</div>
+                        <div style="color: var(--text-muted); font-size: 13px; margin-top: 4px;">${escapeHtml(q.description || '')}</div>
+                        <button class="btn-sm" style="margin-top: 12px;" onclick="startQuestionnaire('${q.id}')">Пройти анкету</button>
+                    </div>`;
         }
+    }
+    html += `</div></div>`;
+    
+    cachedQuestionnairesHtml = html;
+    isQuestionnairesCacheValid = true;
+    document.getElementById('mainContent').innerHTML = html;
+}
         
         async function startQuestionnaire(questionnaireId) {
     const res = await fetchJSON(`/api/questionnaires/${questionnaireId}/questions`);
@@ -3085,6 +3165,7 @@ modal.querySelectorAll('.homework-cb-card').forEach(cb => {
     if (data.success) {
         showToast(publish ? 'Опросник опубликован' : 'Публикация отменена');
         renderProfile(true); // обновить профиль
+        isQuestionnairesCacheValid = false;
     } else {
         showToast('Ошибка', true);
     }
@@ -3110,18 +3191,18 @@ modal.querySelectorAll('.homework-cb-card').forEach(cb => {
         }
         
         // ======================= НАВИГАЦИЯ =======================
-        function switchTab(tab) {
-            currentTab = tab;
-            document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
-            const act = document.querySelector(`.nav-item[data-tab="${tab}"]`);
-            if (act) act.classList.add('active');
-            if (tab === 'feed') renderFeed();
-            else if (tab === 'psychologists') renderPsychologistsList();
-            else if (tab === 'chats') { refreshUser().then(() => renderChats()); }
-            else if (tab === 'notifications') renderNotifications();
-            else if (tab === 'questionnaires') renderQuestionnaires();
-            else if (tab === 'profile') renderProfile(false);   // false = использовать кеш, если есть
-        }
+        function switchTab(tab, forceRefresh = false) {
+    currentTab = tab;
+    document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+    const act = document.querySelector(`.nav-item[data-tab="${tab}"]`);
+    if (act) act.classList.add('active');
+    if (tab === 'feed') renderFeed(forceRefresh);
+    else if (tab === 'psychologists') renderPsychologistsList(forceRefresh);
+    else if (tab === 'chats') { refreshUser().then(() => renderChats(forceRefresh)); }
+    else if (tab === 'notifications') renderNotifications(forceRefresh);
+    else if (tab === 'questionnaires') renderQuestionnaires(forceRefresh);
+    else if (tab === 'profile') renderProfile(forceRefresh);
+}
         
         // ======================= ЗАПРОС УВЕДОМЛЕНИЙ =======================
         function requestNotificationPermission() {
