@@ -2693,7 +2693,32 @@ modal.querySelectorAll('.homework-cb-card').forEach(cb => {
             socket.on('new_message', async (msg) => { let preview = ''; if (msg.text) preview = msg.text.substring(0,50); else if (msg.image) preview = '📷 Фото'; else if (msg.voice) preview = '🎤 Голосовое'; else preview = 'Вложение'; if (currentChatPartner && msg.from === currentChatPartner.id) { appendMessageToChat(msg); scrollToBottom(); await fetch('/api/messages/read', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: currentUser.id, fromUserId: msg.from }) }).catch(console.error); if (currentUser.unreadCounts) delete currentUser.unreadCounts[msg.from]; updateChatListUnread(msg.from, 0); return; } if (currentUser && currentUser.unreadCounts) { currentUser.unreadCounts[msg.from] = (currentUser.unreadCounts[msg.from] || 0) + 1; }
                 isChatsCacheValid = false;
                 fetch(`/api/user/${msg.from}`).then(r => r.json()).then(userData => { const senderName = userData.success ? userData.user.fullName : 'Новое сообщение'; showFloatingNotification('Новое сообщение', `${senderName}: ${preview}`); if ('Notification' in window && Notification.permission === 'granted') { new Notification('Новое сообщение', { body: `${senderName}: ${preview}` }); } if (!currentChatPartner && currentTab === 'chats') { renderChats(); } else if (!currentChatPartner) { const chatListExists = document.querySelector('.chat-list'); if (chatListExists) { updateChatListItem(msg, senderName, preview); } } }).catch(console.error); });
-            socket.on('notification', (notif) => { if (notif.type === 'request_review') { showFloatingNotification(notif.title, notif.message, 'info'); setTimeout(() => { if (confirm(`${notif.message}\nОставить отзыв сейчас?`)) { viewPsychologistPage(notif.psychologistId); setTimeout(() => { if (typeof openReviewModalWithAppointment === 'function') { openReviewModalWithAppointment(notif.psychologistId, notif.psychologistName, notif.appointmentId); } }, 500); } }, 500); return; } showFloatingNotification(notif.title, notif.message); if (currentUser) refreshUser(); if (currentTab === 'notifications') renderNotifications(); });
+            socket.on('notification', (notif) => {
+    if (notif.type === 'request_review') {
+        showFloatingNotification(notif.title, notif.message, 'info');
+        setTimeout(() => {
+            if (confirm(`${notif.message}\nОставить отзыв сейчас?`)) {
+                viewPsychologistPage(notif.psychologistId);
+                setTimeout(() => {
+                    if (typeof openReviewModalWithAppointment === 'function') {
+                        openReviewModalWithAppointment(notif.psychologistId, notif.psychologistName, notif.appointmentId);
+                    }
+                }, 500);
+            }
+        }, 500);
+        return;
+    }
+    showFloatingNotification(notif.title, notif.message);
+    if (currentUser) refreshUser();
+    // Сбрасываем кеш уведомлений, чтобы при следующем открытии они обновились
+    isNotificationsCacheValid = false;
+    // Если мы на странице уведомлений, перерисовываем её с принудительным обновлением
+    if (currentTab === 'notifications') {
+        renderNotifications(true);
+    } else {
+        // Можно также обновить иконку счётчика уведомлений, если она есть
+    }
+});
             socket.on('unread_update', (data) => { if (currentUser && data.from && data.count !== undefined) { if (!currentUser.unreadCounts) currentUser.unreadCounts = {}; currentUser.unreadCounts[data.from] = data.count; if (!currentChatPartner && currentTab === 'chats') { renderChats(); } else if (!currentChatPartner) { updateChatListUnread(data.from, data.count); } } });
         }
         
