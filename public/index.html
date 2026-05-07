@@ -724,54 +724,15 @@
             }
         }
 
-        function renderFeedPosts() {
+                function renderFeedPosts() {
             const container = document.getElementById('postsContainer');
             if (!container) return;
             let html = '';
             for (const post of feedPosts) {
-                html += `
-                <div class="post-card glass-card" data-post-id="${post.id}">
-                <div class="post-header">
-                <img class="post-avatar" src="${escapeHtml(post.author.avatar)}" onclick="viewPsychologistPage('${post.author.id}')">
-                <div>
-                <div class="post-author" onclick="viewPsychologistPage('${post.author.id}')">
-                ${escapeHtml(post.author.fullName)}
-                ${renderStars(post.author.rating || 0)}
-                </div>
-                <div class="post-time">${new Date(post.createdAt).toLocaleString()}</div>
-                </div>
-                </div>
-                <div class="post-text">${escapeHtml(post.text)}</div>
-                ${post.image ? `<img class="post-image" src="${escapeHtml(post.image)}" onclick="openImageModal('${escapeHtml(post.image)}')">` : ''}
-                ${post.video ? `<video class="post-video" autoplay loop muted playsinline disablePictureInPicture style="pointer-events: none;" preload="metadata"><source src="${escapeHtml(post.video)}" type="video/mp4"></video>` : ''}
-                <div class="post-stats">
-                    <button class="like-btn${post.userLiked ? ' liked' : ''}" data-id="${post.id}">
-                        <i class="fa-${post.userLiked ? 'solid' : 'regular'} fa-heart"></i>
-                        <span>${post.likesCount || 0}</span>
-                    </button>
-                    <button class="comment-toggle" data-id="${post.id}" data-loaded="false">
-                        <i class="fa-regular fa-comment"></i>
-                        <span>${post.commentsCount || 0}</span>
-                    </button>
-                </div>
-                <div class="comments-section" id="comments-${post.id}" style="display:none">
-                    <div class="comments-list"></div>
-                    ${currentUser ? `
-                    <div class="new-comment">
-                        <input type="text" placeholder="Написать комментарий..." id="comment-input-${post.id}" onkeypress="if(event.key==='Enter')addComment('${post.id}')">
-                        <button class="btn-sm" onclick="addComment('${post.id}')"><i class="fas fa-paper-plane"></i></button>
-                    </div>` : ''}
-                </div>
-                ${currentUser && post.author.id === currentUser.id ? `
-                <div class="post-actions">
-                    <button class="edit-post-btn" data-id="${post.id}"><i class="fas fa-pen"></i> Редактировать</button>
-                    <button class="delete-post-btn" data-id="${post.id}"><i class="fas fa-trash-alt"></i> Удалить</button>
-                </div>` : ''}
-            </div>
-        `;
+                html += renderSinglePost(post);
             }
             container.innerHTML = html;
-            attachFeedEvents();
+            document.querySelectorAll('.post-card').forEach(card => attachEventsToPostElement(card));
             initVideoObservers();
         }
 
@@ -809,53 +770,6 @@
             }
         }
 
-        function attachFeedEvents() {
-            document.querySelectorAll('.like-btn').forEach(btn => {
-                btn.onclick = async () => {
-                    if (isLoading || !currentUser) { showToast('Войдите в аккаунт', true); return; }
-                    isLoading = true;
-                    const postId = btn.dataset.id;
-                    const res = await fetch(`/api/posts/${postId}/like`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ userId: currentUser.id }) });
-                    const data = await res.json();
-                    if (data.success) {
-                        btn.querySelector('span').textContent = data.likesCount;
-                        btn.classList.toggle('liked', data.liked);
-                        btn.querySelector('i').className = data.liked ? 'fa-solid fa-heart' : 'fa-regular fa-heart';
-                        const post = feedPosts.find(p => p.id === postId);
-                        if (post) { post.likesCount = data.likesCount; post.userLiked = data.liked; }
-                    }
-                    isLoading = false;
-                };
-            });
-            document.querySelectorAll('.comment-toggle').forEach(btn => {
-                btn.onclick = async () => {
-                    const postId = btn.dataset.id;
-                    const div = document.getElementById(`comments-${postId}`);
-                    const isHidden = div.style.display === 'none';
-                    div.style.display = isHidden ? 'block' : 'none';
-                    btn.querySelector('i').className = isHidden ? 'fa-solid fa-comment' : 'fa-regular fa-comment';
-                    if (isHidden && btn.dataset.loaded === 'false') {
-                        await loadCommentsForPost(postId);
-                        btn.dataset.loaded = 'true';
-                    }
-                };
-            });
-            document.querySelectorAll('.edit-post-btn').forEach(btn => {
-                btn.onclick = () => {
-                    const postCard = btn.closest('.post-card');
-                    const currentText = postCard.querySelector('.post-text').innerText;
-                    openEditPostModal(btn.dataset.id, currentText);
-                };
-            });
-            document.querySelectorAll('.delete-post-btn').forEach(btn => {
-                btn.onclick = () => openConfirmModal('Удалить пост?', 'Это действие нельзя отменить.', async () => {
-                    await fetch(`/api/posts/${btn.dataset.id}`, { method: 'DELETE', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ authorId: currentUser.id }) });
-                    const index = feedPosts.findIndex(p => p.id === btn.dataset.id);
-                    if (index !== -1) feedPosts.splice(index, 1);
-                    renderFeedPosts();
-                });
-            });
-        }
 
         function openEditPostModal(postId, currentText) {
             const modalId = 'editPostModal';
@@ -2609,9 +2523,47 @@ modal.querySelectorAll('.homework-cb-card').forEach(cb => {
             socket = io({ transports: ['websocket', 'polling'], reconnection: true, reconnectionAttempts: Infinity, reconnectionDelay: 1000, reconnectionDelayMax: 5000 });
             socket.on('connect', () => { if (currentUser) socket.emit('register_user', currentUser.id); });
             socket.on('connect_error', (err) => { console.error('Socket connect error:', err.message); showToast('Ошибка соединения с сервером', true); });
-            socket.on('post_created', (newPost) => { if (currentTab === 'feed') renderFeed(); else if (currentTab === 'profile' && currentUser?.role === 'psychologist') renderProfile(); });
-            socket.on('post_updated', (data) => { if (currentTab === 'feed') renderFeed(); else if (currentTab === 'profile') renderProfile(); });
-            socket.on('post_deleted', (postId) => { if (currentTab === 'feed') renderFeed(); else if (currentTab === 'profile') renderProfile(); });
+                        socket.on('post_created', (newPost) => {
+                if (currentTab === 'feed') {
+                    // Добавляем новый пост в начало массива и в DOM
+                    feedPosts.unshift(newPost);
+                    const container = document.getElementById('postsContainer');
+                    if (container) {
+                        const newPostHtml = renderSinglePost(newPost);
+                        container.insertAdjacentHTML('afterbegin', newPostHtml);
+                        const newPostElement = container.firstElementChild;
+                        attachEventsToPostElement(newPostElement);
+                    }
+                    feedOffset++;
+                } else if (currentTab === 'profile' && currentUser?.role === 'psychologist') {
+                    renderProfile();
+                }
+            });
+
+            socket.on('post_updated', (data) => {
+                if (currentTab === 'feed') {
+                    const postElement = document.querySelector(`.post-card[data-post-id="${data.id}"]`);
+                    if (postElement) {
+                        const textDiv = postElement.querySelector('.post-text');
+                        if (textDiv) textDiv.innerText = data.text;
+                        const post = feedPosts.find(p => p.id === data.id);
+                        if (post) post.text = data.text;
+                    }
+                } else if (currentTab === 'profile') {
+                    renderProfile();
+                }
+            });
+
+            socket.on('post_deleted', (postId) => {
+                if (currentTab === 'feed') {
+                    const postElement = document.querySelector(`.post-card[data-post-id="${postId}"]`);
+                    if (postElement) postElement.remove();
+                    const index = feedPosts.findIndex(p => p.id === postId);
+                    if (index !== -1) feedPosts.splice(index, 1);
+                } else if (currentTab === 'profile') {
+                    renderProfile();
+                }
+            });
             socket.on('comment_created', ({ postId, comment }) => { const commentsDiv = document.getElementById(`comments-${postId}`); if (commentsDiv) { const commentsList = commentsDiv.querySelector('.comments-list'); if (commentsList) { const newHtml = `<div class="comment"><img class="comment-avatar" src="${escapeHtml(comment.author.avatar)}" onerror="this.src='https://ui-avatars.com/api/?name=U&background=8bca8b&color=fff'"><div class="comment-content"><div class="comment-author">${escapeHtml(comment.author.fullName)}</div><div class="comment-text">${escapeHtml(comment.text)}</div><div class="comment-time">Только что</div></div></div>`; const emptyState = commentsList.querySelector('.empty-state'); if (emptyState) emptyState.remove(); commentsList.insertAdjacentHTML('beforeend', newHtml); const commentSpan = document.querySelector(`.comment-toggle[data-id="${postId}"] span`); if (commentSpan) commentSpan.textContent = (parseInt(commentSpan.textContent) || 0) + 1; const post = feedPosts.find(p => p.id === postId); if (post) post.commentsCount = (post.commentsCount || 0) + 1; } } else if (currentTab === 'feed') renderFeed(); });
             socket.on('post_liked', ({ postId, likesCount, userId, liked }) => { const likeBtn = document.querySelector(`.like-btn[data-id="${postId}"]`); if (likeBtn) { const span = likeBtn.querySelector('span'); if (span) span.textContent = likesCount; if (liked) { likeBtn.classList.add('liked'); likeBtn.querySelector('i').className = 'fa-solid fa-heart'; } else { likeBtn.classList.remove('liked'); likeBtn.querySelector('i').className = 'fa-regular fa-heart'; } const post = feedPosts.find(p => p.id === postId); if (post) { post.likesCount = likesCount; post.userLiked = liked; } } else if (currentTab === 'feed') renderFeed(); });
             socket.on('appointment_updated', (apt) => { if (currentTab === 'profile') renderProfile(); if (currentTab === 'notifications') renderNotifications(); });
@@ -3294,6 +3246,61 @@ modal.querySelectorAll('.homework-cb-card').forEach(cb => {
                 showToast('Ошибка', true);
             }
         }
+
+        async function viewQuestionnaireResponses(questionnaireId) {
+    if (!currentUser || currentUser.role !== 'psychologist') {
+        showToast('Доступ только для психологов', true);
+        return;
+    }
+    showToast('Загрузка ответов...');
+    const res = await fetchJSON(`/api/questionnaires/${questionnaireId}/responses?psychologistId=${currentUser.id}`);
+    if (!res.success) {
+        showToast(res.error || 'Не удалось загрузить ответы', true);
+        return;
+    }
+    renderResponsesModal(questionnaireId, res.responses);
+}
+
+function renderResponsesModal(questionnaireId, responses) {
+    const modalId = 'responsesModal_' + Date.now();
+    let contentHtml = '';
+    if (responses.length === 0) {
+        contentHtml = '<div class="empty-state" style="padding:40px;">Нет ответов на этот опросник.</div>';
+    } else {
+        for (const response of responses) {
+            contentHtml += `
+                <div class="glass-card" style="margin-bottom: 16px; padding: 16px;">
+                    <h4 style="color: var(--green); margin-bottom: 8px;">👤 ${escapeHtml(response.clientName)}</h4>
+                    <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;">Ответил: ${new Date(response.answeredAt).toLocaleString()}</div>
+                    <div style="border-top: 1px solid var(--border); padding-top: 12px;">
+                        ${response.answers.map(a => `
+                            <div style="margin-bottom: 12px;">
+                                <div style="font-weight: 600; font-size: 13px;">❓ ${escapeHtml(a.question)}</div>
+                                <div style="font-size: 13px; color: rgba(255,255,255,0.8); margin-top: 4px;">✍️ Ответ: ${escapeHtml(a.answer)}</div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+        }
+    }
+    const html = `
+        <div class="modal" id="${modalId}">
+            <div class="modal-content" style="max-width: 600px;">
+                <div class="modal-handle"></div>
+                <h3>📋 Ответы на опросник</h3>
+                <div style="max-height: 70vh; overflow-y: auto; padding-right: 8px;">
+                    ${contentHtml}
+                </div>
+                <div class="modal-buttons">
+                    <button class="btn-secondary" onclick="closeModal('${modalId}')">Закрыть</button>
+                </div>
+            </div>
+        </div>
+    `;
+    document.body.insertAdjacentHTML('beforeend', html);
+    setTimeout(() => document.getElementById(modalId).classList.add('active'), 10);
+}
         
         // ======================= ИНИЦИАЛИЗАЦИЯ =======================
         async function init() {
@@ -3330,6 +3337,102 @@ modal.querySelectorAll('.homework-cb-card').forEach(cb => {
             document.querySelectorAll('.nav-item').forEach(el => { el.onclick = () => switchTab(el.dataset.tab); });
             const floatingCallElem = document.getElementById('floatingCall');
             if (floatingCallElem) makeDraggable(floatingCallElem);
+        }
+
+                // ========== НОВЫЕ ФУНКЦИИ ДЛЯ ИНКРЕМЕНТАЛЬНОГО ОБНОВЛЕНИЯ ==========
+        function renderSinglePost(post) {
+            return `
+                <div class="post-card glass-card" data-post-id="${post.id}">
+                    <div class="post-header">
+                        <img class="post-avatar" src="${escapeHtml(post.author.avatar)}" onclick="viewPsychologistPage('${post.author.id}')">
+                        <div>
+                            <div class="post-author" onclick="viewPsychologistPage('${post.author.id}')">
+                                ${escapeHtml(post.author.fullName)}
+                                ${renderStars(post.author.rating || 0)}
+                            </div>
+                            <div class="post-time">${new Date(post.createdAt).toLocaleString()}</div>
+                        </div>
+                    </div>
+                    <div class="post-text">${escapeHtml(post.text)}</div>
+                    ${post.image ? `<img class="post-image" src="${escapeHtml(post.image)}" onclick="openImageModal('${escapeHtml(post.image)}')">` : ''}
+                    ${post.video ? `<video class="post-video" autoplay loop muted playsinline disablePictureInPicture style="pointer-events: none;" preload="metadata"><source src="${escapeHtml(post.video)}" type="video/mp4"></video>` : ''}
+                    <div class="post-stats">
+                        <button class="like-btn${post.userLiked ? ' liked' : ''}" data-id="${post.id}">
+                            <i class="fa-${post.userLiked ? 'solid' : 'regular'} fa-heart"></i>
+                            <span>${post.likesCount || 0}</span>
+                        </button>
+                        <button class="comment-toggle" data-id="${post.id}" data-loaded="false">
+                            <i class="fa-regular fa-comment"></i>
+                            <span>${post.commentsCount || 0}</span>
+                        </button>
+                    </div>
+                    <div class="comments-section" id="comments-${post.id}" style="display:none">
+                        <div class="comments-list"></div>
+                        ${currentUser ? `<div class="new-comment"><input type="text" placeholder="Написать комментарий..." id="comment-input-${post.id}" onkeypress="if(event.key==='Enter')addComment('${post.id}')"><button class="btn-sm" onclick="addComment('${post.id}')"><i class="fas fa-paper-plane"></i></button></div>` : ''}
+                    </div>
+                    ${currentUser && post.author.id === currentUser.id ? `
+                    <div class="post-actions">
+                        <button class="edit-post-btn" data-id="${post.id}"><i class="fas fa-pen"></i> Редактировать</button>
+                        <button class="delete-post-btn" data-id="${post.id}"><i class="fas fa-trash-alt"></i> Удалить</button>
+                    </div>` : ''}
+                </div>
+            `;
+        }
+
+        function attachEventsToPostElement(postElement) {
+            // Like button
+            const likeBtn = postElement.querySelector('.like-btn');
+            if (likeBtn) {
+                likeBtn.onclick = async () => {
+                    if (isLoading || !currentUser) { showToast('Войдите в аккаунт', true); return; }
+                    isLoading = true;
+                    const postId = likeBtn.dataset.id;
+                    const res = await fetch(`/api/posts/${postId}/like`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ userId: currentUser.id }) });
+                    const data = await res.json();
+                    if (data.success) {
+                        likeBtn.querySelector('span').textContent = data.likesCount;
+                        likeBtn.classList.toggle('liked', data.liked);
+                        likeBtn.querySelector('i').className = data.liked ? 'fa-solid fa-heart' : 'fa-regular fa-heart';
+                        const post = feedPosts.find(p => p.id === postId);
+                        if (post) { post.likesCount = data.likesCount; post.userLiked = data.liked; }
+                    }
+                    isLoading = false;
+                };
+            }
+            // Comment toggle
+            const commentToggle = postElement.querySelector('.comment-toggle');
+            if (commentToggle) {
+                commentToggle.onclick = async () => {
+                    const postId = commentToggle.dataset.id;
+                    const div = document.getElementById(`comments-${postId}`);
+                    const isHidden = div.style.display === 'none';
+                    div.style.display = isHidden ? 'block' : 'none';
+                    commentToggle.querySelector('i').className = isHidden ? 'fa-solid fa-comment' : 'fa-regular fa-comment';
+                    if (isHidden && commentToggle.dataset.loaded === 'false') {
+                        await loadCommentsForPost(postId);
+                        commentToggle.dataset.loaded = 'true';
+                    }
+                };
+            }
+            // Edit post button
+            const editBtn = postElement.querySelector('.edit-post-btn');
+            if (editBtn) {
+                editBtn.onclick = () => {
+                    const postCard = editBtn.closest('.post-card');
+                    const currentText = postCard.querySelector('.post-text').innerText;
+                    openEditPostModal(editBtn.dataset.id, currentText);
+                };
+            }
+            // Delete post button
+            const deleteBtn = postElement.querySelector('.delete-post-btn');
+            if (deleteBtn) {
+                deleteBtn.onclick = () => openConfirmModal('Удалить пост?', 'Это действие нельзя отменить.', async () => {
+                    await fetch(`/api/posts/${deleteBtn.dataset.id}`, { method: 'DELETE', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ authorId: currentUser.id }) });
+                    const index = feedPosts.findIndex(p => p.id === deleteBtn.dataset.id);
+                    if (index !== -1) feedPosts.splice(index, 1);
+                    postElement.remove();
+                });
+            }
         }
         
         // Глобальные привязки функций (чтобы были доступны из HTML)
@@ -3372,6 +3475,8 @@ modal.querySelectorAll('.homework-cb-card').forEach(cb => {
         window.deleteReview = deleteReview;
         window.createQuestionnaire = createQuestionnaire;
         window.startQuestionnaire = startQuestionnaire;
+        window.viewQuestionnaireResponses = viewQuestionnaireResponses;
+        window.renderResponsesModal = renderResponsesModal;
         
         init();
         

@@ -1227,6 +1227,60 @@ app.get('/api/questionnaires/:id/questions', async (req, res) => {
     } catch (err) { console.error('Get questions error:', err); res.json({ success: false }); }
 });
 
+// Получение ответов на опросник для психолога
+app.get('/api/questionnaires/:questionnaireId/responses', async (req, res) => {
+    try {
+        const { questionnaireId } = req.params;
+        const { psychologistId } = req.query;
+
+        // 1. Проверяем, принадлежит ли опросник этому психологу
+        const questCheck = await pool.query(`SELECT psychologist_id FROM questionnaires WHERE id = $1`, [questionnaireId]);
+        if (questCheck.rows.length === 0) return res.json({ success: false, error: 'Опросник не найден' });
+        if (questCheck.rows[0].psychologist_id !== psychologistId) {
+            return res.status(403).json({ success: false, error: 'Доступ запрещён' });
+        }
+
+        // 2. Получаем ответы с данными клиентов и вопросов
+        const result = await pool.query(`
+            SELECT 
+                a.client_id, 
+                u.full_name as client_name,
+                q.text as question_text, 
+                a.answer_value,
+                q.type as question_type,
+                a.created_at as answered_at
+            FROM answers a
+            JOIN users u ON a.client_id = u.id
+            JOIN questions q ON a.question_id = q.id
+            WHERE q.questionnaire_id = $1
+            ORDER BY a.client_id, a.created_at
+        `, [questionnaireId]);
+
+        // 3. Группируем по клиентам
+        const responsesByClient = {};
+        for (const row of result.rows) {
+            if (!responsesByClient[row.client_id]) {
+                responsesByClient[row.client_id] = {
+                    clientId: row.client_id,
+                    clientName: row.client_name,
+                    answeredAt: row.answered_at,
+                    answers: []
+                };
+            }
+            responsesByClient[row.client_id].answers.push({
+                question: row.question_text,
+                answer: row.answer_value,
+                type: row.question_type
+            });
+        }
+
+        res.json({ success: true, responses: Object.values(responsesByClient) });
+    } catch (err) {
+        console.error('Get questionnaire responses error:', err);
+        res.status(500).json({ success: false, error: 'Ошибка сервера' });
+    }
+});
+
 // ========== ПРОФИЛЬ КЛИЕНТА (регистрационная анкета) ==========
 app.post('/api/client-profile', async (req, res) => {
     try {
