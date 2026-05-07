@@ -453,6 +453,9 @@
         let videoObserver = null;
         let feedOffset = 0;
         let feedHasMore = true;
+        let cachedProfileData = null;       // хранит данные профиля (объект с результатами запросов)
+        let cachedProfileHtml = null;       // опционально, но для простоты будем перерисовывать из данных
+        let isProfileCacheValid = false;    // флаг, что кеш актуален
         let feedPosts = [];
         let isFeedCacheValid = true; 
 
@@ -869,8 +872,18 @@
         }
 
         // ======================= ПРОФИЛЬ (начало) =======================
-        async function renderProfile() {
+        async function renderProfile(forceRefresh = false) {
     if (!currentUser) { showToast('Войдите в аккаунт', true); return; }
+    
+    // Если кеш валиден и не требуется принудительное обновление – показываем сохранённый HTML
+    if (!forceRefresh && isProfileCacheValid && cachedProfileHtml) {
+        document.getElementById('mainContent').innerHTML = cachedProfileHtml;
+        // После вставки HTML нужно заново привязать обработчики (коллапсы, кнопки и т.д.)
+        attachProfileEventHandlers();
+        return;
+    }
+    
+    // Иначе загружаем данные заново
     const isPsych = currentUser.role === 'psychologist';
     let myQuestionnaires = [];
     if (isPsych) {
@@ -878,7 +891,6 @@
         if (questRes.success) myQuestionnaires = questRes.questionnaires || [];
     }
     
-    // Загружаем домашние задания для клиента
     let clientHomeworks = [];
     if (!isPsych && currentUser.role === 'client') {
         const hwRes = await fetchJSON(`/api/client-homeworks/${currentUser.id}`);
@@ -928,7 +940,6 @@
         `;
     }
     
-    // Секция домашних заданий для клиента
     let homeworksHtml = '';
     if (!isPsych && clientHomeworks.length > 0) {
         homeworksHtml = `
@@ -964,10 +975,8 @@
     
     let psychSections = '';
     if (isPsych) {
-        const pendingCount = (currentUser.clients || []).filter(a => a.status === 'pending').length;
-        const confirmedCount = (currentUser.clients || []).filter(a => a.status === 'confirmed').length;
-        const undoneTasks = tasks.filter(t => !t.completed).length;
         const certificates = currentUser.certificates || [];
+        const undoneTasks = tasks.filter(t => !t.completed).length;
         psychSections = `
             <div class="profile-sections">
                 <div class="collapsible-section" id="sec-tasks"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">📋</div><div><div class="collapsible-title">Задачи</div><div class="collapsible-subtitle">${undoneTasks > 0 ? `${undoneTasks} не выполнено` : 'Все выполнены'}</div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body"><div id="tasksList">${tasks.map(t => `<div class="task-item"><input type="checkbox" class="task-checkbox task-cb" data-id="${t.id}" ${t.completed ? 'checked' : ''}><div style="flex:1"><div class="task-text ${t.completed ? 'task-completed' : ''}">${escapeHtml(t.text)}</div>${t.dueDate ? `<div class="task-due">📅 ${t.dueDate}</div>` : ''}</div><button class="task-delete" onclick="deleteTask('${t.id}')"><i class="fas fa-times"></i></button></div>`).join('')}</div>${tasks.length === 0 ? '<div class="empty-state" style="padding:16px;"><i class="fas fa-check-circle"></i><div>Нет задач</div></div>' : ''}<button class="section-add-btn" onclick="addTaskWithDate()"><i class="fas fa-plus"></i> Добавить задачу</button></div></div>
@@ -1059,10 +1068,23 @@
             ` : ''}
         </div>
     `;
+    
     document.getElementById('mainContent').innerHTML = html;
     
-    // Обработчики для клиентских записей
-    if (!isPsych && currentUser.appointments && currentUser.appointments.length > 0) {
+    // Сохраняем HTML в кеш
+    cachedProfileHtml = html;
+    isProfileCacheValid = true;
+    
+    // Вызываем привязку обработчиков (аналогично тому, что было ранее)
+    attachProfileEventHandlers();
+    
+    checkUpcomingEvents();
+}
+
+        function attachProfileEventHandlers() {
+    const isPsych = currentUser?.role === 'psychologist';
+    
+    if (!isPsych && currentUser?.appointments && currentUser.appointments.length > 0) {
         const filterBtns = document.querySelectorAll('.filter-client-appointments-btn');
         if (filterBtns.length) {
             filterBtns.forEach(btn => {
@@ -1076,26 +1098,9 @@
         }
     }
     
-    // Обработчики для домашних заданий клиента (чекбоксы)
-    if (!isPsych && clientHomeworks.length > 0) {
-        document.querySelectorAll('.homework-cb').forEach(cb => {
-            cb.onchange = async () => {
-                const status = cb.checked ? 'done' : 'pending';
-                await fetch(`/api/homeworks/${cb.dataset.id}`, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ status })
-                });
-                showToast(cb.checked ? 'Задание выполнено!' : 'Статус обновлён');
-                // Можно обновить отображение, но проще перезагрузить профиль
-                renderProfile();
-            };
-        });
-    }
-    
     if (isPsych) {
         document.querySelectorAll('.profile-edit-post').forEach(b => { b.onclick = () => openEditPostModal(b.dataset.id, b.dataset.text); });
-        document.querySelectorAll('.profile-delete-post').forEach(b => { b.onclick = () => openConfirmModal('Удалить пост?', 'Это действие нельзя отменить.', async () => { await fetch(`/api/posts/${b.dataset.id}`, { method:'DELETE', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ authorId: currentUser.id }) }); renderProfile(); }); });
+        document.querySelectorAll('.profile-delete-post').forEach(b => { b.onclick = () => openConfirmModal('Удалить пост?', 'Это действие нельзя отменить.', async () => { await fetch(`/api/posts/${b.dataset.id}`, { method:'DELETE', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ authorId: currentUser.id }) }); renderProfile(true); }); });
         document.querySelectorAll('.task-cb').forEach(cb => { cb.onchange = async () => { await fetch(`/api/tasks/${cb.dataset.id}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ completed: cb.checked }) }); const label = cb.closest('.task-item').querySelector('.task-text'); if (label) label.classList.toggle('task-completed', cb.checked); }; });
         
         const aptFilterBtns = document.querySelectorAll('.filter-appointments-btn');
@@ -1122,7 +1127,22 @@
             renderClientsList('upcoming');
         }
     }
-    checkUpcomingEvents();
+    
+    // Если есть домашние задания у клиента
+    if (!isPsych && currentUser && document.querySelectorAll('.homework-cb').length) {
+        document.querySelectorAll('.homework-cb').forEach(cb => {
+            cb.onchange = async () => {
+                const status = cb.checked ? 'done' : 'pending';
+                await fetch(`/api/homeworks/${cb.dataset.id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ status })
+                });
+                showToast(cb.checked ? 'Задание выполнено!' : 'Статус обновлён');
+                renderProfile(true); // принудительно обновляем профиль после изменения
+            };
+        });
+    }
 }
                 // ======================= ПРОФИЛЬ ПОЛЬЗОВАТЕЛЯ =======================
         
@@ -1326,7 +1346,7 @@
         async function deleteTask(taskId) {
             openConfirmModal('Удалить задачу?', '', async () => {
                 await fetch(`/api/tasks/${taskId}`, { method:'DELETE' });
-                renderProfile();
+                renderProfile(true);
             });
         }
         
@@ -1375,7 +1395,7 @@
             await fetch('/api/notes', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ psychologistId: currentUser.id, title, content, attachment: null, attachmentType: null }) });
             closeModal('editNoteModal');
             showToast('Заметка обновлена');
-            renderProfile();
+            renderProfile(true);
         }
         
         async function deleteNote(id) {
@@ -1383,7 +1403,7 @@
                 await fetch(`/api/notes/${id}`, { method:'DELETE' });
                 closeModal('editNoteModal');
                 showToast('Заметка удалена');
-                renderProfile();
+                renderProfile(true);
             });
         }
         
@@ -1407,7 +1427,7 @@
                     if (data.user) currentUser = data.user;
                     else await refreshUser();
                     showToast('Сертификат добавлен');
-                    renderProfile();
+                    renderProfile(true);
                     setTimeout(() => { const sec = document.getElementById('sec-certs'); if (sec && !sec.classList.contains('open')) sec.classList.add('open'); }, 100);
                 } else { showToast(data.error || 'Ошибка загрузки', true); }
             };
@@ -1422,7 +1442,7 @@
                     if (data.user) currentUser = data.user;
                     else await refreshUser();
                     showToast('Сертификат удалён');
-                    renderProfile();
+                    renderProfile(true);
                 } else { showToast('Ошибка удаления', true); }
             });
         }
@@ -1470,7 +1490,7 @@
                 currentUser = data.user;
                 showToast('Профиль обновлён');
                 closeModal('editProfileModal');
-                renderProfile();
+                renderProfile(true);
             } else showToast('Ошибка', true);
         }
         
@@ -1490,7 +1510,7 @@
                     if (updateData.success) {
                         currentUser = updateData.user;
                         showToast('Аватар обновлён');
-                        renderProfile();
+                        renderProfile(true);
                     }
                 }
             };
@@ -1549,7 +1569,7 @@
             if (data.success) {
                 showToast('Запись подтверждена');
                 await refreshUser();
-                renderProfile();
+                renderProfile(true);
             } else { showToast('Ошибка подтверждения', true); }
         }
         
@@ -1732,7 +1752,7 @@
         // Перерисовываем профиль, чтобы показать новый пост в разделе "Мои посты"
         closeModal(modalId);
         showToast('Пост опубликован');
-        renderProfile();
+        renderProfile(true);
     } else {
         closeModal(modalId);
         showToast('Пост опубликован');
@@ -3064,7 +3084,7 @@ modal.querySelectorAll('.homework-cb-card').forEach(cb => {
     const data = await res.json();
     if (data.success) {
         showToast(publish ? 'Опросник опубликован' : 'Публикация отменена');
-        renderProfile(); // обновить профиль
+        renderProfile(true); // обновить профиль
     } else {
         showToast('Ошибка', true);
     }
@@ -3100,7 +3120,7 @@ modal.querySelectorAll('.homework-cb-card').forEach(cb => {
             else if (tab === 'chats') { refreshUser().then(() => renderChats()); }
             else if (tab === 'notifications') renderNotifications();
             else if (tab === 'questionnaires') renderQuestionnaires();
-            else if (tab === 'profile') renderProfile();
+            else if (tab === 'profile') renderProfile(false);   // false = использовать кеш, если есть
         }
         
         // ======================= ЗАПРОС УВЕДОМЛЕНИЙ =======================
