@@ -454,6 +454,7 @@
         let feedOffset = 0;
         let feedHasMore = true;
         let feedPosts = [];
+        let isFeedCacheValid = true; 
 
         // Переменные для видеозвонка
         let currentCallRoomId = null;
@@ -685,12 +686,31 @@
             }
         }
 
-        async function renderFeed() {
+                async function renderFeed(forceRefresh = false) {
+            // Если кеш валиден и есть посты – просто отображаем их без запроса
+            if (!forceRefresh && isFeedCacheValid && feedPosts.length > 0) {
+                document.getElementById('mainContent').innerHTML = `<div class="container"><div class="posts-grid" id="postsContainer"></div></div>`;
+                renderFeedPosts();
+                // Восстанавливаем кнопку "Загрузить ещё", если нужно
+                if (feedHasMore && !document.getElementById('loadMoreBtn')) {
+                    const btn = document.createElement('button');
+                    btn.id = 'loadMoreBtn';
+                    btn.className = 'btn-sm';
+                    btn.textContent = 'Загрузить ещё';
+                    btn.style.margin = '20px auto';
+                    btn.style.display = 'block';
+                    btn.onclick = () => loadMoreFeed();
+                    document.getElementById('postsContainer').after(btn);
+                }
+                return;
+            }
+            // Иначе загружаем заново (при forceRefresh или пустом кеше)
             feedOffset = 0;
             feedPosts = [];
             feedHasMore = true;
             document.getElementById('mainContent').innerHTML = `<div class="container"><div class="posts-grid" id="postsContainer"></div><div id="feedLoader" style="text-align:center; padding:20px;"><i class="fas fa-circle-notch fa-spin"></i> Загрузка...</div></div>`;
             await loadMoreFeed();
+            isFeedCacheValid = true;
         }
 
         async function loadMoreFeed() {
@@ -1676,8 +1696,52 @@
                     clearInterval(interval);
                     progressBar.style.width = '100%';
                     if (data.success) {
-                        setTimeout(() => { closeModal(modalId); showToast('Пост опубликован'); if (currentTab === 'profile') renderProfile(); else renderFeed(); }, 500);
-                    } else { showToast(data.error || 'Ошибка публикации', true); progressDiv.style.display = 'none'; }
+    // Формируем полный объект поста для кеша ленты
+    const fullPost = {
+        id: data.post.id,
+        text: txt,
+        image: imageUrl,
+        video: videoUrl,
+        createdAt: new Date().toISOString(),
+        author: {
+            id: currentUser.id,
+            fullName: currentUser.fullName,
+            avatar: currentUser.avatar,
+            rating: currentUser.rating || 0
+        },
+        likesCount: 0,
+        commentsCount: 0,
+        userLiked: false
+    };
+    // Добавляем в начало кеша ленты
+    feedPosts.unshift(fullPost);
+    isFeedCacheValid = true;
+    // Если мы на ленте – добавляем DOM-элемент инкрементально
+    if (currentTab === 'feed') {
+        const container = document.getElementById('postsContainer');
+        if (container) {
+            const newPostHtml = renderSinglePost(fullPost);
+            container.insertAdjacentHTML('afterbegin', newPostHtml);
+            const newPostElement = container.firstElementChild;
+            attachEventsToPostElement(newPostElement);
+            feedOffset++;
+        }
+        closeModal(modalId);
+        showToast('Пост опубликован');
+    } else if (currentTab === 'profile') {
+        // Перерисовываем профиль, чтобы показать новый пост в разделе "Мои посты"
+        closeModal(modalId);
+        showToast('Пост опубликован');
+        renderProfile();
+    } else {
+        closeModal(modalId);
+        showToast('Пост опубликован');
+        renderFeed();
+    }
+} else {
+    showToast(data.error || 'Ошибка публикации', true);
+    progressDiv.style.display = 'none';
+}
                 } catch(err) { clearInterval(interval); showToast('Ошибка соединения', true); progressDiv.style.display = 'none'; }
                 finally { isPosting = false; publishBtn.disabled = false; publishBtn.innerHTML = 'Опубликовать'; setTimeout(() => { progressDiv.style.display = 'none'; progressBar.style.width = '0%'; }, 1000); }
             };
