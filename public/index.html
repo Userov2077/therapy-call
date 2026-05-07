@@ -1627,8 +1627,8 @@
                     body: JSON.stringify({ clientId: currentUser.id, psychologistId: pid, date: selectedDate, time: selectedTime })
                 });
                 const d = await r.json();
-                if (d.success) { showToast('Заявка отправлена!'); closeModal(mid); await refreshUser(); if (currentTab === 'profile') renderProfile(); }
-                isNotificationsCacheValid = false;
+                if (d.success) { showToast('Заявка отправлена!'); closeModal(mid); await refreshUser(); if (currentTab === 'profile') renderProfile(); 
+            isNotificationsCacheValid = false;}
                 else showToast(d.error || 'Ошибка', true);
             };
         }
