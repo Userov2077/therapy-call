@@ -453,7 +453,6 @@
         let videoObserver = null;
         let feedOffset = 0;
         let feedHasMore = true;
-        let cachedProfileData = null;
         let cachedProfileHtml = null;
         let isProfileCacheValid = false;
         let cachedPsychologistsHtml = null;
@@ -486,34 +485,6 @@
         let callTimerInterval = null;
         let currentClientIdInCall = null;
 
-        // ======================= АУТЕНТИФИЦИРОВАННЫЙ FETCH =======================
-        async function authFetch(url, options = {}) {
-            const token = localStorage.getItem('token');
-            const headers = new Headers(options.headers || {});
-            if (token) {
-                headers.set('Authorization', `Bearer ${token}`);
-            }
-            if (options.body instanceof FormData) {
-                headers.delete('Content-Type');
-            }
-            const res = await fetch(url, { ...options, headers });
-            if (res.status === 401) {
-                localStorage.removeItem('token');
-                localStorage.removeItem('userId');
-                if (currentUser) {
-                    currentUser = null;
-                    document.getElementById('navAuth').style.display = 'flex';
-                    document.getElementById('navUser').style.display = 'none';
-                    document.getElementById('bottomNav').style.display = 'none';
-                    showToast('Сессия истекла, войдите заново', true);
-                    if (currentTab === 'feed') renderFeed();
-                    else switchTab('feed');
-                }
-                throw new Error('Unauthorized');
-            }
-            return res;
-        }
-
         // ======================= ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ =======================
         function showToast(msg, isErr = false) {
             document.querySelectorAll('.toast').forEach(t => t.remove());
@@ -526,7 +497,7 @@
 
         async function fetchJSON(url, opt = {}) {
             try {
-                const r = await authFetch(url, opt);
+                const r = await fetch(url, opt);
                 const text = await r.text();
                 try {
                     return JSON.parse(text);
@@ -537,7 +508,6 @@
                 }
             } catch(e) {
                 console.error('Fetch error:', e);
-                if (e.message === 'Unauthorized') return { success: false, unauthorized: true };
                 showToast('Ошибка соединения', true);
                 return { success: false };
             }
@@ -654,19 +624,18 @@
 
         async function refreshUser() {
             if (!currentUser) return;
-            const d = await fetchJSON(`/api/user/${currentUser.id}`);
+            const r = await fetch(`/api/user/${currentUser.id}`);
+            const d = await r.json();
             if (d.success) {
                 currentUser = d.user;
                 if (!currentUser.unreadCounts) currentUser.unreadCounts = {};
                 if (!currentUser.following) currentUser.following = [];
-            } else if (d.unauthorized) {
-                logout();
             }
         }
 
         async function toggleSubscription(psychologistId) {
             if (!currentUser) { showToast('Войдите в аккаунт', true); return; }
-            const res = await fetchJSON('/api/subscriptions', {
+            const res = await fetch('/api/subscriptions', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ followerId: currentUser.id, followingId: psychologistId })
@@ -763,12 +732,111 @@
             }
         }
 
+        function openClientProfileModal(userId) {
+            const modalId = 'clientProfileModal_' + Date.now();
+            let emergencyContacts = [{ name: '', phone: '' }];
+            
+            const renderEmergency = () => {
+                return emergencyContacts.map((c, idx) => `
+                    <div style="display:flex; gap:8px; margin-bottom:8px;">
+                        <input type="text" placeholder="Имя контакта" value="${escapeHtml(c.name)}" data-idx="${idx}" class="emerg-name" style="flex:1;">
+                        <input type="tel" placeholder="Телефон" value="${escapeHtml(c.phone)}" data-idx="${idx}" class="emerg-phone" style="flex:1;">
+                        <button type="button" onclick="removeEmergencyContact(${idx})">✕</button>
+                    </div>
+                `).join('');
+            };
+            
+            const html = `
+                <div class="modal" id="${modalId}">
+                    <div class="modal-content">
+                        <div class="modal-handle"></div>
+                        <h3>Заполните профиль</h3>
+                        <div style="margin-bottom: 16px;">
+                            <label style="display:block; margin-bottom:6px;">Дата рождения</label>
+                            <input type="date" id="profileBirthDate" style="width:100%;">
+                        </div>
+                        <div style="margin-bottom: 16px;">
+                            <label style="display:block; margin-bottom:6px;">Пол</label>
+                            <select id="profileGender" style="width:100%;">
+                                <option value="">Не указан</option>
+                                <option value="male">Мужской</option>
+                                <option value="female">Женский</option>
+                                <option value="other">Другой</option>
+                            </select>
+                        </div>
+                        <div style="margin-bottom: 16px;">
+                            <label style="display:block; margin-bottom:6px;">Экстренные контакты (близкие)</label>
+                            <div id="emergencyList">${renderEmergency()}</div>
+                            <button type="button" class="btn-sm btn-outline" style="margin-top:8px;" onclick="addEmergencyContact()">+ Добавить контакт</button>
+                        </div>
+                        <div style="margin-bottom: 16px;">
+                            <label style="display:block; margin-bottom:6px;">Жалобы (кратко)</label>
+                            <textarea id="profileComplaints" rows="2" style="width:100%;"></textarea>
+                        </div>
+                        <div style="margin-bottom: 16px;">
+                            <label style="display:block; margin-bottom:6px;">Цели терапии</label>
+                            <textarea id="profileGoals" rows="2" style="width:100%;"></textarea>
+                        </div>
+                        <div class="modal-buttons">
+                            <button class="btn-secondary" onclick="closeModal('${modalId}')">Пропустить</button>
+                            <button class="btn-primary" onclick="saveClientProfile('${userId}')">Сохранить</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            document.body.insertAdjacentHTML('beforeend', html);
+            setTimeout(() => document.getElementById(modalId).classList.add('active'), 10);
+            
+            window.addEmergencyContact = () => {
+                emergencyContacts.push({ name: '', phone: '' });
+                document.getElementById('emergencyList').innerHTML = renderEmergency();
+            };
+            window.removeEmergencyContact = (idx) => {
+                emergencyContacts.splice(idx, 1);
+                document.getElementById('emergencyList').innerHTML = renderEmergency();
+            };
+            
+            window.saveClientProfile = async (uid) => {
+                const names = document.querySelectorAll('.emerg-name');
+                const phones = document.querySelectorAll('.emerg-phone');
+                const contacts = [];
+                for (let i = 0; i < names.length; i++) {
+                    if (names[i].value.trim() && phones[i].value.trim()) {
+                        contacts.push({ name: names[i].value.trim(), phone: phones[i].value.trim() });
+                    }
+                }
+                const birthDate = document.getElementById('profileBirthDate').value;
+                const gender = document.getElementById('profileGender').value;
+                const complaints = document.getElementById('profileComplaints').value;
+                const goals = document.getElementById('profileGoals').value;
+                
+                const res = await fetch('/api/client-profile', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        userId: uid,
+                        birthDate,
+                        gender,
+                        emergencyContacts: contacts,
+                        complaints,
+                        goals
+                    })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    showToast('Профиль сохранён');
+                    closeModal(modalId);
+                } else {
+                    showToast('Ошибка сохранения', true);
+                }
+            };
+        }
+
         function logout() {
             openConfirmModal('Выйти из аккаунта?', '', () => {
                 if (socket) socket.disconnect();
                 localStorage.removeItem('token');
                 localStorage.removeItem('userId');
-                // Сброс кешей
                 isFeedCacheValid = false;
                 isProfileCacheValid = false;
                 isPsychologistsCacheValid = false;
@@ -781,8 +849,7 @@
             });
         }
 
-        // ======================= СОКЕТ (инициализация с токеном) =======================
-                // ======================= ИНИЦИАЛИЗАЦИЯ СОКЕТА (продолжение) =======================
+        // ======================= СОКЕТ (инициализация) =======================
         function initSocket() {
             if (socket) { socket.disconnect(); socket = null; }
             const token = localStorage.getItem('token');
@@ -798,7 +865,6 @@
             socket.on('connect', () => { if (currentUser) socket.emit('register_user', currentUser.id); });
             socket.on('connect_error', (err) => { console.error('Socket connect error:', err.message); showToast('Ошибка соединения с сервером', true); });
             
-            // Обработчик создания нового поста
             socket.on('post_created', (newPost) => {
                 if (currentTab === 'feed') {
                     feedPosts.unshift(newPost);
@@ -814,8 +880,6 @@
                     renderProfile(true);
                 }
             });
-            
-            // Обработчик обновления поста
             socket.on('post_updated', (data) => {
                 if (currentTab === 'feed') {
                     const postElement = document.querySelector(`.post-card[data-post-id="${data.id}"]`);
@@ -829,8 +893,6 @@
                     renderProfile(true);
                 }
             });
-            
-            // Обработчик удаления поста
             socket.on('post_deleted', (postId) => {
                 if (currentTab === 'feed') {
                     const postElement = document.querySelector(`.post-card[data-post-id="${postId}"]`);
@@ -841,8 +903,6 @@
                     renderProfile(true);
                 }
             });
-            
-            // Обработчик создания комментария
             socket.on('comment_created', ({ postId, comment }) => {
                 const commentsDiv = document.getElementById(`comments-${postId}`);
                 if (commentsDiv) {
@@ -872,7 +932,6 @@
                         if (commentSpan) commentSpan.textContent = (parseInt(commentSpan.textContent) || 0) + 1;
                         const post = feedPosts.find(p => p.id === postId);
                         if (post) post.commentsCount = (post.commentsCount || 0) + 1;
-                        // Привязываем обработчики к новым кнопкам
                         const newEditBtn = commentsList.querySelector(`.edit-comment-btn[data-id="${comment.id}"]`);
                         if (newEditBtn) newEditBtn.onclick = () => editComment(comment.id, postId, comment.text);
                         const newDeleteBtn = commentsList.querySelector(`.delete-comment-btn[data-id="${comment.id}"]`);
@@ -882,8 +941,6 @@
                     renderFeed(true);
                 }
             });
-
-
             socket.on('comment_deleted', ({ commentId, postId }) => {
                 const commentDiv = document.querySelector(`.comment[data-comment-id="${commentId}"]`);
                 if (commentDiv) commentDiv.remove();
@@ -892,8 +949,6 @@
                 const post = feedPosts.find(p => p.id === postId);
                 if (post) post.commentsCount = (post.commentsCount || 0) - 1;
             });
-            
-            // Обработчик лайка поста
             socket.on('post_liked', ({ postId, likesCount, userId, liked }) => {
                 const likeBtn = document.querySelector(`.like-btn[data-id="${postId}"]`);
                 if (likeBtn) {
@@ -915,21 +970,15 @@
                     renderFeed(true);
                 }
             });
-            
-            // Обработчик обновления записи (подтверждение, изменение статуса)
             socket.on('appointment_updated', (apt) => {
                 if (currentTab === 'profile') renderProfile(true);
                 if (currentTab === 'notifications') renderNotifications(true);
             });
-            
-            // Обработчик завершения сессии
             socket.on('appointment_completed', (appointmentId) => {
                 if (currentTab === 'profile') renderProfile(true);
                 if (currentTab === 'notifications') renderNotifications(true);
                 showFloatingNotification('Сеанс завершён', 'Запись отмечена как завершённая', 'info');
             });
-            
-            // Обработчик нового сообщения в чате
             socket.on('new_message', async (msg) => {
                 let preview = '';
                 if (msg.text) preview = msg.text.substring(0, 50);
@@ -939,7 +988,7 @@
                 if (currentChatPartner && msg.from === currentChatPartner.id) {
                     appendMessageToChat(msg);
                     scrollToBottom();
-                    await fetchJSON('/api/messages/read', {
+                    await fetch('/api/messages/read', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ userId: currentUser.id, fromUserId: msg.from })
@@ -953,7 +1002,7 @@
                 }
                 isChatsCacheValid = false;
                 try {
-                    const userRes = await fetchJSON(`/api/user/${msg.from}`);
+                    const userRes = await fetch(`/api/user/${msg.from}`).then(r => r.json());
                     const senderName = userRes.success ? userRes.user.fullName : 'Новое сообщение';
                     showFloatingNotification('Новое сообщение', `${senderName}: ${preview}`);
                     if ('Notification' in window && Notification.permission === 'granted') {
@@ -969,8 +1018,6 @@
                     }
                 } catch(e) { console.error(e); }
             });
-            
-            // Обработчик уведомлений (системных, отзывов, записей)
             socket.on('notification', (notif) => {
                 if (notif.type === 'request_review') {
                     showFloatingNotification(notif.title, notif.message, 'info');
@@ -993,8 +1040,6 @@
                     renderNotifications(true);
                 }
             });
-            
-            // Обработчик обновления счетчика непрочитанных сообщений
             socket.on('unread_update', (data) => {
                 if (currentUser && data.from && data.count !== undefined) {
                     if (!currentUser.unreadCounts) currentUser.unreadCounts = {};
@@ -1006,18 +1051,18 @@
                     }
                 }
             });
-        } // Конец функции initSocket
+        }
 
-
-                // ======================= ЛЕНТА (с пагинацией) =======================
+        // ======================= ЛЕНТА =======================
         async function editComment(commentId, postId, oldText) {
             const newText = prompt('Редактировать комментарий:', oldText);
             if (!newText || newText === oldText) return;
-            const data = await fetchJSON(`/api/posts/${postId}/comment/${commentId}`, {
+            const res = await fetch(`/api/posts/${postId}/comment/${commentId}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ userId: currentUser.id, text: newText })
             });
+            const data = await res.json();
             if (data.success) {
                 const commentTextDiv = document.getElementById(`comment-text-${commentId}`);
                 if (commentTextDiv) commentTextDiv.innerText = newText;
@@ -1029,11 +1074,12 @@
 
         async function deleteComment(commentId, postId) {
             if (!confirm('Удалить комментарий?')) return;
-            const data = await fetchJSON(`/api/posts/${postId}/comment/${commentId}`, {
+            const res = await fetch(`/api/posts/${postId}/comment/${commentId}`, {
                 method: 'DELETE',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ userId: currentUser.id })
             });
+            const data = await res.json();
             if (data.success) {
                 const commentDiv = document.querySelector(`.comment[data-comment-id="${commentId}"]`);
                 if (commentDiv) commentDiv.remove();
@@ -1158,11 +1204,8 @@
                     if (isLoading || !currentUser) { showToast('Войдите в аккаунт', true); return; }
                     isLoading = true;
                     const postId = likeBtn.dataset.id;
-                    const data = await fetchJSON(`/api/posts/${postId}/like`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ userId: currentUser.id })
-                    });
+                    const res = await fetch(`/api/posts/${postId}/like`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ userId: currentUser.id }) });
+                    const data = await res.json();
                     if (data.success) {
                         likeBtn.querySelector('span').textContent = data.likesCount;
                         likeBtn.classList.toggle('liked', data.liked);
@@ -1198,11 +1241,7 @@
             const deleteBtn = postElement.querySelector('.delete-post-btn');
             if (deleteBtn) {
                 deleteBtn.onclick = () => openConfirmModal('Удалить пост?', 'Это действие нельзя отменить.', async () => {
-                    await fetchJSON(`/api/posts/${deleteBtn.dataset.id}`, {
-                        method: 'DELETE',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ authorId: currentUser.id })
-                    });
+                    await fetch(`/api/posts/${deleteBtn.dataset.id}`, { method: 'DELETE', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ authorId: currentUser.id }) });
                     const index = feedPosts.findIndex(p => p.id === deleteBtn.dataset.id);
                     if (index !== -1) feedPosts.splice(index, 1);
                     postElement.remove();
@@ -1244,6 +1283,26 @@
             }
         }
 
+        function openEditPostModal(postId, currentText) {
+            const modalId = 'editPostModal';
+            const html = `<div class="modal" id="${modalId}"><div class="modal-content"><div class="modal-handle"></div><h3>✏️ Редактировать пост</h3><textarea id="editPostText" rows="5">${escapeHtml(currentText)}</textarea><div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('${modalId}')">Отмена</button><button class="btn-primary" onclick="saveEditPost('${postId}')">Сохранить</button></div></div></div>`;
+            document.body.insertAdjacentHTML('beforeend', html);
+            setTimeout(() => document.getElementById(modalId).classList.add('active'), 10);
+        }
+
+        async function saveEditPost(postId) {
+            const newText = document.getElementById('editPostText').value;
+            if (!newText.trim()) { showToast('Текст не может быть пустым', true); return; }
+            const fd = new FormData();
+            fd.append('authorId', currentUser.id);
+            fd.append('text', newText);
+            await fetch(`/api/posts/${postId}`, { method: 'PUT', body: fd });
+            closeModal('editPostModal');
+            const post = feedPosts.find(p => p.id === postId);
+            if (post) post.text = newText;
+            renderFeedPosts();
+        }
+
         async function addComment(postId) {
             if (!currentUser) { showToast('Войдите в аккаунт', true); return; }
             const input = document.getElementById(`comment-input-${postId}`);
@@ -1253,11 +1312,8 @@
             sendBtn.disabled = true;
             sendBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
             try {
-                const data = await fetchJSON(`/api/posts/${postId}/comment`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ userId: currentUser.id, text })
-                });
+                const res = await fetch(`/api/posts/${postId}/comment`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: currentUser.id, text }) });
+                const data = await res.json();
                 if (data.success) {
                     input.value = '';
                     const commentSpan = document.querySelector(`.comment-toggle[data-id="${postId}"] span`);
@@ -1276,115 +1332,560 @@
             }
         }
 
-        function openEditPostModal(postId, currentText) {
-            const modalId = 'editPostModal_' + Date.now();
-            const html = `<div class="modal" id="${modalId}"><div class="modal-content"><div class="modal-handle"></div><h3>✏️ Редактировать пост</h3><textarea id="editPostText_${modalId}" rows="5">${escapeHtml(currentText)}</textarea><div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('${modalId}')">Отмена</button><button class="btn-primary" onclick="saveEditPost('${postId}', '${modalId}')">Сохранить</button></div></div></div>`;
-            document.body.insertAdjacentHTML('beforeend', html);
-            setTimeout(() => document.getElementById(modalId).classList.add('active'), 10);
-        }
-
-        async function saveEditPost(postId, modalId) {
-            const newText = document.getElementById(`editPostText_${modalId}`).value;
-            if (!newText.trim()) { showToast('Текст не может быть пустым', true); return; }
-            const data = await fetchJSON(`/api/posts/${postId}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ authorId: currentUser.id, text: newText })
-            });
-            if (data.success) {
-                closeModal(modalId);
-                const post = feedPosts.find(p => p.id === postId);
-                if (post) post.text = newText;
-                renderFeedPosts();
-                showToast('Пост обновлён');
-            } else {
-                showToast('Ошибка', true);
+        // ======================= ПСИХОЛОГИ =======================
+        async function renderPsychologistsList(forceRefresh = false) {
+            if (!forceRefresh && isPsychologistsCacheValid && cachedPsychologistsHtml) {
+                document.getElementById('mainContent').innerHTML = cachedPsychologistsHtml;
+                return;
             }
+            
+            document.getElementById('mainContent').innerHTML = `<div class="container"><div class="empty-state"><i class="fas fa-circle-notch fa-spin"></i></div></div>`;
+            const data = await fetchJSON('/api/psychologists');
+            allPsychologists = data.psychologists || [];
+            let html = `<div class="container"><div class="page-title">Психологи</div><div class="psychologists-list">`;
+            for (const p of allPsychologists) {
+                html += `
+                    <div class="psychologist-item glass-card" onclick="viewPsychologistPage('${p.id}')">
+                        <img class="psychologist-avatar-list" src="${escapeHtml(p.avatar)}" onerror="this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(p.full_name)}&background=8bca8b&color=fff'">
+                        <div class="psychologist-info">
+                            <div class="psychologist-name">${escapeHtml(p.full_name)}</div>
+                            <div class="psychologist-spec">${escapeHtml(p.specialization || 'Психолог')}</div>
+                            <div style="display:flex;align-items:center;gap:8px;margin-top:5px;">
+                                ${renderStars(p.rating || 0)}
+                                <span class="psychologist-price">💰 ${p.price || 0} ₸/час</span>
+                            </div>
+                        </div>
+                        <i class="fas fa-chevron-right psychologist-chevron"></i>
+                    </div>
+                `;
+            }
+            if (allPsychologists.length === 0) html += '<div class="empty-state glass-card"><i class="fas fa-users"></i><div>Пока нет психологов</div></div>';
+            html += `</div></div>`;
+            
+            cachedPsychologistsHtml = html;
+            isPsychologistsCacheValid = true;
+            document.getElementById('mainContent').innerHTML = html;
+            initVideoObservers();
         }
 
-        // ======================= НАПОМИНАНИЯ =======================
-        function checkUpcomingEvents() {
-            if (!currentUser) return;
-            const now = new Date();
-            const appointments = currentUser.role === 'psychologist' ? (currentUser.clients || []) : (currentUser.appointments || []);
-            for (const apt of appointments) {
-                if (apt.status === 'confirmed') {
-                    const eventDate = new Date(apt.date + 'T' + apt.time);
-                    const diff = (eventDate - now) / (1000 * 60);
-                    if (diff > 0 && diff <= 60 && !localStorage.getItem(`notified_${apt.appointmentId}`)) {
-                        showFloatingNotification('Скоро созвон', `Запись с ${apt.clientName || apt.psychologistName} через ${Math.round(diff)} минут`, 'warning');
-                        localStorage.setItem(`notified_${apt.appointmentId}`, '1');
-                    }
+        // ======================= ПРОФИЛЬ =======================
+        async function renderProfile(forceRefresh = false) {
+            if (!currentUser) { showToast('Войдите в аккаунт', true); return; }
+            
+            if (!forceRefresh && isProfileCacheValid && cachedProfileHtml) {
+                document.getElementById('mainContent').innerHTML = cachedProfileHtml;
+                attachProfileEventHandlers();
+                return;
+            }
+            
+            const isPsych = currentUser.role === 'psychologist';
+            let myQuestionnaires = [];
+            if (isPsych) {
+                const questRes = await fetchJSON(`/api/questionnaires/psychologist/${currentUser.id}`);
+                if (questRes.success) myQuestionnaires = questRes.questionnaires || [];
+            }
+            
+            let clientHomeworks = [];
+            if (!isPsych && currentUser.role === 'client') {
+                const hwRes = await fetchJSON(`/api/client-homeworks/${currentUser.id}`);
+                if (hwRes.success) clientHomeworks = hwRes.homeworks || [];
+            }
+            
+            document.getElementById('mainContent').innerHTML = `<div class="container"><div class="empty-state"><i class="fas fa-circle-notch fa-spin"></i></div></div>`;
+            
+            const [postsRes, tasksRes, notesRes, subsRes, statsRes] = await Promise.all([
+                fetchJSON(`/api/posts?userId=${currentUser.id}`),
+                isPsych ? fetchJSON(`/api/tasks/${currentUser.id}`) : Promise.resolve({ tasks: [] }),
+                isPsych ? fetchJSON(`/api/notes/${currentUser.id}`) : Promise.resolve({ notes: [] }),
+                fetchJSON(`/api/subscriptions/${currentUser.id}`),
+                isPsych ? fetchJSON(`/api/psychologist/${currentUser.id}/stats`) : Promise.resolve({ success: false })
+            ]);
+            const myPosts = (postsRes.posts || []).filter(p => p.author.id === currentUser.id);
+            const tasks = tasksRes.tasks || [];
+            const notes = notesRes.notes || [];
+            const followersCount = subsRes.followers?.length || 0;
+            const totalLikesOnPosts = statsRes.success ? statsRes.totalLikes : 0;
+            
+            let appointmentsHtml = '';
+            if (!isPsych && currentUser.appointments && currentUser.appointments.length > 0) {
+                appointmentsHtml = `
+                    <div class="profile-sections">
+                        <div class="collapsible-section open" id="sec-client-appointments">
+                            <div class="collapsible-header" onclick="toggleSection(this)">
+                                <div class="collapsible-header-left">
+                                    <div class="collapsible-icon">📅</div>
+                                    <div>
+                                        <div class="collapsible-title">Мои записи</div>
+                                        <div class="collapsible-subtitle" id="clientAppointmentsSubtitle"></div>
+                                    </div>
+                                </div>
+                                <i class="fas fa-chevron-down collapsible-chevron"></i>
+                            </div>
+                            <div class="collapsible-body">
+                                <div style="margin-bottom: 12px; display: flex; gap: 8px; flex-wrap: wrap;">
+                                    <button class="btn-sm btn-outline filter-client-appointments-btn active" data-filter="upcoming">Предстоящие</button>
+                                    <button class="btn-sm btn-outline filter-client-appointments-btn" data-filter="past">Прошедшие</button>
+                                    <button class="btn-sm btn-outline filter-client-appointments-btn" data-filter="pending">Ожидают</button>
+                                </div>
+                                <div id="clientAppointmentsList" style="max-height: 300px; overflow-y: auto; padding-right: 4px;"></div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            let homeworksHtml = '';
+            if (!isPsych && clientHomeworks.length > 0) {
+                homeworksHtml = `
+                    <div class="profile-sections">
+                        <div class="collapsible-section open">
+                            <div class="collapsible-header" onclick="toggleSection(this)">
+                                <div class="collapsible-header-left">
+                                    <div class="collapsible-icon">✅</div>
+                                    <div>
+                                        <div class="collapsible-title">Мои задания</div>
+                                        <div class="collapsible-subtitle">от психолога</div>
+                                    </div>
+                                </div>
+                                <i class="fas fa-chevron-down collapsible-chevron"></i>
+                            </div>
+                            <div class="collapsible-body">
+                                <div id="clientHomeworksList">
+                                    ${clientHomeworks.map(hw => `
+                                        <div class="task-item">
+                                            <input type="checkbox" class="homework-cb" data-id="${hw.id}" ${hw.status === 'done' ? 'checked' : ''}>
+                                            <div style="flex:1">
+                                                <div class="${hw.status === 'done' ? 'task-completed' : ''}">${escapeHtml(hw.text)}</div>
+                                                ${hw.due_date ? `<div class="task-due">📅 до ${hw.due_date}</div>` : ''}
+                                            </div>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            let psychSections = '';
+            if (isPsych) {
+                const certificates = currentUser.certificates || [];
+                const undoneTasks = tasks.filter(t => !t.completed).length;
+                psychSections = `
+                    <div class="profile-sections">
+                        <div class="collapsible-section" id="sec-tasks"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">📋</div><div><div class="collapsible-title">Задачи</div><div class="collapsible-subtitle">${undoneTasks > 0 ? `${undoneTasks} не выполнено` : 'Все выполнены'}</div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body"><div id="tasksList">${tasks.map(t => `<div class="task-item"><input type="checkbox" class="task-checkbox task-cb" data-id="${t.id}" ${t.completed ? 'checked' : ''}><div style="flex:1"><div class="task-text ${t.completed ? 'task-completed' : ''}">${escapeHtml(t.text)}</div>${t.dueDate ? `<div class="task-due">📅 ${t.dueDate}</div>` : ''}</div><button class="task-delete" onclick="deleteTask('${t.id}')"><i class="fas fa-times"></i></button></div>`).join('')}</div>${tasks.length === 0 ? '<div class="empty-state" style="padding:16px;"><i class="fas fa-check-circle"></i><div>Нет задач</div></div>' : ''}<button class="section-add-btn" onclick="addTaskWithDate()"><i class="fas fa-plus"></i> Добавить задачу</button></div></div>
+                        <div class="collapsible-section" id="sec-calendar"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">📅</div><div><div class="collapsible-title">Календарь</div><div class="collapsible-subtitle">События</div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body"><div id="profileCalendar"></div></div></div>
+                        <div class="collapsible-section" id="sec-appointments"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">📞</div><div><div class="collapsible-title">Записи клиентов</div><div class="collapsible-subtitle" id="appointmentsSubtitle"></div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body"><div style="margin-bottom:12px;display:flex;gap:8px;flex-wrap:wrap;"><button class="btn-sm btn-outline filter-appointments-btn active" data-filter="upcoming">Предстоящие</button><button class="btn-sm btn-outline filter-appointments-btn" data-filter="past">Прошедшие</button><button class="btn-sm btn-outline filter-appointments-btn" data-filter="pending">Ожидают</button></div><div id="appointmentsList"></div></div></div>
+                        <div class="collapsible-section" id="sec-clients"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">👥</div><div><div class="collapsible-title">Клиенты</div><div class="collapsible-subtitle" id="clientsSubtitle"></div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body"><div style="margin-bottom:12px;display:flex;gap:8px;"><button class="btn-sm btn-outline filter-clients-btn active" data-filter="upcoming">Предстоящие</button><button class="btn-sm btn-outline filter-clients-btn" data-filter="past">Прошедшие</button></div><div id="clientsList"></div></div></div>
+                        <div class="collapsible-section" id="sec-notes"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">📝</div><div><div class="collapsible-title">Заметки</div><div class="collapsible-subtitle">${notes.length} заметок</div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body"><div class="notes-grid" id="notesGridProfile">${notes.map(n => `<div class="note-card" onclick="openNoteModal('${n.id}','${escapeHtml(n.title)}','${escapeHtml(n.content)}','${n.attachment || ''}')"><div class="note-title">${escapeHtml(n.title)}</div><div class="note-preview">${escapeHtml((n.content || '').substring(0, 70))}${(n.content || '').length > 70 ? '…' : ''}</div></div>`).join('')}${notes.length === 0 ? '<div class="empty-state" style="padding:16px;"><i class="fas fa-sticky-note"></i><div>Нет заметок</div></div>' : ''}</div><button class="section-add-btn" onclick="openAddNoteModal()"><i class="fas fa-plus"></i> Добавить заметку</button></div></div>
+                        <div class="collapsible-section" id="sec-certs"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">📜</div><div><div class="collapsible-title">Сертификаты и дипломы</div><div class="collapsible-subtitle">${certificates.length} документов</div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body"><div class="certificates-grid" id="certsGridProfile">${certificates.map(c => `<div class="certificate-card"><img src="${escapeHtml(c.image)}" onerror="this.src='https://placehold.co/100x80/1a2e1a/8bca8b?text=📜'"><div class="certificate-title">${escapeHtml(c.title)}</div><button class="delete-cert-btn" onclick="deleteCertificateProfile('${c.id}')"><i class="fas fa-times"></i></button></div>`).join('')}<div class="certificate-card add-cert-card" onclick="addCertificateProfile()"><i class="fas fa-plus"></i><span>Добавить</span></div></div></div></div>
+                        <div class="collapsible-section" id="sec-questionnaires">
+                            <div class="collapsible-header" onclick="toggleSection(this)">
+                                <div class="collapsible-header-left">
+                                    <div class="collapsible-icon">📋</div>
+                                    <div>
+                                        <div class="collapsible-title">Опросники</div>
+                                        <div class="collapsible-subtitle">Создавайте и управляйте анкетами</div>
+                                    </div>
+                                </div>
+                                <i class="fas fa-chevron-down collapsible-chevron"></i>
+                            </div>
+                            <div class="collapsible-body">
+                                <button class="section-add-btn" onclick="createQuestionnaire()"><i class="fas fa-plus"></i> Создать опросник</button>
+                                <div id="psychQuestionnairesList" style="margin-top: 12px;">
+                                    ${myQuestionnaires.map(q => `
+                                        <div class="task-item" style="justify-content: space-between;">
+                                            <div>
+                                                <div class="task-text">${escapeHtml(q.title)}</div>
+                                                <div class="task-due">${q.is_published ? '✅ Опубликован' : '⛔ Черновик'}</div>
+                                            </div>
+                                            <button class="btn-sm btn-outline" onclick="togglePublishQuestionnaire('${q.id}', ${!q.is_published})">${q.is_published ? 'Снять с публикации' : 'Опубликовать'}</button>
+                                            <button class="btn-sm btn-outline" onclick="viewQuestionnaireResponses('${q.id}')">Ответы</button>
+                                        </div>
+                                    `).join('') || '<div class="empty-state" style="padding:16px;"><i class="fas fa-info-circle"></i><div>Нет созданных опросников</div></div>'}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            const html = `
+                <div class="container">
+                    <div class="profile-header">
+                        <div class="profile-avatar-wrap">
+                            <img class="profile-avatar-lg" src="${escapeHtml(currentUser.avatar)}" id="profileAvatar" onerror="this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser.fullName)}&background=8bca8b&color=fff'">
+                            <button class="avatar-edit-btn" onclick="changeAvatar()"><i class="fas fa-pen"></i></button>
+                        </div>
+                        <div class="profile-name">${escapeHtml(currentUser.fullName)}</div>
+                        <div class="profile-role-badge">${isPsych ? '🧠 Психолог' : '👤 Клиент'}</div>
+                        ${currentUser.about ? `<div class="profile-bio">${escapeHtml(currentUser.about)}</div>` : ''}
+                        ${isPsych ? renderStars(currentUser.rating || 0) : ''}
+                        <div class="profile-stats">
+                            ${isPsych ? `<div class="profile-stat"><div class="number">${myPosts.length}</div><div class="label">постов</div></div>` : ''}
+                            ${isPsych ? `<div class="profile-stat"><div class="number">${followersCount}</div><div class="label">подписчиков</div></div>` : ''}
+                            ${isPsych ? `<div class="profile-stat"><div class="number">${totalLikesOnPosts}</div><div class="label">лайков на постах</div></div>` : ''}
+                            ${isPsych ? `<div class="profile-stat"><div class="number">${(currentUser.rating || 0).toFixed(1)}</div><div class="label">рейтинг</div></div>` : ''}
+                        </div>
+                        <div class="profile-actions">
+                            <button class="btn-sm btn-outline" onclick="editProfileModal()"><i class="fas fa-pen"></i> Редактировать</button>
+                            ${isPsych ? `<button class="btn-sm btn-outline" onclick="showScheduleEditor()"><i class="fas fa-clock"></i> Расписание</button><button class="btn-sm" onclick="createPostModal()"><i class="fas fa-plus"></i> Пост</button>` : ''}
+                        </div>
+                    </div>
+                    ${!isPsych ? appointmentsHtml : ''}
+                    ${!isPsych ? homeworksHtml : ''}
+                    ${isPsych ? psychSections : ''}
+                    ${isPsych ? `
+                    <div class="profile-posts-section">
+                        <div class="section-header-row">
+                            <h3>Мои посты</h3>
+                            <button class="btn-sm" onclick="createPostModal()"><i class="fas fa-plus"></i> Новый</button>
+                        </div>
+                        <div class="posts-grid" id="myPostsGridProfile">
+                            ${myPosts.map(p => `
+                                <div class="post-card glass-card">
+                                    <div class="post-text">${escapeHtml(p.text)}</div>
+                                    ${p.image ? `<img class="post-image" src="${escapeHtml(p.image)}" onclick="openImageModal('${escapeHtml(p.image)}')">` : ''}
+                                    ${p.video ? `<video class="post-video" controls preload="metadata"><source src="${escapeHtml(p.video)}" type="video/mp4"></video>` : ''}
+                                    <div class="post-stats">
+                                        <span style="color:var(--text-muted);font-size:13px;display:flex;gap:6px;align-items:center;"><i class="fa-regular fa-heart"></i> ${p.likesCount||0}</span>
+                                        <span style="color:var(--text-muted);font-size:13px;display:flex;gap:6px;align-items:center;"><i class="fa-regular fa-comment"></i> ${p.commentsCount||0}</span>
+                                    </div>
+                                    <div class="post-actions">
+                                        <button class="profile-edit-post" data-id="${p.id}" data-text="${escapeHtml(p.text)}"><i class="fas fa-pen"></i> Ред.</button>
+                                        <button class="profile-delete-post" data-id="${p.id}"><i class="fas fa-trash-alt"></i> Удалить</button>
+                                    </div>
+                                </div>
+                            `).join('')}
+                            ${myPosts.length === 0 ? '<div class="empty-state glass-card" style="padding:24px;"><i class="fas fa-newspaper"></i><div>Нет постов</div></div>' : ''}
+                        </div>
+                    </div>
+                    ` : ''}
+                </div>
+            `;
+            
+            document.getElementById('mainContent').innerHTML = html;
+            cachedProfileHtml = html;
+            isProfileCacheValid = true;
+            attachProfileEventHandlers();
+            checkUpcomingEvents();
+        }
+
+        function attachProfileEventHandlers() {
+            const isPsych = currentUser?.role === 'psychologist';
+            
+            if (!isPsych && currentUser?.appointments && currentUser.appointments.length > 0) {
+                const filterBtns = document.querySelectorAll('.filter-client-appointments-btn');
+                if (filterBtns.length) {
+                    filterBtns.forEach(btn => {
+                        btn.onclick = () => {
+                            filterBtns.forEach(b => b.classList.remove('active'));
+                            btn.classList.add('active');
+                            renderClientAppointmentsList(btn.dataset.filter);
+                        };
+                    });
+                    renderClientAppointmentsList('upcoming');
                 }
             }
-            if (currentUser.role === 'psychologist') {
-                fetchJSON(`/api/tasks/${currentUser.id}`).then(res => {
-                    for (const task of (res.tasks || [])) {
-                        if (!task.completed && task.dueDate) {
-                            const due = new Date(task.dueDate);
-                            const today = new Date(); today.setHours(0,0,0,0);
-                            const daysDiff = Math.ceil((due - today) / (1000 * 60 * 60 * 24));
-                            if (daysDiff === 0 && !localStorage.getItem(`task_today_${task.id}`)) {
-                                showFloatingNotification('Задача на сегодня', task.text, 'warning');
-                                localStorage.setItem(`task_today_${task.id}`, '1');
-                            } else if (daysDiff === 1 && !localStorage.getItem(`task_tomorrow_${task.id}`)) {
-                                showFloatingNotification('Задача на завтра', task.text, 'info');
-                                localStorage.setItem(`task_tomorrow_${task.id}`, '1');
-                            }
-                        }
-                    }
+            
+            if (isPsych) {
+                document.querySelectorAll('.profile-edit-post').forEach(b => { b.onclick = () => openEditPostModal(b.dataset.id, b.dataset.text); });
+                document.querySelectorAll('.profile-delete-post').forEach(b => { b.onclick = () => openConfirmModal('Удалить пост?', 'Это действие нельзя отменить.', async () => { await fetch(`/api/posts/${b.dataset.id}`, { method:'DELETE', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ authorId: currentUser.id }) }); renderProfile(true); }); });
+                document.querySelectorAll('.task-cb').forEach(cb => { cb.onchange = async () => { await fetch(`/api/tasks/${cb.dataset.id}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ completed: cb.checked }) }); const label = cb.closest('.task-item').querySelector('.task-text'); if (label) label.classList.toggle('task-completed', cb.checked); }; });
+                
+                const aptFilterBtns = document.querySelectorAll('.filter-appointments-btn');
+                if (aptFilterBtns.length) {
+                    aptFilterBtns.forEach(btn => {
+                        btn.onclick = () => {
+                            aptFilterBtns.forEach(b => b.classList.remove('active'));
+                            btn.classList.add('active');
+                            renderAppointmentsList(btn.dataset.filter);
+                        };
+                    });
+                    renderAppointmentsList('upcoming');
+                }
+                
+                const clientFilterBtns = document.querySelectorAll('.filter-clients-btn');
+                if (clientFilterBtns.length) {
+                    clientFilterBtns.forEach(btn => {
+                        btn.onclick = () => {
+                            clientFilterBtns.forEach(b => b.classList.remove('active'));
+                            btn.classList.add('active');
+                            renderClientsList(btn.dataset.filter);
+                        };
+                    });
+                    renderClientsList('upcoming');
+                }
+            }
+            
+            if (!isPsych && currentUser && document.querySelectorAll('.homework-cb').length) {
+                document.querySelectorAll('.homework-cb').forEach(cb => {
+                    cb.onchange = async () => {
+                        const status = cb.checked ? 'done' : 'pending';
+                        await fetch(`/api/homeworks/${cb.dataset.id}`, {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ status })
+                        });
+                        showToast(cb.checked ? 'Задание выполнено!' : 'Статус обновлён');
+                        renderProfile(true);
+                    };
                 });
             }
         }
         
-        // ======================= ЗАМЕТКИ =======================
-        function openAddNoteModal() {
-            const modalId = 'noteModal_' + Date.now();
-            const html = `<div class="modal" id="${modalId}"><div class="modal-content"><div class="modal-handle"></div><h3>Новая заметка</h3><input type="text" id="noteTitle_${modalId}" placeholder="Заголовок"><textarea id="noteContent_${modalId}" rows="4" placeholder="Текст заметки..."></textarea><input type="file" id="noteFile_${modalId}" style="font-size:12px;"><div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('${modalId}')">Отмена</button><button class="btn-primary" onclick="saveNote('${modalId}')">Сохранить</button></div></div></div>`;
+        function renderAppointmentsList(filter = 'upcoming') {
+            const container = document.getElementById('appointmentsList');
+            if (!container) return;
+            const allAppointments = currentUser?.clients || [];
+            const now = new Date();
+            let filtered = [];
+            if (filter === 'upcoming') {
+                filtered = allAppointments.filter(a => a.status === 'confirmed' && new Date(a.date + 'T' + a.time) >= now);
+            } else if (filter === 'past') {
+                filtered = allAppointments.filter(a => a.status === 'confirmed' && new Date(a.date + 'T' + a.time) < now);
+            } else if (filter === 'pending') {
+                filtered = allAppointments.filter(a => a.status === 'pending');
+            }
+            const subtitle = document.getElementById('appointmentsSubtitle');
+            if (subtitle) {
+                if (filter === 'upcoming') subtitle.textContent = `${filtered.length} предстоящих`;
+                else if (filter === 'past') subtitle.textContent = `${filtered.length} прошедших`;
+                else subtitle.textContent = `${filtered.length} ожидают подтверждения`;
+            }
+            if (filtered.length === 0) {
+                container.innerHTML = '<div class="empty-state" style="padding:20px;"><i class="fas fa-calendar-times"></i><div>Нет записей</div></div>';
+                return;
+            }
+            let html = '';
+            filtered.forEach(apt => {
+                const isCompleted = apt.status === 'completed';
+                html += `
+                    <div class="appointment-item">
+                        <div class="appt-info">
+                            <div class="appt-name">${escapeHtml(apt.clientName)}</div>
+                            <div class="appt-time">📅 ${apt.date} в ${apt.time}</div>
+                            <div class="appt-status ${apt.status === 'confirmed' ? 'status-confirmed' : (apt.status === 'pending' ? 'status-pending' : 'status-completed')}">
+                                ${apt.status === 'confirmed' ? (isCompleted ? '✅ Завершён' : '✅ Подтверждено') : (apt.status === 'pending' ? '⏳ Ожидает' : '✅ Завершён')}
+                            </div>
+                        </div>
+                        <div class="appt-actions">
+                            ${apt.status === 'pending' ? `<button class="btn-sm" onclick="confirmAppointment('${apt.appointmentId}','${apt.clientId}')">Подтвердить</button>` : ''}
+                            ${apt.status === 'confirmed' && !isCompleted ? `<button class="btn-sm" onclick="startCall('${apt.roomId}', 'psychologist', '${apt.clientId}')"><i class="fas fa-video"></i> Начать</button>` : ''}
+                            ${isCompleted ? '<i class="fas fa-check-circle" style="color:var(--green); font-size:20px;"></i>' : ''}
+                            <button class="btn-sm btn-outline" onclick="startChatWith('${apt.clientId}','${escapeHtml(apt.clientName)}')"><i class="fas fa-comment-dots"></i> Чат</button>
+                        </div>
+                    </div>
+                `;
+            });
+            container.innerHTML = html;
+        }
+        
+        function renderClientAppointmentsList(filter = 'upcoming') {
+            const container = document.getElementById('clientAppointmentsList');
+            if (!container) return;
+            const allAppointments = currentUser?.appointments || [];
+            const now = new Date();
+            let filtered = [];
+            if (filter === 'upcoming') {
+                filtered = allAppointments.filter(a => a.status === 'confirmed' && new Date(a.date + 'T' + a.time) >= now);
+            } else if (filter === 'past') {
+                filtered = allAppointments.filter(a => a.status === 'confirmed' && new Date(a.date + 'T' + a.time) < now);
+            } else if (filter === 'pending') {
+                filtered = allAppointments.filter(a => a.status === 'pending');
+            }
+            const subtitle = document.getElementById('clientAppointmentsSubtitle');
+            if (subtitle) {
+                if (filter === 'upcoming') subtitle.textContent = `${filtered.length} предстоящих`;
+                else if (filter === 'past') subtitle.textContent = `${filtered.length} прошедших`;
+                else subtitle.textContent = `${filtered.length} ожидают`;
+            }
+            if (filtered.length === 0) {
+                container.innerHTML = '<div class="empty-state" style="padding:20px;"><i class="fas fa-calendar-times"></i><div>Нет записей</div></div>';
+                return;
+            }
+            let html = '';
+            filtered.forEach(apt => {
+                const isCompleted = apt.status === 'completed';
+                html += `
+                    <div class="appointment-item">
+                        <div class="appt-info">
+                            <div class="appt-name">${escapeHtml(apt.psychologistName)}</div>
+                            <div class="appt-time">📅 ${apt.date} в ${apt.time}</div>
+                            <div class="appt-status ${apt.status === 'confirmed' ? (isCompleted ? 'status-completed' : 'status-confirmed') : 'status-pending'}">
+                                ${apt.status === 'confirmed' ? (isCompleted ? '✅ Завершён' : '✅ Подтверждён') : '⏳ Ожидает подтверждения'}
+                            </div>
+                        </div>
+                        <div class="appt-actions">
+                            ${apt.status === 'confirmed' && !isCompleted ? `<button class="btn-sm" onclick="startCall('${apt.roomId}', 'client')"><i class="fas fa-video"></i> Войти</button>` : ''}
+                            ${isCompleted ? '<i class="fas fa-check-circle" style="color:var(--green); font-size:20px;"></i>' : ''}
+                            ${apt.status === 'pending' ? '<span style="color:var(--text-muted); font-size:12px;">Ожидает подтверждения</span>' : ''}
+                        </div>
+                    </div>
+                `;
+            });
+            container.innerHTML = html;
+        }
+        
+        function renderClientsList(filter = 'upcoming') {
+            const container = document.getElementById('clientsList');
+            if (!container) return;
+            const appointments = currentUser?.clients || [];
+            const now = new Date();
+            let filtered = [];
+            if (filter === 'upcoming') {
+                filtered = appointments.filter(a => a.status === 'confirmed' && new Date(a.date + 'T' + a.time) >= now);
+            } else {
+                filtered = appointments.filter(a => a.status === 'confirmed' && new Date(a.date + 'T' + a.time) < now);
+            }
+            const subtitle = document.getElementById('clientsSubtitle');
+            if (subtitle) subtitle.textContent = filter === 'upcoming' ? `${filtered.length} предстоящих` : `${filtered.length} прошедших`;
+            if (filtered.length === 0) {
+                container.innerHTML = '<div class="empty-state" style="padding:20px;"><i class="fas fa-calendar-times"></i><div>Нет записей</div></div>';
+                return;
+            }
+            let html = '';
+            filtered.forEach(apt => {
+                html += `<div class="client-item"><div><div class="client-name">${escapeHtml(apt.clientName)}</div><div class="client-time">${apt.date} в ${apt.time}</div></div><button class="btn-sm" onclick="startChatWith('${apt.clientId}','${escapeHtml(apt.clientName)}')"><i class="fas fa-comment-dots"></i> Написать</button></div>`;
+            });
+            container.innerHTML = html;
+        }
+        
+        // ======================= КАЛЕНДАРЬ =======================
+        async function renderProfileCalendar() {
+            const container = document.getElementById('profileCalendar');
+            if (!container) return;
+            const year = currentCalendarDate.getFullYear(), month = currentCalendarDate.getMonth();
+            const firstDay = new Date(year, month, 1);
+            let startDay = firstDay.getDay();
+            startDay = startDay === 0 ? 6 : startDay - 1;
+            const daysInMonth = new Date(year, month + 1, 0).getDate();
+            const prevDays = new Date(year, month, 0).getDate();
+            const tasksRes = await fetchJSON(`/api/tasks/${currentUser.id}`);
+            const tasks = tasksRes.tasks || [];
+            const appointments = currentUser.clients || [];
+            const events = [];
+            tasks.forEach(t => { if (t.dueDate) events.push({ date: t.dueDate, title: t.text, type: 'task' }); });
+            appointments.filter(a => a.status === 'confirmed').forEach(a => { events.push({ date: a.date, title: `Запись с ${a.clientName} в ${a.time}`, type: 'appointment', roomId: a.roomId, clientId: a.clientId }); });
+            let daysHtml = '';
+            for (let i = 0; i < startDay; i++) { daysHtml += `<div class="apple-day other-month">${prevDays - startDay + i + 1}</div>`; }
+            for (let d = 1; d <= daysInMonth; d++) {
+                const dateStr = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+                const dayEvents = events.filter(e => e.date === dateStr);
+                const isToday = dateStr === new Date().toISOString().split('T')[0];
+                daysHtml += `<div class="apple-day${dayEvents.length ? ' has-event' : ''}${isToday ? ' today' : ''}" data-date="${dateStr}" data-events='${JSON.stringify(dayEvents).replace(/'/g, "&#39;")}'>${d}${dayEvents.length && !isToday ? '<div class="event-dot-apple"></div>' : ''}</div>`;
+            }
+            const monthNames = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
+            container.innerHTML = `<div class="apple-calendar"><div class="apple-calendar-header"><button class="apple-calendar-nav-btn" onclick="changeProfileMonth(-1)"><i class="fas fa-chevron-left"></i></button><h3>${monthNames[month]} ${year}</h3><button class="apple-calendar-nav-btn" onclick="changeProfileMonth(1)"><i class="fas fa-chevron-right"></i></button></div><div class="apple-weekdays"><span>Пн</span><span>Вт</span><span>Ср</span><span>Чт</span><span>Пт</span><span>Сб</span><span>Вс</span></div><div class="apple-days" id="appleDaysContainer">${daysHtml}</div></div>`;
+            document.querySelectorAll('.apple-day').forEach(day => { day.onclick = () => { const evs = JSON.parse(day.getAttribute('data-events') || '[]'); if (evs.length) showDayEventsApple(day.getAttribute('data-date'), evs); else showToast('Нет событий на эту дату'); }; });
+        }
+        
+        window.changeProfileMonth = (delta) => { currentCalendarDate.setMonth(currentCalendarDate.getMonth() + delta); renderProfileCalendar(); };
+        
+        function showDayEventsApple(date, events) {
+            let content = `<div style="margin-bottom: 16px;"><i class="fas fa-calendar-day"></i> <strong>${date}</strong></div>`;
+            events.forEach(ev => {
+                if (ev.type === 'appointment') {
+                    content += `<div style="background: var(--green-dim); border-radius: 16px; padding: 14px; margin-bottom: 12px;">
+                        <div><i class="fas fa-phone-alt"></i> ${escapeHtml(ev.title)}</div>
+                        <button class="btn-sm" style="margin-top: 12px;" onclick="startCall('${ev.roomId}', 'psychologist', '${ev.clientId || ''}'); closeModal('dayEventsModal_${date.replace(/-/g,'')}')">
+                            <i class="fas fa-video"></i> Войти в звонок
+                        </button>
+                    </div>`;
+                } else {
+                    content += `<div style="background: rgba(255,255,255,0.05); border-radius: 16px; padding: 14px; margin-bottom: 12px;"><i class="fas fa-tasks"></i> ${escapeHtml(ev.title)}</div>`;
+                }
+            });
+            const modalId = 'dayEventsModal_' + date.replace(/-/g,'');
+            const html = `<div class="modal" id="${modalId}"><div class="modal-content"><div class="modal-handle"></div><h3>События на ${date}</h3>${content}<div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('${modalId}')">Закрыть</button></div></div></div>`;
             document.body.insertAdjacentHTML('beforeend', html);
             setTimeout(() => document.getElementById(modalId).classList.add('active'), 10);
         }
         
-        async function saveNote(modalId) {
-            const title = document.getElementById(`noteTitle_${modalId}`).value;
-            const content = document.getElementById(`noteContent_${modalId}`).value;
+        // ======================= ЗАДАЧИ =======================
+        async function addTaskWithDate() {
+            return new Promise((resolve) => {
+                const modalId = 'addTaskModal_' + Date.now();
+                const html = `<div class="modal" id="${modalId}"><div class="modal-content"><div class="modal-handle"></div><h3>Новая задача</h3><label style="font-size:12px; color:var(--text-muted); display:block; margin-bottom:6px;">Дата выполнения (необязательно)</label><input type="date" id="taskDueDate_${modalId}" style="margin-bottom:16px; width:100%;"><input type="text" id="taskText_${modalId}" placeholder="Введите задачу..." style="margin-bottom:20px;"><div class="modal-buttons"><button class="btn-secondary" id="cancelTaskBtn_${modalId}">Отмена</button><button class="btn-primary" id="saveTaskBtn_${modalId}">Сохранить</button></div></div></div>`;
+                document.body.insertAdjacentHTML('beforeend', html);
+                const modal = document.getElementById(modalId);
+                const textInput = document.getElementById(`taskText_${modalId}`);
+                const dueDateInput = document.getElementById(`taskDueDate_${modalId}`);
+                const cancelBtn = document.getElementById(`cancelTaskBtn_${modalId}`);
+                const saveBtn = document.getElementById(`saveTaskBtn_${modalId}`);
+                const cleanup = () => { modal.classList.remove('active'); setTimeout(() => modal.remove(), 300); };
+                saveBtn.onclick = async () => {
+                    const text = textInput.value.trim();
+                    if (!text) { showToast('Введите текст задачи', true); return; }
+                    const dueDate = dueDateInput.value || null;
+                    await fetch('/api/tasks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ psychologistId: currentUser.id, text, dueDate }) });
+                    showToast('Задача добавлена');
+                    cleanup();
+                    renderProfile(true);
+                    resolve();
+                };
+                cancelBtn.onclick = () => { cleanup(); resolve(); };
+                setTimeout(() => modal.classList.add('active'), 10);
+                textInput.focus();
+            });
+        }
+        
+        async function deleteTask(taskId) {
+            openConfirmModal('Удалить задачу?', '', async () => {
+                await fetch(`/api/tasks/${taskId}`, { method:'DELETE' });
+                renderProfile(true);
+            });
+        }
+        
+        // ======================= ЗАМЕТКИ =======================
+        function openAddNoteModal() {
+            const modalId = 'noteModal';
+            const html = `<div class="modal" id="${modalId}"><div class="modal-content"><div class="modal-handle"></div><h3>Новая заметка</h3><input type="text" id="noteTitle" placeholder="Заголовок"><textarea id="noteContent" rows="4" placeholder="Текст заметки..."></textarea><input type="file" id="noteFile" style="font-size:12px;"><div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('${modalId}')">Отмена</button><button class="btn-primary" onclick="saveNote()">Сохранить</button></div></div></div>`;
+            document.body.insertAdjacentHTML('beforeend', html);
+            setTimeout(() => document.getElementById(modalId).classList.add('active'), 10);
+        }
+        
+        async function saveNote() {
+            const title = document.getElementById('noteTitle').value;
+            const content = document.getElementById('noteContent').value;
             if (!title || !content) { showToast('Заполните все поля', true); return; }
-            const file = document.getElementById(`noteFile_${modalId}`)?.files[0];
+            const file = document.getElementById('noteFile')?.files[0];
             let att = null, attT = null;
             if (file) {
                 if (file.size > 5 * 1024 * 1024) { showToast('Файл не должен превышать 5 МБ', true); return; }
                 const fd = new FormData(); fd.append('file', file);
-                const r = await authFetch('/api/upload', { method: 'POST', body: fd });
+                const r = await fetch('/api/upload', { method: 'POST', body: fd });
                 const d = await r.json();
                 if (d.success) { att = d.fileUrl; attT = file.type.startsWith('image/') ? 'image' : 'file'; }
                 else { showToast(d.error || 'Ошибка загрузки файла', true); return; }
             }
-            const data = await fetchJSON('/api/notes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ psychologistId: currentUser.id, title, content, attachment: att, attachmentType: attT }) });
-            if (data.success) { closeModal(modalId); showToast('Заметка сохранена'); renderProfile(true); }
+            const res = await fetch('/api/notes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ psychologistId: currentUser.id, title, content, attachment: att, attachmentType: attT }) });
+            const data = await res.json();
+            if (data.success) { closeModal('noteModal'); showToast('Заметка сохранена'); renderProfile(true); }
             else showToast(data.error || 'Ошибка сохранения заметки', true);
         }
         
         async function openNoteModal(id, title, content, att) {
-            const modalId = 'editNoteModal_' + Date.now();
-            const html = `<div class="modal" id="${modalId}"><div class="modal-content"><div class="modal-handle"></div><h3>Заметка</h3><input type="text" id="editNoteTitle_${modalId}" value="${escapeHtml(title)}"><textarea id="editNoteContent_${modalId}" rows="6">${escapeHtml(content)}</textarea>${att ? `<div style="margin-bottom:12px;"><a href="${att}" target="_blank" style="color:var(--green);font-size:13px;"><i class="fas fa-paperclip"></i> Вложение</a></div>` : ''}<div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('${modalId}')">Закрыть</button><button class="btn-danger" style="background:rgba(220,38,38,0.2)!important;border:1px solid rgba(220,38,38,0.35)!important;color:#ff6b6b!important;" onclick="deleteNote('${id}', '${modalId}')">Удалить</button><button class="btn-primary" onclick="updateNote('${id}', '${modalId}')">Сохранить</button></div></div></div>`;
+            const modalId = 'editNoteModal';
+            const html = `<div class="modal" id="${modalId}"><div class="modal-content"><div class="modal-handle"></div><h3>Заметка</h3><input type="text" id="editNoteTitle" value="${escapeHtml(title)}"><textarea id="editNoteContent" rows="6">${escapeHtml(content)}</textarea>${att ? `<div style="margin-bottom:12px;"><a href="${att}" target="_blank" style="color:var(--green);font-size:13px;"><i class="fas fa-paperclip"></i> Вложение</a></div>` : ''}<div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('${modalId}')">Закрыть</button><button class="btn-danger" style="background:rgba(220,38,38,0.2)!important;border:1px solid rgba(220,38,38,0.35)!important;color:#ff6b6b!important;" onclick="deleteNote('${id}')">Удалить</button><button class="btn-primary" onclick="updateNote('${id}')">Сохранить</button></div></div></div>`;
             document.body.insertAdjacentHTML('beforeend', html);
             setTimeout(() => document.getElementById(modalId).classList.add('active'), 10);
         }
         
-        async function updateNote(id, modalId) {
-            const title = document.getElementById(`editNoteTitle_${modalId}`).value;
-            const content = document.getElementById(`editNoteContent_${modalId}`).value;
-            await fetchJSON(`/api/notes/${id}`, { method: 'DELETE' });
-            await fetchJSON('/api/notes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ psychologistId: currentUser.id, title, content, attachment: null, attachmentType: null }) });
-            closeModal(modalId);
+        async function updateNote(id) {
+            const title = document.getElementById('editNoteTitle').value;
+            const content = document.getElementById('editNoteContent').value;
+            await fetch(`/api/notes/${id}`, { method:'DELETE' });
+            await fetch('/api/notes', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ psychologistId: currentUser.id, title, content, attachment: null, attachmentType: null }) });
+            closeModal('editNoteModal');
             showToast('Заметка обновлена');
             renderProfile(true);
         }
         
-        async function deleteNote(id, modalId) {
+        async function deleteNote(id) {
             openConfirmModal('Удалить заметку?', '', async () => {
-                await fetchJSON(`/api/notes/${id}`, { method: 'DELETE' });
-                closeModal(modalId);
+                await fetch(`/api/notes/${id}`, { method:'DELETE' });
+                closeModal('editNoteModal');
                 showToast('Заметка удалена');
                 renderProfile(true);
             });
@@ -1404,7 +1905,8 @@
                 fd.append('title', title);
                 fd.append('certificate', file);
                 showToast('Загружаем...');
-                const data = await fetchJSON('/api/certificates', { method: 'POST', body: fd });
+                const res = await fetch('/api/certificates', { method:'POST', body: fd });
+                const data = await res.json();
                 if (data.success) {
                     if (data.user) currentUser = data.user;
                     else await refreshUser();
@@ -1418,7 +1920,8 @@
         
         async function deleteCertificateProfile(certId) {
             openConfirmModal('Удалить сертификат?', 'Это действие нельзя отменить.', async () => {
-                const data = await fetchJSON(`/api/certificates/${currentUser.id}/${certId}`, { method: 'DELETE' });
+                const res = await fetch(`/api/certificates/${currentUser.id}/${certId}`, { method:'DELETE' });
+                const data = await res.json();
                 if (data.success) {
                     if (data.user) currentUser = data.user;
                     else await refreshUser();
@@ -1449,15 +1952,12 @@
         // ======================= РЕДАКТИРОВАНИЕ ПРОФИЛЯ =======================
         function editProfileModal() {
             const isPsych = currentUser.role === 'psychologist';
-            const html = `<div class="modal" id="editProfileModal_${Date.now()}"><div class="modal-content"><div class="modal-handle"></div><h3>Редактировать профиль</h3><input type="text" id="editName" value="${escapeHtml(currentUser.fullName)}" placeholder="ФИО"><input type="tel" id="editPhone" value="${escapeHtml(currentUser.phone || '')}" placeholder="Телефон"><textarea id="editBio" rows="3" placeholder="О себе">${escapeHtml(currentUser.about || '')}</textarea>${isPsych ? `<input type="text" id="editSpec" value="${escapeHtml(currentUser.specialization || '')}" placeholder="Специализация"><input type="text" id="editExp" value="${escapeHtml(currentUser.experience || '')}" placeholder="Опыт работы"><input type="number" id="editPrice" value="${currentUser.price || 0}" placeholder="Стоимость часа (₸)">` : ''}<div class="modal-buttons"><button class="btn-secondary" onclick="closeModal(this.closest('.modal').id)">Отмена</button><button class="btn-primary" onclick="saveProfileEdit()">Сохранить</button></div></div></div>`;
-            const modalId = 'editProfileModal_' + Date.now();
-            const fullHtml = html.replace('editProfileModal_${Date.now()}', modalId);
-            document.body.insertAdjacentHTML('beforeend', fullHtml);
-            setTimeout(() => document.getElementById(modalId).classList.add('active'), 10);
+            const html = `<div class="modal" id="editProfileModal"><div class="modal-content"><div class="modal-handle"></div><h3>Редактировать профиль</h3><input type="text" id="editName" value="${escapeHtml(currentUser.fullName)}" placeholder="ФИО"><input type="tel" id="editPhone" value="${escapeHtml(currentUser.phone || '')}" placeholder="Телефон"><textarea id="editBio" rows="3" placeholder="О себе">${escapeHtml(currentUser.about || '')}</textarea>${isPsych ? `<input type="text" id="editSpec" value="${escapeHtml(currentUser.specialization || '')}" placeholder="Специализация"><input type="text" id="editExp" value="${escapeHtml(currentUser.experience || '')}" placeholder="Опыт работы"><input type="number" id="editPrice" value="${currentUser.price || 0}" placeholder="Стоимость часа (₸)">` : ''}<div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('editProfileModal')">Отмена</button><button class="btn-primary" onclick="saveProfileEdit()">Сохранить</button></div></div></div>`;
+            document.body.insertAdjacentHTML('beforeend', html);
+            setTimeout(() => document.getElementById('editProfileModal').classList.add('active'), 10);
         }
         
         async function saveProfileEdit() {
-            const modal = document.querySelector('.modal.active');
             const fd = new FormData();
             fd.append('userId', currentUser.id);
             fd.append('fullName', document.getElementById('editName').value);
@@ -1468,11 +1968,12 @@
                 fd.append('experience', document.getElementById('editExp').value);
                 fd.append('price', document.getElementById('editPrice').value);
             }
-            const data = await fetchJSON('/api/user/profile', { method: 'PUT', body: fd });
+            const res = await fetch('/api/user/profile', { method:'PUT', body: fd });
+            const data = await res.json();
             if (data.success) {
                 currentUser = data.user;
                 showToast('Профиль обновлён');
-                if (modal) closeModal(modal.id);
+                closeModal('editProfileModal');
                 renderProfile(true);
             } else showToast('Ошибка', true);
         }
@@ -1485,21 +1986,22 @@
                 if (!file) return;
                 const fd = new FormData();
                 fd.append('avatar', file);
-                const uploadRes = await authFetch('/api/upload-avatar', { method: 'POST', body: fd });
+                const uploadRes = await fetch('/api/upload-avatar', { method:'POST', body: fd });
                 const uploadData = await uploadRes.json();
                 if (uploadData.success) {
-                    const updateRes = await fetchJSON('/api/user/profile', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: currentUser.id, avatar: uploadData.avatarUrl }) });
-                    if (updateRes.success) {
-                        currentUser = updateRes.user;
+                    const updateRes = await fetch('/api/user/profile', { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ userId: currentUser.id, avatar: uploadData.avatarUrl }) });
+                    const updateData = await updateRes.json();
+                    if (updateData.success) {
+                        currentUser = updateData.user;
                         showToast('Аватар обновлён');
                         renderProfile(true);
                     }
-                } else { showToast('Ошибка загрузки', true); }
+                }
             };
             input.click();
         }
         
-        // ======================= РАСПИСАНИЕ (редактор) =======================
+        // ======================= РАСПИСАНИЕ =======================
         function showScheduleEditor() {
             const renderSlots = () => {
                 const sched = currentUser.schedule || {};
@@ -1513,43 +2015,41 @@
                     </div>
                 `).join('') : '<div class="empty-state" style="padding:20px;"><i class="fas fa-calendar-times"></i><div>Нет добавленного времени</div></div>';
             };
-            const modalId = 'scheduleModal_' + Date.now();
-            const html = `<div class="modal" id="${modalId}"><div class="modal-content" style="max-height:85vh;display:flex;flex-direction:column;"><div class="modal-handle"></div><h3>📅 Свободное время</h3><div class="schedule-modal-form"><div style="display:flex;gap:8px;align-items:flex-end;"><div style="flex:1;"><label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px;">Дата</label><input type="date" id="slotDate_${modalId}" style="margin-bottom:0;width:100%;"></div><div style="flex:1;"><label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px;">Время</label><input type="time" id="slotTime_${modalId}" style="margin-bottom:0;width:100%;"></div><button class="btn-sm" style="height:44px;margin-bottom:0;" onclick="window.addSlot_${modalId}()"><i class="fas fa-plus"></i> Добавить</button></div></div><div class="schedule-modal-list" id="schedule-list_${modalId}">${renderSlots()}</div><div class="modal-buttons" style="margin-top:0;"><button class="btn-secondary" onclick="closeModal('${modalId}')">Закрыть</button></div></div></div>`;
+            const modalId = 'scheduleModal';
+            const html = `<div class="modal" id="${modalId}"><div class="modal-content" style="max-height:85vh;display:flex;flex-direction:column;"><div class="modal-handle"></div><h3>📅 Свободное время</h3><div class="schedule-modal-form"><div style="display:flex;gap:8px;align-items:flex-end;"><div style="flex:1;"><label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px;">Дата</label><input type="date" id="slotDate" style="margin-bottom:0;width:100%;"></div><div style="flex:1;"><label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px;">Время</label><input type="time" id="slotTime" style="margin-bottom:0;width:100%;"></div><button class="btn-sm" style="height:44px;margin-bottom:0;" onclick="window.addSlot()"><i class="fas fa-plus"></i> Добавить</button></div></div><div class="schedule-modal-list" id="schedule-list">${renderSlots()}</div><div class="modal-buttons" style="margin-top:0;"><button class="btn-secondary" onclick="closeModal('${modalId}')">Закрыть</button></div></div></div>`;
             document.body.insertAdjacentHTML('beforeend', html);
             setTimeout(() => document.getElementById(modalId).classList.add('active'), 10);
-            window[`addSlot_${modalId}`] = async () => {
-                const date = document.getElementById(`slotDate_${modalId}`).value;
-                const time = document.getElementById(`slotTime_${modalId}`).value;
+            window.addSlot = async () => {
+                const date = document.getElementById('slotDate').value;
+                const time = document.getElementById('slotTime').value;
                 if (!date || !time) { showToast('Выберите дату и время', true); return; }
                 const sched = currentUser.schedule || {};
                 if (!sched[date]) sched[date] = [];
                 if (sched[date].includes(time)) { showToast('Такое время уже есть', true); return; }
                 sched[date].push(time); sched[date].sort();
-                const data = await fetchJSON('/api/schedule', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: currentUser.id, schedule: sched }) });
-                if (data.success) {
+                const res = await fetch('/api/schedule', { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ userId: currentUser.id, schedule: sched }) });
+                if (res.ok) {
                     currentUser.schedule = sched;
-                    document.getElementById(`schedule-list_${modalId}`).innerHTML = renderSlots();
+                    document.getElementById('schedule-list').innerHTML = renderSlots();
                     showToast('Время добавлено');
-                } else { showToast('Ошибка', true); }
+                }
             };
             window.removeSlot = async (date, time) => {
                 const sched = currentUser.schedule || {};
                 if (sched[date]) {
                     sched[date] = sched[date].filter(t => t !== time);
                     if (!sched[date].length) delete sched[date];
-                    const data = await fetchJSON('/api/schedule', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: currentUser.id, schedule: sched }) });
-                    if (data.success) {
-                        currentUser.schedule = sched;
-                        document.getElementById(`schedule-list_${modalId}`).innerHTML = renderSlots();
-                        showToast('Время удалено');
-                    }
+                    await fetch('/api/schedule', { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ userId: currentUser.id, schedule: sched }) });
+                    currentUser.schedule = sched;
+                    document.getElementById('schedule-list').innerHTML = renderSlots();
                 }
             };
         }
         
         // ======================= ЗАПИСЬ НА ПРИЁМ =======================
         async function confirmAppointment(appointmentId, clientId) {
-            const data = await fetchJSON('/api/appointment/confirm', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ appointmentId, psychologistId: currentUser.id, clientId }) });
+            const res = await fetch('/api/appointment/confirm', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ appointmentId, psychologistId: currentUser.id, clientId }) });
+            const data = await res.json();
             if (data.success) {
                 showToast('Запись подтверждена');
                 await refreshUser();
@@ -1572,7 +2072,7 @@
                 }
             } else { slotsHtml = '<div class="empty-state" style="padding:20px;"><i class="fas fa-calendar-times"></i><div>Нет свободного времени</div></div>'; }
             const modalId = 'bookModal_' + Date.now();
-            const html = `<div class="modal" id="${modalId}"><div class="modal-content"><div class="modal-handle"></div><h3>Записаться к ${escapeHtml(name)}</h3><div id="slots_${modalId}" style="max-height:300px;overflow-y:auto;">${slotsHtml}</div><div id="selSlot_${modalId}" style="margin-top:10px;font-size:13px;color:var(--green);min-height:20px;"></div><div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('${modalId}')">Отмена</button><button class="btn-primary" id="confirmBook_${modalId}" disabled onclick="window.submitBook_${modalId}('${id}')">Записаться</button></div></div></div>`;
+            const html = `<div class="modal" id="${modalId}"><div class="modal-content"><div class="modal-handle"></div><h3>Записаться к ${escapeHtml(name)}</h3><div id="slots" style="max-height:300px;overflow-y:auto;">${slotsHtml}</div><div id="selSlot" style="margin-top:10px;font-size:13px;color:var(--green);min-height:20px;"></div><div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('${modalId}')">Отмена</button><button class="btn-primary" id="confirmBook" disabled onclick="window.submitBook('${id}','${modalId}')">Записаться</button></div></div></div>`;
             document.body.insertAdjacentHTML('beforeend', html);
             const modal = document.getElementById(modalId);
             setTimeout(() => modal.classList.add('active'), 10);
@@ -1581,21 +2081,22 @@
                 b.onclick = () => {
                     modal.querySelectorAll('.time-slot').forEach(bb => bb.classList.remove('selected'));
                     b.classList.add('selected');
-                    modal.querySelector(`#selSlot_${modalId}`).textContent = `✅ Выбрано: ${b.dataset.date} в ${b.dataset.time}`;
-                    document.getElementById(`confirmBook_${modalId}`).disabled = false;
+                    modal.querySelector('#selSlot').textContent = `✅ Выбрано: ${b.dataset.date} в ${b.dataset.time}`;
+                    document.getElementById('confirmBook').disabled = false;
                     selectedDate = b.dataset.date;
                     selectedTime = b.dataset.time;
                 };
             });
-            window[`submitBook_${modalId}`] = async (pid) => {
+            window.submitBook = async (pid, mid) => {
                 if (!selectedDate || !selectedTime) { showToast('Выберите время', true); return; }
-                const data = await fetchJSON('/api/appointment', {
+                const r = await fetch('/api/appointment', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ clientId: currentUser.id, psychologistId: pid, date: selectedDate, time: selectedTime })
                 });
-                if (data.success) { showToast('Заявка отправлена!'); closeModal(modalId); await refreshUser(); if (currentTab === 'profile') renderProfile(true); isNotificationsCacheValid = false; }
-                else showToast(data.error || 'Ошибка', true);
+                const d = await r.json();
+                if (d.success) { showToast('Заявка отправлена!'); closeModal(mid); await refreshUser(); if (currentTab === 'profile') renderProfile(true); isNotificationsCacheValid = false; }
+                else showToast(d.error || 'Ошибка', true);
             };
         }
         
@@ -1603,115 +2104,34 @@
         function openReviewModal(id, name) {
             let rating = 0;
             const modalId = 'revModal_' + Date.now();
-            const html = `<div class="modal" id="${modalId}"><div class="modal-content"><div class="modal-handle"></div><h3>Отзыв о ${escapeHtml(name)}</h3><div id="stars_${modalId}" style="display:flex;gap:6px;margin-bottom:18px;justify-content:center;">${[1,2,3,4,5].map(s => `<i class="far fa-star" data-r="${s}" style="font-size:32px;cursor:pointer;color:#f5c518;transition:transform 0.1s;"></i>`).join('')}</div><textarea id="revText_${modalId}" rows="3" placeholder="Расскажите о своём опыте..."></textarea><div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('${modalId}')">Отмена</button><button class="btn-primary" onclick="window._submitReview_${modalId}('${id}')">Отправить</button></div></div></div>`;
+            const html = `<div class="modal" id="${modalId}"><div class="modal-content"><div class="modal-handle"></div><h3>Отзыв о ${escapeHtml(name)}</h3><div id="stars" style="display:flex;gap:6px;margin-bottom:18px;justify-content:center;">${[1,2,3,4,5].map(s => `<i class="far fa-star" data-r="${s}" style="font-size:32px;cursor:pointer;color:#f5c518;transition:transform 0.1s;"></i>`).join('')}</div><textarea id="revText" rows="3" placeholder="Расскажите о своём опыте..."></textarea><div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('${modalId}')">Отмена</button><button class="btn-primary" onclick="window._submitReview('${id}','${modalId}')">Отправить</button></div></div></div>`;
             document.body.insertAdjacentHTML('beforeend', html);
             setTimeout(() => document.getElementById(modalId).classList.add('active'), 10);
-            const starsContainer = document.getElementById(`stars_${modalId}`);
-            starsContainer.querySelectorAll('i').forEach(s => {
-                s.onmouseenter = () => { starsContainer.querySelectorAll('i').forEach((ss, i) => { ss.className = i < parseInt(s.dataset.r) ? 'fas fa-star' : 'far fa-star'; }); };
-                s.onmouseleave = () => { starsContainer.querySelectorAll('i').forEach((ss, i) => { ss.className = i < rating ? 'fas fa-star' : 'far fa-star'; }); };
-                s.onclick = () => { rating = parseInt(s.dataset.r); starsContainer.querySelectorAll('i').forEach((ss, i) => { ss.className = i < rating ? 'fas fa-star' : 'far fa-star'; }); };
+            document.querySelectorAll('#stars i').forEach(s => {
+                s.onmouseenter = () => { document.querySelectorAll('#stars i').forEach((ss, i) => { ss.className = i < parseInt(s.dataset.r) ? 'fas fa-star' : 'far fa-star'; }); };
+                s.onmouseleave = () => { document.querySelectorAll('#stars i').forEach((ss, i) => { ss.className = i < rating ? 'fas fa-star' : 'far fa-star'; }); };
+                s.onclick = () => { rating = parseInt(s.dataset.r); document.querySelectorAll('#stars i').forEach((ss, i) => { ss.className = i < rating ? 'fas fa-star' : 'far fa-star'; }); };
             });
-            window[`_submitReview_${modalId}`] = async (pid) => {
+            window._submitReview = async (pid, mid) => {
                 if (!rating) { showToast('Выберите рейтинг', true); return; }
-                const text = document.getElementById(`revText_${modalId}`).value;
-                const data = await fetchJSON('/api/reviews', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ psychologistId: pid, clientId: currentUser.id, rating, text }) });
-                if (data.success) { showToast('Отзыв отправлен!'); closeModal(modalId); await refreshUser(); if (currentTab === 'psychologists') viewPsychologistPage(pid); }
-                else showToast(data.error || 'Ошибка', true);
+                const r = await fetch('/api/reviews', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ psychologistId: pid, clientId: currentUser.id, rating, text: document.getElementById('revText').value }) });
+                const d = await r.json();
+                if (d.success) { showToast('Отзыв отправлен!'); closeModal(mid); await refreshUser(); if (currentTab === 'psychologists') viewPsychologistPage(pid); }
+                else showToast(d.error || 'Ошибка', true);
             };
-        }
-        
-        function openReviewModalWithAppointment(psychologistId, psychologistName, appointmentId) {
-            let rating = 0;
-            const modalId = 'reviewModal_' + Date.now();
-            const html = `<div class="modal" id="${modalId}"><div class="modal-content"><div class="modal-handle"></div><h3>Отзыв о ${escapeHtml(psychologistName)}</h3><div id="stars_${modalId}" style="display:flex;gap:6px;margin-bottom:18px;justify-content:center;">${[1,2,3,4,5].map(s => `<i class="far fa-star" data-r="${s}" style="font-size:32px;cursor:pointer;color:#f5c518;"></i>`).join('')}</div><textarea id="revText_${modalId}" rows="3" placeholder="Расскажите о своём опыте..."></textarea><div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('${modalId}')">Отмена</button><button class="btn-primary" onclick="window._submitReviewAppt_${modalId}('${psychologistId}', '${appointmentId}')">Отправить</button></div></div></div>`;
-            document.body.insertAdjacentHTML('beforeend', html);
-            setTimeout(() => document.getElementById(modalId).classList.add('active'), 10);
-            const starsContainer = document.getElementById(`stars_${modalId}`);
-            starsContainer.querySelectorAll('i').forEach(s => {
-                s.onmouseenter = () => { starsContainer.querySelectorAll('i').forEach((ss, i) => { ss.className = i < parseInt(s.dataset.r) ? 'fas fa-star' : 'far fa-star'; }); };
-                s.onmouseleave = () => { starsContainer.querySelectorAll('i').forEach((ss, i) => { ss.className = i < rating ? 'fas fa-star' : 'far fa-star'; }); };
-                s.onclick = () => { rating = parseInt(s.dataset.r); starsContainer.querySelectorAll('i').forEach((ss, i) => { ss.className = i < rating ? 'fas fa-star' : 'far fa-star'; }); };
-            });
-            window[`_submitReviewAppt_${modalId}`] = async (pid, aptId) => {
-                if (!rating) { showToast('Выберите рейтинг', true); return; }
-                const text = document.getElementById(`revText_${modalId}`).value;
-                const data = await fetchJSON('/api/reviews', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ psychologistId: pid, clientId: currentUser.id, rating, text, appointmentId: aptId }) });
-                if (data.success) { showToast('Отзыв отправлен!'); closeModal(modalId); viewPsychologistPage(pid); }
-                else showToast(data.error || 'Ошибка', true);
-            };
-        }
-        
-        function editReviewModal(reviewId, currentRating, currentText) {
-            let rating = currentRating;
-            const modalId = 'editReviewModal_' + Date.now();
-            const html = `<div class="modal" id="${modalId}"><div class="modal-content"><div class="modal-handle"></div><h3>Редактировать отзыв</h3><div id="stars_${modalId}" style="display:flex;gap:6px;margin-bottom:18px;justify-content:center;">${[1,2,3,4,5].map(s => `<i class="${s <= currentRating ? 'fas' : 'far'} fa-star" data-r="${s}" style="font-size:32px;cursor:pointer;color:#f5c518;"></i>`).join('')}</div><textarea id="revText_${modalId}" rows="3">${escapeHtml(currentText)}</textarea><div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('${modalId}')">Отмена</button><button class="btn-primary" onclick="updateReview('${reviewId}', '${modalId}')">Сохранить</button></div></div></div>`;
-            document.body.insertAdjacentHTML('beforeend', html);
-            setTimeout(() => document.getElementById(modalId).classList.add('active'), 10);
-            const starsContainer = document.getElementById(`stars_${modalId}`);
-            starsContainer.querySelectorAll('i').forEach(s => {
-                s.onmouseenter = () => { starsContainer.querySelectorAll('i').forEach((ss, i) => { ss.className = i < parseInt(s.dataset.r) ? 'fas fa-star' : 'far fa-star'; }); };
-                s.onmouseleave = () => { starsContainer.querySelectorAll('i').forEach((ss, i) => { ss.className = i < rating ? 'fas fa-star' : 'far fa-star'; }); };
-                s.onclick = () => { rating = parseInt(s.dataset.r); starsContainer.querySelectorAll('i').forEach((ss, i) => { ss.className = i < rating ? 'fas fa-star' : 'far fa-star'; }); };
-            });
-        }
-        
-        async function updateReview(reviewId, modalId) {
-            const modal = document.getElementById(modalId);
-            const starsContainer = modal.querySelector(`#stars_${modalId}`);
-            const rating = starsContainer.querySelectorAll('i.fas').length;
-            const text = modal.querySelector(`#revText_${modalId}`).value;
-            const data = await fetchJSON(`/api/reviews/${reviewId}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ userId: currentUser.id, rating, text })
-            });
-            if (data.success) {
-                showToast('Отзыв обновлён');
-                closeModal(modalId);
-                const psychId = window.currentPsychId || (new URLSearchParams(window.location.search).get('id'));
-                if (psychId) viewPsychologistPage(psychId);
-                else location.reload();
-            } else {
-                showToast(data.error || 'Ошибка при обновлении', true);
-            }
-        }
-        
-        async function deleteReview(reviewId) {
-            if (!confirm('Удалить отзыв?')) return;
-            const data = await fetchJSON(`/api/reviews/${reviewId}`, {
-                method: 'DELETE',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ userId: currentUser.id })
-            });
-            if (data.success) {
-                showToast('Отзыв удалён');
-                const psychId = window.currentPsychId || (new URLSearchParams(window.location.search).get('id'));
-                if (psychId) viewPsychologistPage(psychId);
-                else location.reload();
-            } else {
-                showToast('Ошибка', true);
-            }
-        }
-        
-        function showAllReviews(reviews, psychologistName) {
-            const modalId = 'allReviewsModal_' + Date.now();
-            const html = `<div class="modal" id="${modalId}"><div class="modal-content" style="max-height: 70vh;"><div class="modal-handle"></div><h3>Все отзывы о ${escapeHtml(psychologistName)}</h3><div style="max-height: 60vh; overflow-y: auto; padding-right: 8px;">${reviews.map(r => `<div class="review-card glass-card" style="margin-bottom:12px;"><div class="review-header"><span class="review-name">${escapeHtml(r.clientName)}</span>${renderStars(r.rating)}</div><div class="review-text">${escapeHtml(r.text)}</div><div class="review-time">${new Date(r.createdAt).toLocaleString()}</div></div>`).join('')}</div><div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('${modalId}')">Закрыть</button></div></div></div>`;
-            document.body.insertAdjacentHTML('beforeend', html);
-            setTimeout(() => document.getElementById(modalId).classList.add('active'), 10);
         }
         
         // ======================= НОВЫЙ ПОСТ =======================
         function createPostModal() {
-            const modalId = 'cpModal_' + Date.now();
-            const html = `<div class="modal" id="${modalId}"><div class="modal-content"><div class="modal-handle"></div><h3>Новый пост</h3><textarea id="postText_${modalId}" rows="5" placeholder="Поделитесь чем-то полезным..."></textarea><label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:6px;">Фото или видео (необязательно, видео до 1 минуты)</label><input type="file" id="postMedia_${modalId}" accept="image/*,video/*" style="font-size:12px;"><div id="mediaPreview_${modalId}" style="margin-top:8px; display:none;"></div><div id="uploadProgress_${modalId}" style="display:none;" class="upload-progress"><div class="upload-progress-bar"></div></div><div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('${modalId}')">Отмена</button><button class="btn-primary" id="publishPostBtn_${modalId}">Опубликовать</button></div></div></div>`;
+            const modalId = 'cpModal';
+            const html = `<div class="modal" id="${modalId}"><div class="modal-content"><div class="modal-handle"></div><h3>Новый пост</h3><textarea id="postText" rows="5" placeholder="Поделитесь чем-то полезным..."></textarea><label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:6px;">Фото или видео (необязательно, видео до 1 минуты)</label><input type="file" id="postMedia" accept="image/*,video/*" style="font-size:12px;"><div id="mediaPreview" style="margin-top:8px; display:none;"></div><div id="uploadProgress" style="display:none;" class="upload-progress"><div class="upload-progress-bar"></div></div><div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('${modalId}')">Отмена</button><button class="btn-primary" id="publishPostBtn">Опубликовать</button></div></div></div>`;
             document.body.insertAdjacentHTML('beforeend', html);
             setTimeout(() => document.getElementById(modalId).classList.add('active'), 10);
-            const mediaInput = document.getElementById(`postMedia_${modalId}`);
-            const previewDiv = document.getElementById(`mediaPreview_${modalId}`);
-            const progressDiv = document.getElementById(`uploadProgress_${modalId}`);
+            const mediaInput = document.getElementById('postMedia');
+            const previewDiv = document.getElementById('mediaPreview');
+            const progressDiv = document.getElementById('uploadProgress');
             const progressBar = progressDiv.querySelector('.upload-progress-bar');
-            const publishBtn = document.getElementById(`publishPostBtn_${modalId}`);
+            const publishBtn = document.getElementById('publishPostBtn');
             let selectedFile = null;
             mediaInput.onchange = async () => {
                 const file = mediaInput.files[0];
@@ -1745,7 +2165,7 @@
             };
             publishBtn.onclick = async () => {
                 if (isPosting) { showToast('Пост уже публикуется, подождите...', true); return; }
-                const txt = document.getElementById(`postText_${modalId}`).value;
+                const txt = document.getElementById('postText').value;
                 if (!txt.trim()) { showToast('Введите текст', true); return; }
                 isPosting = true;
                 publishBtn.disabled = true;
@@ -1763,7 +2183,7 @@
                     }
                     if (endpoint) {
                         try {
-                            const res = await authFetch(endpoint, { method: 'POST', body: formData });
+                            const res = await fetch(endpoint, { method: 'POST', body: formData });
                             const data = await res.json();
                             if (data.success) {
                                 if (selectedFile.type.startsWith('video/')) videoUrl = data.videoUrl;
@@ -1776,7 +2196,8 @@
                 let progress = 0;
                 const interval = setInterval(() => { progress += 10; if (progress <= 90) progressBar.style.width = progress + '%'; }, 200);
                 try {
-                    const data = await fetchJSON('/api/posts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ authorId: currentUser.id, text: txt, image: imageUrl, video: videoUrl }) });
+                    const res = await fetch('/api/posts', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ authorId: currentUser.id, text: txt, image: imageUrl, video: videoUrl }) });
+                    const data = await res.json();
                     clearInterval(interval);
                     progressBar.style.width = '100%';
                     if (data.success) {
@@ -1829,23 +2250,23 @@
         
         // ======================= ПОИСК =======================
         function openSearchModal() {
-            const modalId = 'searchM_' + Date.now();
-            const html = `<div class="modal" id="${modalId}"><div class="modal-content"><div class="modal-handle"></div><h3>Поиск психологов</h3><input type="search" id="searchInp_${modalId}" placeholder="Введите имя..."><div id="searchRes_${modalId}"></div><div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('${modalId}')">Закрыть</button></div></div></div>`;
+            const modalId = 'searchM';
+            const html = `<div class="modal" id="${modalId}"><div class="modal-content"><div class="modal-handle"></div><h3>Поиск психологов</h3><input type="search" id="searchInp" placeholder="Введите имя..."><div id="searchRes"></div><div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('${modalId}')">Закрыть</button></div></div></div>`;
             document.body.insertAdjacentHTML('beforeend', html);
-            setTimeout(() => { document.getElementById(modalId).classList.add('active'); document.getElementById(`searchInp_${modalId}`).focus(); }, 10);
+            setTimeout(() => { document.getElementById(modalId).classList.add('active'); document.getElementById('searchInp').focus(); }, 10);
             let searchTimeout;
-            document.getElementById(`searchInp_${modalId}`).oninput = async (e) => {
+            document.getElementById('searchInp').oninput = async (e) => {
                 clearTimeout(searchTimeout);
                 const q = e.target.value;
-                if (q.length < 2) { document.getElementById(`searchRes_${modalId}`).innerHTML = ''; return; }
+                if (q.length < 2) { document.getElementById('searchRes').innerHTML = ''; return; }
                 searchTimeout = setTimeout(async () => {
-                    const data = await fetchJSON(`/api/search/psychologists?q=${encodeURIComponent(q)}`);
-                    if (data.success) {
+                    const r = await fetchJSON(`/api/search/psychologists?q=${encodeURIComponent(q)}`);
+                    if (r.success) {
                         let resHtml = '';
-                        for (const p of data.psychologists) {
+                        for (const p of r.psychologists) {
                             resHtml += `<div class="psychologist-item" style="padding:10px;cursor:pointer;border-radius:12px;transition:background 0.2s;" onclick="closeModal('${modalId}');viewPsychologistPage('${p.id}')"><img src="${escapeHtml(p.avatar)}" style="width:42px;height:42px;border-radius:50%;object-fit:cover;border:2px solid var(--green-border);"><div><div style="font-weight:600;font-size:14px;">${escapeHtml(p.full_name)}</div><div style="font-size:12px;color:var(--text-muted);">${escapeHtml(p.specialization||'Психолог')}</div></div></div>`;
                         }
-                        document.getElementById(`searchRes_${modalId}`).innerHTML = resHtml || '<div class="empty-state" style="padding:16px;"><i class="fas fa-search"></i><div>Ничего не найдено</div></div>';
+                        document.getElementById('searchRes').innerHTML = resHtml || '<div class="empty-state" style="padding:16px;"><i class="fas fa-search"></i><div>Ничего не найдено</div></div>';
                     }
                 }, 300);
             };
@@ -1962,18 +2383,9 @@
         
         async function openChat(userId, userName) {
             currentChatPartner = { id: userId, name: userName };
-            await fetchJSON('/api/messages/read', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: currentUser.id, fromUserId: userId }) });
+            await fetch('/api/messages/read', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: currentUser.id, fromUserId: userId }) });
             if (currentUser.unreadCounts && currentUser.unreadCounts[userId]) delete currentUser.unreadCounts[userId];
-            if (currentTab === 'chats') {
-                const chatItems = document.querySelectorAll('.chat-contact');
-                for (const item of chatItems) {
-                    if (item.getAttribute('data-contact-id') === userId) {
-                        const badge = item.querySelector('.unread-badge');
-                        if (badge) badge.remove();
-                        break;
-                    }
-                }
-            }
+            if (currentTab === 'chats') { const chatItems = document.querySelectorAll('.chat-contact'); for (const item of chatItems) { if (item.getAttribute('data-contact-id') === userId) { const badge = item.querySelector('.unread-badge'); if (badge) badge.remove(); break; } } }
             document.getElementById('mainContent').innerHTML = `<div class="chat-page"><div class="chat-messages-container"><div class="chat-messages-header"><button class="back-btn" onclick="renderChats()"><i class="fas fa-arrow-left"></i></button><img src="" id="chatPartnerAvatar" style="width:36px;height:36px;border-radius:50%;object-fit:cover;border:2px solid var(--green-border);" onerror="this.style.display='none'"><div style="flex:1"><div style="font-weight:600;font-size:15px;">${escapeHtml(userName)}</div></div></div><div class="chat-messages-list" id="chatMessagesList"></div><div class="chat-input-area"><div class="chat-controls"><button id="attachImageBtn" title="Фото"><i class="fas fa-image"></i></button><button id="voiceRecordBtn" title="Голосовое"><i class="fas fa-microphone"></i></button></div><input type="file" id="imageInput" accept="image/*" style="display:none"><input type="text" id="chatMessageInput" placeholder="Сообщение..."><button class="send-btn-chat" id="sendMsgBtn"><i class="fas fa-paper-plane"></i></button></div></div></div>`;
             await new Promise(resolve => setTimeout(resolve, 10));
             fetch(`/api/user/${userId}`).then(r => r.json()).then(d => { const av = document.getElementById('chatPartnerAvatar'); if (av && d.success) av.src = d.user.avatar; }).catch(console.error);
@@ -1993,10 +2405,10 @@
                     if (!file || !file.type.startsWith('image/')) { showToast('Только изображения', true); return; }
                     const compressedBlob = await compressImage(file, 1024, 0.8);
                     const formData = new FormData(); formData.append('image', compressedBlob, file.name);
-                    const res = await authFetch('/api/upload-chat-image', { method: 'POST', body: formData });
+                    const res = await fetch('/api/upload-chat-image', { method: 'POST', body: formData });
                     const data = await res.json();
                     if (data.success) {
-                        await fetchJSON('/api/messages', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ from: currentUser.id, to: currentChatPartner.id, text: '', image: data.imageUrl }) });
+                        await fetch('/api/messages', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ from: currentUser.id, to: currentChatPartner.id, text: '', image: data.imageUrl }) });
                         await loadChatMessages();
                         scrollToBottom();
                     }
@@ -2015,10 +2427,10 @@
                             mediaRecorder.onstop = async () => {
                                 const blob = new Blob(audioChunks, { type: 'audio/webm' });
                                 const fd = new FormData(); fd.append('voice', blob, 'voice.webm');
-                                const res = await authFetch('/api/upload-voice', { method: 'POST', body: fd });
+                                const res = await fetch('/api/upload-voice', { method: 'POST', body: fd });
                                 const data = await res.json();
                                 if (data.success) {
-                                    await fetchJSON('/api/messages', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ from: currentUser.id, to: currentChatPartner.id, text: '', voice: data.voiceUrl }) });
+                                    await fetch('/api/messages', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ from: currentUser.id, to: currentChatPartner.id, text: '', voice: data.voiceUrl }) });
                                     await loadChatMessages();
                                     scrollToBottom();
                                     showToast('Голосовое отправлено');
@@ -2126,7 +2538,7 @@
             const tempMsg = { id: Date.now().toString(), from: currentUser.id, to: currentChatPartner.id, text, created_at: new Date().toISOString() };
             appendMessageToChat(tempMsg);
             try {
-                await fetchJSON('/api/messages', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ from: currentUser.id, to: currentChatPartner.id, text }) });
+                await fetch('/api/messages', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ from: currentUser.id, to: currentChatPartner.id, text }) });
                 isChatsCacheValid = false;
             } catch(e) { showToast('Ошибка отправки', true); }
             scrollToBottom();
@@ -2162,7 +2574,7 @@
             openChat(userId, name);
         }
         
-        // ======================= АНКЕТЫ (опросники) =======================
+        // ======================= АНКЕТЫ =======================
         async function renderQuestionnaires(forceRefresh = false) {
             if (!forceRefresh && isQuestionnairesCacheValid && cachedQuestionnairesHtml) {
                 document.getElementById('mainContent').innerHTML = cachedQuestionnairesHtml;
@@ -2378,51 +2790,7 @@
             setTimeout(() => document.getElementById(modalId).classList.add('active'), 10);
         }
         
-        function openClientProfileModal(userId) {
-            const modalId = 'clientProfileModal_' + Date.now();
-            let emergencyContacts = [{ name: '', phone: '' }];
-            const renderEmergency = () => {
-                return emergencyContacts.map((c, idx) => `<div style="display:flex; gap:8px; margin-bottom:8px;"><input type="text" placeholder="Имя контакта" value="${escapeHtml(c.name)}" data-idx="${idx}" class="emerg-name_${modalId}" style="flex:1;"><input type="tel" placeholder="Телефон" value="${escapeHtml(c.phone)}" data-idx="${idx}" class="emerg-phone_${modalId}" style="flex:1;"><button type="button" onclick="removeEmergencyContact_${modalId}(${idx})">✕</button></div>`).join('');
-            };
-            const html = `<div class="modal" id="${modalId}"><div class="modal-content"><div class="modal-handle"></div><h3>Заполните профиль</h3><div style="margin-bottom: 16px;"><label style="display:block; margin-bottom:6px;">Дата рождения</label><input type="date" id="profileBirthDate_${modalId}" style="width:100%;"></div><div style="margin-bottom: 16px;"><label style="display:block; margin-bottom:6px;">Пол</label><select id="profileGender_${modalId}" style="width:100%;"><option value="">Не указан</option><option value="male">Мужской</option><option value="female">Женский</option><option value="other">Другой</option></select></div><div style="margin-bottom: 16px;"><label style="display:block; margin-bottom:6px;">Экстренные контакты (близкие)</label><div id="emergencyList_${modalId}">${renderEmergency()}</div><button type="button" class="btn-sm btn-outline" style="margin-top:8px;" onclick="addEmergencyContact_${modalId}()">+ Добавить контакт</button></div><div style="margin-bottom: 16px;"><label style="display:block; margin-bottom:6px;">Жалобы (кратко)</label><textarea id="profileComplaints_${modalId}" rows="2" style="width:100%;"></textarea></div><div style="margin-bottom: 16px;"><label style="display:block; margin-bottom:6px;">Цели терапии</label><textarea id="profileGoals_${modalId}" rows="2" style="width:100%;"></textarea></div><div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('${modalId}')">Пропустить</button><button class="btn-primary" onclick="saveClientProfile_${modalId}('${userId}')">Сохранить</button></div></div></div>`;
-            document.body.insertAdjacentHTML('beforeend', html);
-            setTimeout(() => document.getElementById(modalId).classList.add('active'), 10);
-            window[`addEmergencyContact_${modalId}`] = () => {
-                emergencyContacts.push({ name: '', phone: '' });
-                document.getElementById(`emergencyList_${modalId}`).innerHTML = renderEmergency();
-            };
-            window[`removeEmergencyContact_${modalId}`] = (idx) => {
-                emergencyContacts.splice(idx, 1);
-                document.getElementById(`emergencyList_${modalId}`).innerHTML = renderEmergency();
-            };
-            window[`saveClientProfile_${modalId}`] = async (uid) => {
-                const names = document.querySelectorAll(`.emerg-name_${modalId}`);
-                const phones = document.querySelectorAll(`.emerg-phone_${modalId}`);
-                const contacts = [];
-                for (let i = 0; i < names.length; i++) {
-                    if (names[i].value.trim() && phones[i].value.trim()) {
-                        contacts.push({ name: names[i].value.trim(), phone: phones[i].value.trim() });
-                    }
-                }
-                const birthDate = document.getElementById(`profileBirthDate_${modalId}`).value;
-                const gender = document.getElementById(`profileGender_${modalId}`).value;
-                const complaints = document.getElementById(`profileComplaints_${modalId}`).value;
-                const goals = document.getElementById(`profileGoals_${modalId}`).value;
-                const data = await fetchJSON('/api/client-profile', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ userId: uid, birthDate, gender, emergencyContacts: contacts, complaints, goals })
-                });
-                if (data.success) {
-                    showToast('Профиль сохранён');
-                    closeModal(modalId);
-                } else {
-                    showToast('Ошибка сохранения', true);
-                }
-            };
-        }
-        
-        // ======================= ВИДЕОЗВОНОК (полная реализация) =======================
+        // ======================= ВИДЕОЗВОНОК =======================
         async function getIceServers() {
             return [
                 { urls: 'stun:stun.l.google.com:19302' },
@@ -2596,7 +2964,7 @@
                 fd.append('from', currentUser.id);
                 fd.append('to', callPartnerSocketId || 'unknown');
                 fd.append('roomId', currentCallRoomId);
-                try { await authFetch('/api/upload-recording', { method: 'POST', body: fd }); showToast('Запись сохранена'); } catch(e) {}
+                try { await fetch('/api/upload-recording', { method: 'POST', body: fd }); showToast('Запись сохранена'); } catch(e) {}
             };
             mediaRecorderCall.start(1000);
             isRecordingCall = true;
@@ -2732,7 +3100,7 @@
                 document.querySelectorAll(`#clientHomeworksList_${modalId} .homework-cb-card`).forEach(cb => {
                     cb.onchange = async () => {
                         const status = cb.checked ? 'done' : 'pending';
-                        await fetchJSON(`/api/homeworks/${cb.dataset.id}`, {
+                        await fetch(`/api/homeworks/${cb.dataset.id}`, {
                             method: 'PUT',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ status })
@@ -2911,6 +3279,20 @@
             if (localWrapper) localWrapper.onclick = swapVideoRoles;
         }
         
+        // ======================= НАВИГАЦИЯ =======================
+        function switchTab(tab, forceRefresh = false) {
+            currentTab = tab;
+            document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+            const act = document.querySelector(`.nav-item[data-tab="${tab}"]`);
+            if (act) act.classList.add('active');
+            if (tab === 'feed') renderFeed(forceRefresh);
+            else if (tab === 'psychologists') renderPsychologistsList(forceRefresh);
+            else if (tab === 'chats') { refreshUser().then(() => renderChats(forceRefresh)); }
+            else if (tab === 'notifications') renderNotifications(forceRefresh);
+            else if (tab === 'questionnaires') renderQuestionnaires(forceRefresh);
+            else if (tab === 'profile') renderProfile(forceRefresh);
+        }
+        
         // ======================= ВИДЕО НАБЛЮДАТЕЛЬ =======================
         function initVideoObservers() {
             if (videoObserver) videoObserver.disconnect();
@@ -2928,20 +3310,6 @@
                 });
             }, { threshold: 0.5 });
             videos.forEach(video => videoObserver.observe(video));
-        }
-        
-        // ======================= НАВИГАЦИЯ =======================
-        function switchTab(tab, forceRefresh = false) {
-            currentTab = tab;
-            document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
-            const act = document.querySelector(`.nav-item[data-tab="${tab}"]`);
-            if (act) act.classList.add('active');
-            if (tab === 'feed') renderFeed(forceRefresh);
-            else if (tab === 'psychologists') renderPsychologistsList(forceRefresh);
-            else if (tab === 'chats') { refreshUser().then(() => renderChats(forceRefresh)); }
-            else if (tab === 'notifications') renderNotifications(forceRefresh);
-            else if (tab === 'questionnaires') renderQuestionnaires(forceRefresh);
-            else if (tab === 'profile') renderProfile(forceRefresh);
         }
         
         // ======================= ЗАПРОС УВЕДОМЛЕНИЙ =======================
@@ -2990,13 +3358,131 @@
             window.addEventListener('touchend', onEnd);
         }
         
+        function showAllReviews(reviews, psychologistName) {
+            const modalId = 'allReviewsModal_' + Date.now();
+            const html = `<div class="modal" id="${modalId}"><div class="modal-content" style="max-height: 70vh;"><div class="modal-handle"></div><h3>Все отзывы о ${escapeHtml(psychologistName)}</h3><div style="max-height: 60vh; overflow-y: auto; padding-right: 8px;">${reviews.map(r => `<div class="review-card glass-card" style="margin-bottom:12px;"><div class="review-header"><span class="review-name">${escapeHtml(r.clientName)}</span>${renderStars(r.rating)}</div><div class="review-text">${escapeHtml(r.text)}</div><div class="review-time">${new Date(r.createdAt).toLocaleString()}</div></div>`).join('')}</div><div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('${modalId}')">Закрыть</button></div></div></div>`;
+            document.body.insertAdjacentHTML('beforeend', html);
+            setTimeout(() => document.getElementById(modalId).classList.add('active'), 10);
+        }
+        
+        function openReviewModalWithAppointment(psychologistId, psychologistName, appointmentId) {
+            let rating = 0;
+            const modalId = 'reviewModal_' + Date.now();
+            const html = `<div class="modal" id="${modalId}"><div class="modal-content"><div class="modal-handle"></div><h3>Отзыв о ${escapeHtml(psychologistName)}</h3><div id="starsContainer" style="display:flex;gap:6px;margin-bottom:18px;justify-content:center;">${[1,2,3,4,5].map(s => `<i class="far fa-star" data-r="${s}" style="font-size:32px;cursor:pointer;color:#f5c518;"></i>`).join('')}</div><textarea id="reviewText" rows="3" placeholder="Расскажите о своём опыте..."></textarea><div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('${modalId}')">Отмена</button><button class="btn-primary" onclick="submitReviewWithAppointment('${modalId}', '${psychologistId}', '${appointmentId}')">Отправить</button></div></div></div>`;
+            document.body.insertAdjacentHTML('beforeend', html);
+            const modal = document.getElementById(modalId);
+            setTimeout(() => modal.classList.add('active'), 10);
+            const stars = modal.querySelectorAll('#starsContainer i');
+            stars.forEach(s => {
+                s.onmouseenter = () => {
+                    stars.forEach((ss, i) => ss.className = i < parseInt(s.dataset.r) ? 'fas fa-star' : 'far fa-star');
+                };
+                s.onmouseleave = () => {
+                    stars.forEach((ss, i) => ss.className = i < rating ? 'fas fa-star' : 'far fa-star');
+                };
+                s.onclick = () => {
+                    rating = parseInt(s.dataset.r);
+                    stars.forEach((ss, i) => ss.className = i < rating ? 'fas fa-star' : 'far fa-star');
+                };
+            });
+            window[`_submitReview_${modalId}`] = async () => {
+                const text = document.getElementById('reviewText').value;
+                if (!rating) { showToast('Выберите рейтинг', true); return; }
+                const res = await fetch('/api/reviews', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ psychologistId, clientId: currentUser.id, rating, text, appointmentId })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    showToast('Отзыв отправлен!');
+                    closeModal(modalId);
+                    viewPsychologistPage(psychologistId);
+                } else {
+                    showToast(data.error || 'Ошибка', true);
+                }
+            };
+        }
+        
+        async function submitReviewWithAppointment(modalId, psychologistId, appointmentId) {
+            await window[`_submitReview_${modalId}`]();
+        }
+        
+        function editReviewModal(reviewId, currentRating, currentText) {
+            let rating = currentRating;
+            const modalId = 'editReviewModal_' + Date.now();
+            const html = `<div class="modal" id="${modalId}"><div class="modal-content"><div class="modal-handle"></div><h3>Редактировать отзыв</h3><div id="starsContainer" style="display:flex;gap:6px;margin-bottom:18px;justify-content:center;">${[1,2,3,4,5].map(s => `<i class="${s <= currentRating ? 'fas' : 'far'} fa-star" data-r="${s}" style="font-size:32px;cursor:pointer;color:#f5c518;"></i>`).join('')}</div><textarea id="reviewText" rows="3">${escapeHtml(currentText)}</textarea><div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('${modalId}')">Отмена</button><button class="btn-primary" onclick="updateReview('${modalId}', '${reviewId}')">Сохранить</button></div></div></div>`;
+            document.body.insertAdjacentHTML('beforeend', html);
+            const modal = document.getElementById(modalId);
+            setTimeout(() => modal.classList.add('active'), 10);
+            const stars = modal.querySelectorAll('#starsContainer i');
+            stars.forEach(s => {
+                s.onmouseenter = () => {
+                    stars.forEach((ss, i) => ss.className = i < parseInt(s.dataset.r) ? 'fas fa-star' : 'far fa-star');
+                };
+                s.onmouseleave = () => {
+                    stars.forEach((ss, i) => ss.className = i < rating ? 'fas fa-star' : 'far fa-star');
+                };
+                s.onclick = () => {
+                    rating = parseInt(s.dataset.r);
+                    stars.forEach((ss, i) => ss.className = i < rating ? 'fas fa-star' : 'far fa-star');
+                };
+            });
+        }
+        
+        async function updateReview(modalId, reviewId) {
+            const modal = document.getElementById(modalId);
+            const rating = modal.querySelectorAll('#starsContainer i.fas').length;
+            const text = modal.querySelector('#reviewText').value;
+            try {
+                const res = await fetch(`/api/reviews/${reviewId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ userId: currentUser.id, rating, text })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    showToast('Отзыв обновлён');
+                    closeModal(modalId);
+                    const psychId = window.currentPsychId || (new URLSearchParams(window.location.search).get('id'));
+                    if (psychId) viewPsychologistPage(psychId);
+                    else location.reload();
+                } else {
+                    showToast(data.error || 'Ошибка при обновлении', true);
+                }
+            } catch (err) {
+                console.error('Update review fetch error:', err);
+                showToast('Ошибка соединения', true);
+            }
+        }
+        
+        async function deleteReview(reviewId) {
+            if (!confirm('Удалить отзыв?')) return;
+            const res = await fetch(`/api/reviews/${reviewId}`, {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId: currentUser.id })
+            });
+            const data = await res.json();
+            if (data.success) {
+                showToast('Отзыв удалён');
+                const psychId = window.currentPsychId || (new URLSearchParams(window.location.search).get('id'));
+                if (psychId) viewPsychologistPage(psychId);
+                else location.reload();
+            } else {
+                showToast('Ошибка', true);
+            }
+        }
+        
         // ======================= ИНИЦИАЛИЗАЦИЯ =======================
         async function init() {
-            const uid = localStorage.getItem('userId');
             const token = localStorage.getItem('token');
-            if (uid && token) {
+            const uid = localStorage.getItem('userId');
+            if (token && uid) {
                 try {
-                    const userData = await fetchJSON(`/api/user/${uid}`);
+                    const userData = await fetchJSON(`/api/user/${uid}`, {
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    });
                     if (userData.success) {
                         currentUser = userData.user;
                         document.getElementById('navAuth').style.display = 'none';
@@ -3027,7 +3513,7 @@
             if (floatingCallElem) makeDraggable(floatingCallElem);
         }
         
-        // Глобальные привязки функций
+        // ======================= ГЛОБАЛЬНЫЕ ПРИВЯЗКИ =======================
         window.openLoginModal = openLoginModal;
         window.openRegisterModal = openRegisterModal;
         window.logout = logout;
