@@ -485,6 +485,34 @@
         let callTimerInterval = null;
         let currentClientIdInCall = null;
 
+
+        async function authFetch(url, options = {}) {
+    const token = localStorage.getItem('token');
+    const headers = new Headers(options.headers || {});
+    if (token) {
+        headers.set('Authorization', `Bearer ${token}`);
+    }
+    if (options.body instanceof FormData) {
+        headers.delete('Content-Type');
+    }
+    const res = await fetch(url, { ...options, headers });
+    if (res.status === 401) {
+        localStorage.removeItem('token');
+        localStorage.removeItem('userId');
+        if (currentUser) {
+            currentUser = null;
+            document.getElementById('navAuth').style.display = 'flex';
+            document.getElementById('navUser').style.display = 'none';
+            document.getElementById('bottomNav').style.display = 'none';
+            showToast('Сессия истекла, войдите заново', true);
+            if (currentTab === 'feed') renderFeed();
+            else switchTab('feed');
+        }
+        throw new Error('Unauthorized');
+    }
+    return res;
+}
+
         // ======================= ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ =======================
         function showToast(msg, isErr = false) {
             document.querySelectorAll('.toast').forEach(t => t.remove());
@@ -624,7 +652,7 @@
 
         async function refreshUser() {
             if (!currentUser) return;
-            const r = await fetch(`/api/user/${currentUser.id}`);
+            const r = await authFetch(`/api/user/${currentUser.id}`);
             const d = await r.json();
             if (d.success) {
                 currentUser = d.user;
@@ -810,7 +838,7 @@
                 const complaints = document.getElementById('profileComplaints').value;
                 const goals = document.getElementById('profileGoals').value;
                 
-                const res = await fetch('/api/client-profile', {
+                const res = await authFetch('/api/client-profile', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -1057,7 +1085,7 @@
         async function editComment(commentId, postId, oldText) {
             const newText = prompt('Редактировать комментарий:', oldText);
             if (!newText || newText === oldText) return;
-            const res = await fetch(`/api/posts/${postId}/comment/${commentId}`, {
+            const res = await authFetch(`/api/posts/${postId}/comment/${commentId}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ userId: currentUser.id, text: newText })
@@ -1074,7 +1102,7 @@
 
         async function deleteComment(commentId, postId) {
             if (!confirm('Удалить комментарий?')) return;
-            const res = await fetch(`/api/posts/${postId}/comment/${commentId}`, {
+            const res = await authFetch(`/api/posts/${postId}/comment/${commentId}`, {
                 method: 'DELETE',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ userId: currentUser.id })
@@ -1204,7 +1232,7 @@
                     if (isLoading || !currentUser) { showToast('Войдите в аккаунт', true); return; }
                     isLoading = true;
                     const postId = likeBtn.dataset.id;
-                    const res = await fetch(`/api/posts/${postId}/like`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ userId: currentUser.id }) });
+                    const res = await authFetch(`/api/posts/${postId}/like`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ userId: currentUser.id }) });
                     const data = await res.json();
                     if (data.success) {
                         likeBtn.querySelector('span').textContent = data.likesCount;
@@ -1241,7 +1269,7 @@
             const deleteBtn = postElement.querySelector('.delete-post-btn');
             if (deleteBtn) {
                 deleteBtn.onclick = () => openConfirmModal('Удалить пост?', 'Это действие нельзя отменить.', async () => {
-                    await fetch(`/api/posts/${deleteBtn.dataset.id}`, { method: 'DELETE', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ authorId: currentUser.id }) });
+                    await authFetch(`/api/posts/${deleteBtn.dataset.id}`, { method: 'DELETE', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ authorId: currentUser.id }) });
                     const index = feedPosts.findIndex(p => p.id === deleteBtn.dataset.id);
                     if (index !== -1) feedPosts.splice(index, 1);
                     postElement.remove();
@@ -1296,7 +1324,7 @@
             const fd = new FormData();
             fd.append('authorId', currentUser.id);
             fd.append('text', newText);
-            await fetch(`/api/posts/${postId}`, { method: 'PUT', body: fd });
+            await authFetch(`/api/posts/${postId}`, { method: 'PUT', body: fd });
             closeModal('editPostModal');
             const post = feedPosts.find(p => p.id === postId);
             if (post) post.text = newText;
@@ -1312,7 +1340,7 @@
             sendBtn.disabled = true;
             sendBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
             try {
-                const res = await fetch(`/api/posts/${postId}/comment`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: currentUser.id, text }) });
+                const res = await authFetch(`/api/posts/${postId}/comment`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: currentUser.id, text }) });
                 const data = await res.json();
                 if (data.success) {
                     input.value = '';
@@ -1818,7 +1846,7 @@
                     const text = textInput.value.trim();
                     if (!text) { showToast('Введите текст задачи', true); return; }
                     const dueDate = dueDateInput.value || null;
-                    await fetch('/api/tasks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ psychologistId: currentUser.id, text, dueDate }) });
+                    await authFetch('/api/tasks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ psychologistId: currentUser.id, text, dueDate }) });
                     showToast('Задача добавлена');
                     cleanup();
                     renderProfile(true);
@@ -1832,7 +1860,7 @@
         
         async function deleteTask(taskId) {
             openConfirmModal('Удалить задачу?', '', async () => {
-                await fetch(`/api/tasks/${taskId}`, { method:'DELETE' });
+                await authFetch(`/api/tasks/${taskId}`, { method:'DELETE' });
                 renderProfile(true);
             });
         }
@@ -1854,7 +1882,7 @@
             if (file) {
                 if (file.size > 5 * 1024 * 1024) { showToast('Файл не должен превышать 5 МБ', true); return; }
                 const fd = new FormData(); fd.append('file', file);
-                const r = await fetch('/api/upload', { method: 'POST', body: fd });
+                const r = await authFetch('/api/upload', { method: 'POST', body: fd });
                 const d = await r.json();
                 if (d.success) { att = d.fileUrl; attT = file.type.startsWith('image/') ? 'image' : 'file'; }
                 else { showToast(d.error || 'Ошибка загрузки файла', true); return; }
@@ -1875,8 +1903,8 @@
         async function updateNote(id) {
             const title = document.getElementById('editNoteTitle').value;
             const content = document.getElementById('editNoteContent').value;
-            await fetch(`/api/notes/${id}`, { method:'DELETE' });
-            await fetch('/api/notes', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ psychologistId: currentUser.id, title, content, attachment: null, attachmentType: null }) });
+            await authFetch(`/api/notes/${id}`, { method:'DELETE' });
+            await authFetch('/api/notes', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ psychologistId: currentUser.id, title, content, attachment: null, attachmentType: null }) });
             closeModal('editNoteModal');
             showToast('Заметка обновлена');
             renderProfile(true);
@@ -1884,7 +1912,7 @@
         
         async function deleteNote(id) {
             openConfirmModal('Удалить заметку?', '', async () => {
-                await fetch(`/api/notes/${id}`, { method:'DELETE' });
+                await authFetch(`/api/notes/${id}`, { method:'DELETE' });
                 closeModal('editNoteModal');
                 showToast('Заметка удалена');
                 renderProfile(true);
@@ -1905,7 +1933,7 @@
                 fd.append('title', title);
                 fd.append('certificate', file);
                 showToast('Загружаем...');
-                const res = await fetch('/api/certificates', { method:'POST', body: fd });
+                const res = await authFetch('/api/certificates', { method:'POST', body: fd });
                 const data = await res.json();
                 if (data.success) {
                     if (data.user) currentUser = data.user;
@@ -1920,7 +1948,7 @@
         
         async function deleteCertificateProfile(certId) {
             openConfirmModal('Удалить сертификат?', 'Это действие нельзя отменить.', async () => {
-                const res = await fetch(`/api/certificates/${currentUser.id}/${certId}`, { method:'DELETE' });
+                const res = await authFetch(`/api/certificates/${currentUser.id}/${certId}`, { method:'DELETE' });
                 const data = await res.json();
                 if (data.success) {
                     if (data.user) currentUser = data.user;
@@ -1968,7 +1996,7 @@
                 fd.append('experience', document.getElementById('editExp').value);
                 fd.append('price', document.getElementById('editPrice').value);
             }
-            const res = await fetch('/api/user/profile', { method:'PUT', body: fd });
+            const res = await authFetch('/api/user/profile', { method:'PUT', body: fd });
             const data = await res.json();
             if (data.success) {
                 currentUser = data.user;
@@ -1986,10 +2014,10 @@
                 if (!file) return;
                 const fd = new FormData();
                 fd.append('avatar', file);
-                const uploadRes = await fetch('/api/upload-avatar', { method:'POST', body: fd });
+                const uploadRes = await authFetch('/api/upload-avatar', { method:'POST', body: fd });
                 const uploadData = await uploadRes.json();
                 if (uploadData.success) {
-                    const updateRes = await fetch('/api/user/profile', { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ userId: currentUser.id, avatar: uploadData.avatarUrl }) });
+                    const updateRes = await authFetch('/api/user/profile', { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ userId: currentUser.id, avatar: uploadData.avatarUrl }) });
                     const updateData = await updateRes.json();
                     if (updateData.success) {
                         currentUser = updateData.user;
@@ -2027,7 +2055,7 @@
                 if (!sched[date]) sched[date] = [];
                 if (sched[date].includes(time)) { showToast('Такое время уже есть', true); return; }
                 sched[date].push(time); sched[date].sort();
-                const res = await fetch('/api/schedule', { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ userId: currentUser.id, schedule: sched }) });
+                const res = await authFetch('/api/schedule', { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ userId: currentUser.id, schedule: sched }) });
                 if (res.ok) {
                     currentUser.schedule = sched;
                     document.getElementById('schedule-list').innerHTML = renderSlots();
@@ -2048,7 +2076,7 @@
         
         // ======================= ЗАПИСЬ НА ПРИЁМ =======================
         async function confirmAppointment(appointmentId, clientId) {
-            const res = await fetch('/api/appointment/confirm', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ appointmentId, psychologistId: currentUser.id, clientId }) });
+            const res = await authFetch('/api/appointment/confirm', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ appointmentId, psychologistId: currentUser.id, clientId }) });
             const data = await res.json();
             if (data.success) {
                 showToast('Запись подтверждена');
@@ -2089,7 +2117,7 @@
             });
             window.submitBook = async (pid, mid) => {
                 if (!selectedDate || !selectedTime) { showToast('Выберите время', true); return; }
-                const r = await fetch('/api/appointment', {
+                const r = await authFetch('/api/appointment', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ clientId: currentUser.id, psychologistId: pid, date: selectedDate, time: selectedTime })
@@ -2114,7 +2142,7 @@
             });
             window._submitReview = async (pid, mid) => {
                 if (!rating) { showToast('Выберите рейтинг', true); return; }
-                const r = await fetch('/api/reviews', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ psychologistId: pid, clientId: currentUser.id, rating, text: document.getElementById('revText').value }) });
+                const r = await authFetch('/api/reviews', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ psychologistId: pid, clientId: currentUser.id, rating, text: document.getElementById('revText').value }) });
                 const d = await r.json();
                 if (d.success) { showToast('Отзыв отправлен!'); closeModal(mid); await refreshUser(); if (currentTab === 'psychologists') viewPsychologistPage(pid); }
                 else showToast(d.error || 'Ошибка', true);
@@ -2183,7 +2211,7 @@
                     }
                     if (endpoint) {
                         try {
-                            const res = await fetch(endpoint, { method: 'POST', body: formData });
+                            const res = await authFetch(endpoint, { method: 'POST', body: formData });
                             const data = await res.json();
                             if (data.success) {
                                 if (selectedFile.type.startsWith('video/')) videoUrl = data.videoUrl;
@@ -2196,7 +2224,7 @@
                 let progress = 0;
                 const interval = setInterval(() => { progress += 10; if (progress <= 90) progressBar.style.width = progress + '%'; }, 200);
                 try {
-                    const res = await fetch('/api/posts', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ authorId: currentUser.id, text: txt, image: imageUrl, video: videoUrl }) });
+                    const res = await authFetch('/api/posts', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ authorId: currentUser.id, text: txt, image: imageUrl, video: videoUrl }) });
                     const data = await res.json();
                     clearInterval(interval);
                     progressBar.style.width = '100%';
@@ -2383,7 +2411,7 @@
         
         async function openChat(userId, userName) {
             currentChatPartner = { id: userId, name: userName };
-            await fetch('/api/messages/read', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: currentUser.id, fromUserId: userId }) });
+            await authFetch('/api/messages/read', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: currentUser.id, fromUserId: userId }) });
             if (currentUser.unreadCounts && currentUser.unreadCounts[userId]) delete currentUser.unreadCounts[userId];
             if (currentTab === 'chats') { const chatItems = document.querySelectorAll('.chat-contact'); for (const item of chatItems) { if (item.getAttribute('data-contact-id') === userId) { const badge = item.querySelector('.unread-badge'); if (badge) badge.remove(); break; } } }
             document.getElementById('mainContent').innerHTML = `<div class="chat-page"><div class="chat-messages-container"><div class="chat-messages-header"><button class="back-btn" onclick="renderChats()"><i class="fas fa-arrow-left"></i></button><img src="" id="chatPartnerAvatar" style="width:36px;height:36px;border-radius:50%;object-fit:cover;border:2px solid var(--green-border);" onerror="this.style.display='none'"><div style="flex:1"><div style="font-weight:600;font-size:15px;">${escapeHtml(userName)}</div></div></div><div class="chat-messages-list" id="chatMessagesList"></div><div class="chat-input-area"><div class="chat-controls"><button id="attachImageBtn" title="Фото"><i class="fas fa-image"></i></button><button id="voiceRecordBtn" title="Голосовое"><i class="fas fa-microphone"></i></button></div><input type="file" id="imageInput" accept="image/*" style="display:none"><input type="text" id="chatMessageInput" placeholder="Сообщение..."><button class="send-btn-chat" id="sendMsgBtn"><i class="fas fa-paper-plane"></i></button></div></div></div>`;
@@ -2405,7 +2433,7 @@
                     if (!file || !file.type.startsWith('image/')) { showToast('Только изображения', true); return; }
                     const compressedBlob = await compressImage(file, 1024, 0.8);
                     const formData = new FormData(); formData.append('image', compressedBlob, file.name);
-                    const res = await fetch('/api/upload-chat-image', { method: 'POST', body: formData });
+                    const res = await authFetch('/api/upload-chat-image', { method: 'POST', body: formData });
                     const data = await res.json();
                     if (data.success) {
                         await fetch('/api/messages', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ from: currentUser.id, to: currentChatPartner.id, text: '', image: data.imageUrl }) });
@@ -2427,10 +2455,10 @@
                             mediaRecorder.onstop = async () => {
                                 const blob = new Blob(audioChunks, { type: 'audio/webm' });
                                 const fd = new FormData(); fd.append('voice', blob, 'voice.webm');
-                                const res = await fetch('/api/upload-voice', { method: 'POST', body: fd });
+                                const res = await authFetch('/api/upload-voice', { method: 'POST', body: fd });
                                 const data = await res.json();
                                 if (data.success) {
-                                    await fetch('/api/messages', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ from: currentUser.id, to: currentChatPartner.id, text: '', voice: data.voiceUrl }) });
+                                    await authFetch('/api/messages', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ from: currentUser.id, to: currentChatPartner.id, text: '', voice: data.voiceUrl }) });
                                     await loadChatMessages();
                                     scrollToBottom();
                                     showToast('Голосовое отправлено');
@@ -2538,7 +2566,7 @@
             const tempMsg = { id: Date.now().toString(), from: currentUser.id, to: currentChatPartner.id, text, created_at: new Date().toISOString() };
             appendMessageToChat(tempMsg);
             try {
-                await fetch('/api/messages', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ from: currentUser.id, to: currentChatPartner.id, text }) });
+                await authFetch('/api/messages', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ from: currentUser.id, to: currentChatPartner.id, text }) });
                 isChatsCacheValid = false;
             } catch(e) { showToast('Ошибка отправки', true); }
             scrollToBottom();
@@ -3388,7 +3416,7 @@
             window[`_submitReview_${modalId}`] = async () => {
                 const text = document.getElementById('reviewText').value;
                 if (!rating) { showToast('Выберите рейтинг', true); return; }
-                const res = await fetch('/api/reviews', {
+                const res = await authFetch('/api/reviews', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ psychologistId, clientId: currentUser.id, rating, text, appointmentId })
@@ -3435,7 +3463,7 @@
             const rating = modal.querySelectorAll('#starsContainer i.fas').length;
             const text = modal.querySelector('#reviewText').value;
             try {
-                const res = await fetch(`/api/reviews/${reviewId}`, {
+                const res = await authFetch(`/api/reviews/${reviewId}`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ userId: currentUser.id, rating, text })
@@ -3458,7 +3486,7 @@
         
         async function deleteReview(reviewId) {
             if (!confirm('Удалить отзыв?')) return;
-            const res = await fetch(`/api/reviews/${reviewId}`, {
+            const res = await authFetch(`/api/reviews/${reviewId}`, {
                 method: 'DELETE',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ userId: currentUser.id })
