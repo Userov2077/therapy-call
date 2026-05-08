@@ -883,7 +883,8 @@
                 }
             });
 
-                        socket.on('comment_deleted', ({ commentId, postId }) => {
+
+            socket.on('comment_deleted', ({ commentId, postId }) => {
                 const commentDiv = document.querySelector(`.comment[data-comment-id="${commentId}"]`);
                 if (commentDiv) commentDiv.remove();
                 const commentSpan = document.querySelector(`.comment-toggle[data-id="${postId}"] span`);
@@ -1006,6 +1007,300 @@
                 }
             });
         } // Конец функции initSocket
+
+
+                // ======================= ЛЕНТА (с пагинацией) =======================
+        async function editComment(commentId, postId, oldText) {
+            const newText = prompt('Редактировать комментарий:', oldText);
+            if (!newText || newText === oldText) return;
+            const data = await fetchJSON(`/api/posts/${postId}/comment/${commentId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId: currentUser.id, text: newText })
+            });
+            if (data.success) {
+                const commentTextDiv = document.getElementById(`comment-text-${commentId}`);
+                if (commentTextDiv) commentTextDiv.innerText = newText;
+                showToast('Комментарий обновлён');
+            } else {
+                showToast('Ошибка', true);
+            }
+        }
+
+        async function deleteComment(commentId, postId) {
+            if (!confirm('Удалить комментарий?')) return;
+            const data = await fetchJSON(`/api/posts/${postId}/comment/${commentId}`, {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId: currentUser.id })
+            });
+            if (data.success) {
+                const commentDiv = document.querySelector(`.comment[data-comment-id="${commentId}"]`);
+                if (commentDiv) commentDiv.remove();
+                const commentSpan = document.querySelector(`.comment-toggle[data-id="${postId}"] span`);
+                if (commentSpan) commentSpan.textContent = Math.max(0, (parseInt(commentSpan.textContent) || 0) - 1);
+                showToast('Комментарий удалён');
+            } else {
+                showToast('Ошибка', true);
+            }
+        }
+
+        async function renderFeed(forceRefresh = false) {
+            if (!forceRefresh && isFeedCacheValid && feedPosts.length > 0) {
+                document.getElementById('mainContent').innerHTML = `<div class="container"><div class="posts-grid" id="postsContainer"></div></div>`;
+                renderFeedPosts();
+                if (feedHasMore && !document.getElementById('loadMoreBtn')) {
+                    const btn = document.createElement('button');
+                    btn.id = 'loadMoreBtn';
+                    btn.className = 'btn-sm';
+                    btn.textContent = 'Загрузить ещё';
+                    btn.style.margin = '20px auto';
+                    btn.style.display = 'block';
+                    btn.onclick = () => loadMoreFeed();
+                    document.getElementById('postsContainer').after(btn);
+                }
+                return;
+            }
+            feedOffset = 0;
+            feedPosts = [];
+            feedHasMore = true;
+            document.getElementById('mainContent').innerHTML = `<div class="container"><div class="posts-grid" id="postsContainer"></div><div id="feedLoader" style="text-align:center; padding:20px;"><i class="fas fa-circle-notch fa-spin"></i> Загрузка...</div></div>`;
+            await loadMoreFeed();
+            isFeedCacheValid = true;
+        }
+
+        async function loadMoreFeed() {
+            if (!feedHasMore) return;
+            const data = await fetchJSON(`/api/posts?limit=12&offset=${feedOffset}&userId=${currentUser?.id || ''}`);
+            if (data.success) {
+                const newPosts = data.posts;
+                feedPosts = feedPosts.concat(newPosts);
+                feedOffset += newPosts.length;
+                feedHasMore = data.hasMore || false;
+                renderFeedPosts();
+                if (feedHasMore) {
+                    let btn = document.getElementById('loadMoreBtn');
+                    if (!btn) {
+                        btn = document.createElement('button');
+                        btn.id = 'loadMoreBtn';
+                        btn.className = 'btn-sm';
+                        btn.textContent = 'Загрузить ещё';
+                        btn.style.margin = '20px auto';
+                        btn.style.display = 'block';
+                        btn.onclick = () => loadMoreFeed();
+                        document.getElementById('postsContainer').after(btn);
+                    }
+                } else {
+                    const btn = document.getElementById('loadMoreBtn');
+                    if (btn) btn.remove();
+                }
+                document.getElementById('feedLoader')?.remove();
+            } else {
+                document.getElementById('feedLoader').innerHTML = '<div class="empty-state glass-card"><i class="fas fa-exclamation-triangle"></i><div>Ошибка загрузки</div></div>';
+            }
+        }
+
+        function renderFeedPosts() {
+            const container = document.getElementById('postsContainer');
+            if (!container) return;
+            let html = '';
+            for (const post of feedPosts) {
+                html += renderSinglePost(post);
+            }
+            container.innerHTML = html;
+            document.querySelectorAll('.post-card').forEach(card => attachEventsToPostElement(card));
+            initVideoObservers();
+        }
+
+        function renderSinglePost(post) {
+            return `
+                <div class="post-card glass-card" data-post-id="${post.id}">
+                    <div class="post-header">
+                        <img class="post-avatar" src="${escapeHtml(post.author.avatar)}" onclick="viewPsychologistPage('${post.author.id}')">
+                        <div>
+                            <div class="post-author" onclick="viewPsychologistPage('${post.author.id}')">
+                                ${escapeHtml(post.author.fullName)}
+                                ${renderStars(post.author.rating || 0)}
+                            </div>
+                            <div class="post-time">${new Date(post.createdAt).toLocaleString()}</div>
+                        </div>
+                    </div>
+                    <div class="post-text">${escapeHtml(post.text)}</div>
+                    ${post.image ? `<img class="post-image" src="${escapeHtml(post.image)}" onclick="openImageModal('${escapeHtml(post.image)}')">` : ''}
+                    ${post.video ? `<video class="post-video" autoplay loop muted playsinline disablePictureInPicture style="pointer-events: none;" preload="metadata"><source src="${escapeHtml(post.video)}" type="video/mp4"></video>` : ''}
+                    <div class="post-stats">
+                        <button class="like-btn${post.userLiked ? ' liked' : ''}" data-id="${post.id}">
+                            <i class="fa-${post.userLiked ? 'solid' : 'regular'} fa-heart"></i>
+                            <span>${post.likesCount || 0}</span>
+                        </button>
+                        <button class="comment-toggle" data-id="${post.id}" data-loaded="false">
+                            <i class="fa-regular fa-comment"></i>
+                            <span>${post.commentsCount || 0}</span>
+                        </button>
+                    </div>
+                    <div class="comments-section" id="comments-${post.id}" style="display:none">
+                        <div class="comments-list"></div>
+                        ${currentUser ? `<div class="new-comment"><input type="text" placeholder="Написать комментарий..." id="comment-input-${post.id}" onkeypress="if(event.key==='Enter')addComment('${post.id}')"><button class="btn-sm" onclick="addComment('${post.id}')"><i class="fas fa-paper-plane"></i></button></div>` : ''}
+                    </div>
+                    ${currentUser && post.author.id === currentUser.id ? `
+                    <div class="post-actions">
+                        <button class="edit-post-btn" data-id="${post.id}"><i class="fas fa-pen"></i> Редактировать</button>
+                        <button class="delete-post-btn" data-id="${post.id}"><i class="fas fa-trash-alt"></i> Удалить</button>
+                    </div>` : ''}
+                </div>
+            `;
+        }
+
+        function attachEventsToPostElement(postElement) {
+            const likeBtn = postElement.querySelector('.like-btn');
+            if (likeBtn) {
+                likeBtn.onclick = async () => {
+                    if (isLoading || !currentUser) { showToast('Войдите в аккаунт', true); return; }
+                    isLoading = true;
+                    const postId = likeBtn.dataset.id;
+                    const data = await fetchJSON(`/api/posts/${postId}/like`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ userId: currentUser.id })
+                    });
+                    if (data.success) {
+                        likeBtn.querySelector('span').textContent = data.likesCount;
+                        likeBtn.classList.toggle('liked', data.liked);
+                        likeBtn.querySelector('i').className = data.liked ? 'fa-solid fa-heart' : 'fa-regular fa-heart';
+                        const post = feedPosts.find(p => p.id === postId);
+                        if (post) { post.likesCount = data.likesCount; post.userLiked = data.liked; }
+                    }
+                    isLoading = false;
+                };
+            }
+            const commentToggle = postElement.querySelector('.comment-toggle');
+            if (commentToggle) {
+                commentToggle.onclick = async () => {
+                    const postId = commentToggle.dataset.id;
+                    const div = document.getElementById(`comments-${postId}`);
+                    const isHidden = div.style.display === 'none';
+                    div.style.display = isHidden ? 'block' : 'none';
+                    commentToggle.querySelector('i').className = isHidden ? 'fa-solid fa-comment' : 'fa-regular fa-comment';
+                    if (isHidden && commentToggle.dataset.loaded === 'false') {
+                        await loadCommentsForPost(postId);
+                        commentToggle.dataset.loaded = 'true';
+                    }
+                };
+            }
+            const editBtn = postElement.querySelector('.edit-post-btn');
+            if (editBtn) {
+                editBtn.onclick = () => {
+                    const postCard = editBtn.closest('.post-card');
+                    const currentText = postCard.querySelector('.post-text').innerText;
+                    openEditPostModal(editBtn.dataset.id, currentText);
+                };
+            }
+            const deleteBtn = postElement.querySelector('.delete-post-btn');
+            if (deleteBtn) {
+                deleteBtn.onclick = () => openConfirmModal('Удалить пост?', 'Это действие нельзя отменить.', async () => {
+                    await fetchJSON(`/api/posts/${deleteBtn.dataset.id}`, {
+                        method: 'DELETE',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ authorId: currentUser.id })
+                    });
+                    const index = feedPosts.findIndex(p => p.id === deleteBtn.dataset.id);
+                    if (index !== -1) feedPosts.splice(index, 1);
+                    postElement.remove();
+                });
+            }
+        }
+
+        async function loadCommentsForPost(postId) {
+            const data = await fetchJSON(`/api/posts/${postId}/comments`);
+            if (data.success) {
+                const commentsList = document.querySelector(`#comments-${postId} .comments-list`);
+                if (commentsList) {
+                    commentsList.innerHTML = data.comments.map(c => {
+                        const isOwnComment = currentUser && String(currentUser.id) === String(c.author_id);
+                        return `
+                            <div class="comment" data-comment-id="${c.id}">
+                                <img class="comment-avatar" src="${escapeHtml(c.author_avatar)}" onerror="this.src='https://ui-avatars.com/api/?name=U&background=8bca8b&color=fff'">
+                                <div class="comment-content">
+                                    <div class="comment-author">${escapeHtml(c.author_name)}</div>
+                                    <div class="comment-text" id="comment-text-${c.id}">${escapeHtml(c.text)}</div>
+                                    <div class="comment-time">${new Date(c.created_at).toLocaleString()}</div>
+                                </div>
+                                ${isOwnComment ? `
+                                <div class="comment-actions">
+                                    <button class="edit-comment-btn" data-id="${c.id}" data-post-id="${postId}" data-text="${escapeHtml(c.text)}"><i class="fas fa-pen"></i></button>
+                                    <button class="delete-comment-btn" data-id="${c.id}" data-post-id="${postId}"><i class="fas fa-trash-alt"></i></button>
+                                </div>
+                                ` : ''}
+                            </div>
+                        `;
+                    }).join('');
+                    document.querySelectorAll('.edit-comment-btn').forEach(btn => {
+                        btn.onclick = () => editComment(btn.dataset.id, btn.dataset.postId, btn.dataset.text);
+                    });
+                    document.querySelectorAll('.delete-comment-btn').forEach(btn => {
+                        btn.onclick = () => deleteComment(btn.dataset.id, btn.dataset.postId);
+                    });
+                }
+            }
+        }
+
+        async function addComment(postId) {
+            if (!currentUser) { showToast('Войдите в аккаунт', true); return; }
+            const input = document.getElementById(`comment-input-${postId}`);
+            const text = input?.value.trim();
+            if (!text) return;
+            const sendBtn = input.nextElementSibling;
+            sendBtn.disabled = true;
+            sendBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+            try {
+                const data = await fetchJSON(`/api/posts/${postId}/comment`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ userId: currentUser.id, text })
+                });
+                if (data.success) {
+                    input.value = '';
+                    const commentSpan = document.querySelector(`.comment-toggle[data-id="${postId}"] span`);
+                    if (commentSpan) commentSpan.textContent = (parseInt(commentSpan.textContent) || 0) + 1;
+                    const post = feedPosts.find(p => p.id === postId);
+                    if (post) post.commentsCount = (post.commentsCount || 0) + 1;
+                    showToast('Комментарий добавлен');
+                } else {
+                    showToast(data.error || 'Ошибка', true);
+                }
+            } catch (err) {
+                showToast('Ошибка соединения', true);
+            } finally {
+                sendBtn.disabled = false;
+                sendBtn.innerHTML = '<i class="fas fa-paper-plane"></i>';
+            }
+        }
+
+        function openEditPostModal(postId, currentText) {
+            const modalId = 'editPostModal_' + Date.now();
+            const html = `<div class="modal" id="${modalId}"><div class="modal-content"><div class="modal-handle"></div><h3>✏️ Редактировать пост</h3><textarea id="editPostText_${modalId}" rows="5">${escapeHtml(currentText)}</textarea><div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('${modalId}')">Отмена</button><button class="btn-primary" onclick="saveEditPost('${postId}', '${modalId}')">Сохранить</button></div></div></div>`;
+            document.body.insertAdjacentHTML('beforeend', html);
+            setTimeout(() => document.getElementById(modalId).classList.add('active'), 10);
+        }
+
+        async function saveEditPost(postId, modalId) {
+            const newText = document.getElementById(`editPostText_${modalId}`).value;
+            if (!newText.trim()) { showToast('Текст не может быть пустым', true); return; }
+            const data = await fetchJSON(`/api/posts/${postId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ authorId: currentUser.id, text: newText })
+            });
+            if (data.success) {
+                closeModal(modalId);
+                const post = feedPosts.find(p => p.id === postId);
+                if (post) post.text = newText;
+                renderFeedPosts();
+                showToast('Пост обновлён');
+            } else {
+                showToast('Ошибка', true);
+            }
+        }
 
         // ======================= НАПОМИНАНИЯ =======================
         function checkUpcomingEvents() {
