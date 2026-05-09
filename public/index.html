@@ -734,34 +734,81 @@
         }
 
         async function register() {
-            const body = {
-                fullName: document.getElementById('regName').value,
-                email: document.getElementById('regEmail').value,
-                phone: document.getElementById('regPhone').value,
-                password: document.getElementById('regPass').value,
-                role: document.getElementById('regRole').value
-            };
-            if (!body.fullName || !body.email || !body.password) { showToast('Заполните обязательные поля', true); return; }
-            if (body.role === 'psychologist') {
-                body.specialization = document.getElementById('regSpec').value;
-                body.experience = document.getElementById('regExp').value;
-                body.about = document.getElementById('regAbout').value;
-            }
-            const r = await fetch('/api/register', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
-            const d = await r.json();
-            if (d.success) {
-                showToast('Регистрация успешна! Войдите');
-                closeModal('regM');
-                openLoginModal();
-                if (body.role === 'client') {
-                    setTimeout(() => {
-                        openClientProfileModal(d.userId);
-                    }, 500);
-                }
-            } else {
-                showToast(d.error || 'Ошибка регистрации', true);
-            }
-        }
+    const body = {
+        fullName: document.getElementById('regName').value,
+        email: document.getElementById('regEmail').value,
+        phone: document.getElementById('regPhone').value,
+        password: document.getElementById('regPass').value,
+        role: document.getElementById('regRole').value
+    };
+    if (!body.fullName || !body.email || !body.password) {
+        showToast('Заполните обязательные поля', true);
+        return;
+    }
+    if (body.role === 'psychologist') {
+        body.specialization = document.getElementById('regSpec').value;
+        body.experience = document.getElementById('regExp').value;
+        body.about = document.getElementById('regAbout').value;
+    }
+    const r = await fetch('/api/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+    });
+    const d = await r.json();
+    if (!d.success) {
+        showToast(d.error || 'Ошибка регистрации', true);
+        return;
+    }
+
+    // --- Регистрация успешна, теперь сразу логинимся ---
+    showToast('Регистрация успешна! Выполняется вход...');
+
+    const loginRes = await fetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: body.email, password: body.password })
+    });
+    const loginData = await loginRes.json();
+
+    if (!loginData.success) {
+        showToast('Автоматический вход не удался, войдите вручную', true);
+        closeModal('regM');
+        openLoginModal();
+        return;
+    }
+
+    // Сохраняем токен
+    localStorage.setItem('token', loginData.token);
+    localStorage.setItem('userId', loginData.userId);
+
+    // Загружаем пользователя
+    const userData = await fetchJSON(`/api/user/${loginData.userId}`);
+    if (!userData.success) {
+        showToast('Ошибка загрузки профиля', true);
+        return;
+    }
+
+    currentUser = userData.user;
+    document.getElementById('navAuth').style.display = 'none';
+    document.getElementById('navUser').style.display = 'flex';
+    document.getElementById('bottomNav').style.display = 'flex';
+    const questionnairesNav = document.getElementById('questionnairesNavItem');
+    if (questionnairesNav) questionnairesNav.style.display = currentUser.role === 'client' ? 'flex' : 'none';
+    await fetchJSON('/api/psychologists').then(resp => { allPsychologists = resp.psychologists || []; });
+    initSocket();
+    requestNotificationPermission();
+    switchTab(body.role === 'client' ? 'profile' : 'feed');
+    closeModal('regM');
+    showToast('Добро пожаловать!');
+
+    // Если клиент — открываем анкету (уже с авторизацией)
+    if (body.role === 'client') {
+        setTimeout(() => {
+            openClientProfileModal(loginData.userId);
+        }, 500);
+    }
+}
 
         function openClientProfileModal(userId) {
             const modalId = 'clientProfileModal_' + Date.now();
