@@ -16,7 +16,7 @@ const helmet = require('helmet');
 require('dotenv').config();
 
 const app = express();
-app.set('trust proxy', true);
+app.set('trust proxy', 1);
 const server = http.createServer(app);
 const io = socketIo(server, {
     cors: { origin: "*", methods: ["GET", "POST"], credentials: true },
