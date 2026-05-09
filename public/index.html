@@ -485,33 +485,33 @@
         let callTimerInterval = null;
         let currentClientIdInCall = null;
 
-
+        // ======================= АУТЕНТИФИЦИРОВАННЫЙ FETCH =======================
         async function authFetch(url, options = {}) {
-    const token = localStorage.getItem('token');
-    const headers = new Headers(options.headers || {});
-    if (token) {
-        headers.set('Authorization', `Bearer ${token}`);
-    }
-    if (options.body instanceof FormData) {
-        headers.delete('Content-Type');
-    }
-    const res = await fetch(url, { ...options, headers });
-    if (res.status === 401) {
-        localStorage.removeItem('token');
-        localStorage.removeItem('userId');
-        if (currentUser) {
-            currentUser = null;
-            document.getElementById('navAuth').style.display = 'flex';
-            document.getElementById('navUser').style.display = 'none';
-            document.getElementById('bottomNav').style.display = 'none';
-            showToast('Сессия истекла, войдите заново', true);
-            if (currentTab === 'feed') renderFeed();
-            else switchTab('feed');
+            const token = localStorage.getItem('token');
+            const headers = new Headers(options.headers || {});
+            if (token) {
+                headers.set('Authorization', `Bearer ${token}`);
+            }
+            if (options.body instanceof FormData) {
+                headers.delete('Content-Type');
+            }
+            const res = await fetch(url, { ...options, headers });
+            if (res.status === 401) {
+                localStorage.removeItem('token');
+                localStorage.removeItem('userId');
+                if (currentUser) {
+                    currentUser = null;
+                    document.getElementById('navAuth').style.display = 'flex';
+                    document.getElementById('navUser').style.display = 'none';
+                    document.getElementById('bottomNav').style.display = 'none';
+                    showToast('Сессия истекла, войдите заново', true);
+                    if (currentTab === 'feed') renderFeed();
+                    else switchTab('feed');
+                }
+                throw new Error('Unauthorized');
+            }
+            return res;
         }
-        throw new Error('Unauthorized');
-    }
-    return res;
-}
 
         // ======================= ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ =======================
         function showToast(msg, isErr = false) {
@@ -525,7 +525,7 @@
 
         async function fetchJSON(url, opt = {}) {
             try {
-                const r = await fetch(url, opt);
+                const r = await authFetch(url, opt);
                 const text = await r.text();
                 try {
                     return JSON.parse(text);
@@ -536,6 +536,7 @@
                 }
             } catch(e) {
                 console.error('Fetch error:', e);
+                if (e.message === 'Unauthorized') return { success: false, unauthorized: true };
                 showToast('Ошибка соединения', true);
                 return { success: false };
             }
@@ -652,18 +653,19 @@
 
         async function refreshUser() {
             if (!currentUser) return;
-            const r = await authFetch(`/api/user/${currentUser.id}`);
-            const d = await r.json();
+            const d = await fetchJSON(`/api/user/${currentUser.id}`);
             if (d.success) {
                 currentUser = d.user;
                 if (!currentUser.unreadCounts) currentUser.unreadCounts = {};
                 if (!currentUser.following) currentUser.following = [];
+            } else if (d.unauthorized) {
+                logout();
             }
         }
 
         async function toggleSubscription(psychologistId) {
             if (!currentUser) { showToast('Войдите в аккаунт', true); return; }
-            const res = await fetch('/api/subscriptions', {
+            const res = await fetchJSON('/api/subscriptions', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ followerId: currentUser.id, followingId: psychologistId })
@@ -838,7 +840,7 @@
                 const complaints = document.getElementById('profileComplaints').value;
                 const goals = document.getElementById('profileGoals').value;
                 
-                const res = await authFetch('/api/client-profile', {
+                const res = await fetch('/api/client-profile', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -877,7 +879,7 @@
             });
         }
 
-        // ======================= СОКЕТ (инициализация) =======================
+        // ======================= СОКЕТ =======================
         function initSocket() {
             if (socket) { socket.disconnect(); socket = null; }
             const token = localStorage.getItem('token');
@@ -1016,7 +1018,7 @@
                 if (currentChatPartner && msg.from === currentChatPartner.id) {
                     appendMessageToChat(msg);
                     scrollToBottom();
-                    await fetch('/api/messages/read', {
+                    await fetchJSON('/api/messages/read', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ userId: currentUser.id, fromUserId: msg.from })
@@ -1030,7 +1032,7 @@
                 }
                 isChatsCacheValid = false;
                 try {
-                    const userRes = await fetch(`/api/user/${msg.from}`).then(r => r.json());
+                    const userRes = await fetchJSON(`/api/user/${msg.from}`);
                     const senderName = userRes.success ? userRes.user.fullName : 'Новое сообщение';
                     showFloatingNotification('Новое сообщение', `${senderName}: ${preview}`);
                     if ('Notification' in window && Notification.permission === 'granted') {
@@ -1081,17 +1083,51 @@
             });
         }
 
+        // ======================= НАПОМИНАНИЯ =======================
+        function checkUpcomingEvents() {
+            if (!currentUser) return;
+            const now = new Date();
+            const appointments = currentUser.role === 'psychologist' ? (currentUser.clients || []) : (currentUser.appointments || []);
+            for (const apt of appointments) {
+                if (apt.status === 'confirmed') {
+                    const eventDate = new Date(apt.date + 'T' + apt.time);
+                    const diff = (eventDate - now) / (1000 * 60);
+                    if (diff > 0 && diff <= 60 && !localStorage.getItem(`notified_${apt.appointmentId}`)) {
+                        showFloatingNotification('Скоро созвон', `Запись с ${apt.clientName || apt.psychologistName} через ${Math.round(diff)} минут`, 'warning');
+                        localStorage.setItem(`notified_${apt.appointmentId}`, '1');
+                    }
+                }
+            }
+            if (currentUser.role === 'psychologist') {
+                fetchJSON(`/api/tasks/${currentUser.id}`).then(res => {
+                    for (const task of (res.tasks || [])) {
+                        if (!task.completed && task.dueDate) {
+                            const due = new Date(task.dueDate);
+                            const today = new Date(); today.setHours(0,0,0,0);
+                            const daysDiff = Math.ceil((due - today) / (1000 * 60 * 60 * 24));
+                            if (daysDiff === 0 && !localStorage.getItem(`task_today_${task.id}`)) {
+                                showFloatingNotification('Задача на сегодня', task.text, 'warning');
+                                localStorage.setItem(`task_today_${task.id}`, '1');
+                            } else if (daysDiff === 1 && !localStorage.getItem(`task_tomorrow_${task.id}`)) {
+                                showFloatingNotification('Задача на завтра', task.text, 'info');
+                                localStorage.setItem(`task_tomorrow_${task.id}`, '1');
+                            }
+                        }
+                    }
+                });
+            }
+        }
+
         // ======================= ЛЕНТА =======================
         async function editComment(commentId, postId, oldText) {
             const newText = prompt('Редактировать комментарий:', oldText);
             if (!newText || newText === oldText) return;
-            const res = await authFetch(`/api/posts/${postId}/comment/${commentId}`, {
+            const res = await fetchJSON(`/api/posts/${postId}/comment/${commentId}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ userId: currentUser.id, text: newText })
             });
-            const data = await res.json();
-            if (data.success) {
+            if (res.success) {
                 const commentTextDiv = document.getElementById(`comment-text-${commentId}`);
                 if (commentTextDiv) commentTextDiv.innerText = newText;
                 showToast('Комментарий обновлён');
@@ -1102,13 +1138,12 @@
 
         async function deleteComment(commentId, postId) {
             if (!confirm('Удалить комментарий?')) return;
-            const res = await authFetch(`/api/posts/${postId}/comment/${commentId}`, {
+            const res = await fetchJSON(`/api/posts/${postId}/comment/${commentId}`, {
                 method: 'DELETE',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ userId: currentUser.id })
             });
-            const data = await res.json();
-            if (data.success) {
+            if (res.success) {
                 const commentDiv = document.querySelector(`.comment[data-comment-id="${commentId}"]`);
                 if (commentDiv) commentDiv.remove();
                 const commentSpan = document.querySelector(`.comment-toggle[data-id="${postId}"] span`);
@@ -1232,8 +1267,11 @@
                     if (isLoading || !currentUser) { showToast('Войдите в аккаунт', true); return; }
                     isLoading = true;
                     const postId = likeBtn.dataset.id;
-                    const res = await authFetch(`/api/posts/${postId}/like`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ userId: currentUser.id }) });
-                    const data = await res.json();
+                    const data = await fetchJSON(`/api/posts/${postId}/like`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ userId: currentUser.id })
+                    });
                     if (data.success) {
                         likeBtn.querySelector('span').textContent = data.likesCount;
                         likeBtn.classList.toggle('liked', data.liked);
@@ -1269,7 +1307,11 @@
             const deleteBtn = postElement.querySelector('.delete-post-btn');
             if (deleteBtn) {
                 deleteBtn.onclick = () => openConfirmModal('Удалить пост?', 'Это действие нельзя отменить.', async () => {
-                    await authFetch(`/api/posts/${deleteBtn.dataset.id}`, { method: 'DELETE', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ authorId: currentUser.id }) });
+                    await fetchJSON(`/api/posts/${deleteBtn.dataset.id}`, {
+                        method: 'DELETE',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ authorId: currentUser.id })
+                    });
                     const index = feedPosts.findIndex(p => p.id === deleteBtn.dataset.id);
                     if (index !== -1) feedPosts.splice(index, 1);
                     postElement.remove();
@@ -1321,14 +1363,20 @@
         async function saveEditPost(postId) {
             const newText = document.getElementById('editPostText').value;
             if (!newText.trim()) { showToast('Текст не может быть пустым', true); return; }
-            const fd = new FormData();
-            fd.append('authorId', currentUser.id);
-            fd.append('text', newText);
-            await authFetch(`/api/posts/${postId}`, { method: 'PUT', body: fd });
-            closeModal('editPostModal');
-            const post = feedPosts.find(p => p.id === postId);
-            if (post) post.text = newText;
-            renderFeedPosts();
+            const data = await fetchJSON(`/api/posts/${postId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ authorId: currentUser.id, text: newText })
+            });
+            if (data.success) {
+                closeModal('editPostModal');
+                const post = feedPosts.find(p => p.id === postId);
+                if (post) post.text = newText;
+                renderFeedPosts();
+                showToast('Пост обновлён');
+            } else {
+                showToast('Ошибка', true);
+            }
         }
 
         async function addComment(postId) {
@@ -1340,8 +1388,11 @@
             sendBtn.disabled = true;
             sendBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
             try {
-                const res = await authFetch(`/api/posts/${postId}/comment`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: currentUser.id, text }) });
-                const data = await res.json();
+                const data = await fetchJSON(`/api/posts/${postId}/comment`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ userId: currentUser.id, text })
+                });
                 if (data.success) {
                     input.value = '';
                     const commentSpan = document.querySelector(`.comment-toggle[data-id="${postId}"] span`);
@@ -1366,7 +1417,6 @@
                 document.getElementById('mainContent').innerHTML = cachedPsychologistsHtml;
                 return;
             }
-            
             document.getElementById('mainContent').innerHTML = `<div class="container"><div class="empty-state"><i class="fas fa-circle-notch fa-spin"></i></div></div>`;
             const data = await fetchJSON('/api/psychologists');
             allPsychologists = data.psychologists || [];
@@ -1389,7 +1439,6 @@
             }
             if (allPsychologists.length === 0) html += '<div class="empty-state glass-card"><i class="fas fa-users"></i><div>Пока нет психологов</div></div>';
             html += `</div></div>`;
-            
             cachedPsychologistsHtml = html;
             isPsychologistsCacheValid = true;
             document.getElementById('mainContent').innerHTML = html;
@@ -1399,28 +1448,23 @@
         // ======================= ПРОФИЛЬ =======================
         async function renderProfile(forceRefresh = false) {
             if (!currentUser) { showToast('Войдите в аккаунт', true); return; }
-            
             if (!forceRefresh && isProfileCacheValid && cachedProfileHtml) {
                 document.getElementById('mainContent').innerHTML = cachedProfileHtml;
                 attachProfileEventHandlers();
                 return;
             }
-            
             const isPsych = currentUser.role === 'psychologist';
             let myQuestionnaires = [];
             if (isPsych) {
                 const questRes = await fetchJSON(`/api/questionnaires/psychologist/${currentUser.id}`);
                 if (questRes.success) myQuestionnaires = questRes.questionnaires || [];
             }
-            
             let clientHomeworks = [];
             if (!isPsych && currentUser.role === 'client') {
                 const hwRes = await fetchJSON(`/api/client-homeworks/${currentUser.id}`);
                 if (hwRes.success) clientHomeworks = hwRes.homeworks || [];
             }
-            
             document.getElementById('mainContent').innerHTML = `<div class="container"><div class="empty-state"><i class="fas fa-circle-notch fa-spin"></i></div></div>`;
-            
             const [postsRes, tasksRes, notesRes, subsRes, statsRes] = await Promise.all([
                 fetchJSON(`/api/posts?userId=${currentUser.id}`),
                 isPsych ? fetchJSON(`/api/tasks/${currentUser.id}`) : Promise.resolve({ tasks: [] }),
@@ -1433,7 +1477,6 @@
             const notes = notesRes.notes || [];
             const followersCount = subsRes.followers?.length || 0;
             const totalLikesOnPosts = statsRes.success ? statsRes.totalLikes : 0;
-            
             let appointmentsHtml = '';
             if (!isPsych && currentUser.appointments && currentUser.appointments.length > 0) {
                 appointmentsHtml = `
@@ -1461,7 +1504,6 @@
                     </div>
                 `;
             }
-            
             let homeworksHtml = '';
             if (!isPsych && clientHomeworks.length > 0) {
                 homeworksHtml = `
@@ -1494,7 +1536,6 @@
                     </div>
                 `;
             }
-            
             let psychSections = '';
             if (isPsych) {
                 const certificates = currentUser.certificates || [];
@@ -1537,7 +1578,6 @@
                     </div>
                 `;
             }
-            
             const html = `
                 <div class="container">
                     <div class="profile-header">
@@ -1591,7 +1631,6 @@
                     ` : ''}
                 </div>
             `;
-            
             document.getElementById('mainContent').innerHTML = html;
             cachedProfileHtml = html;
             isProfileCacheValid = true;
@@ -1601,7 +1640,6 @@
 
         function attachProfileEventHandlers() {
             const isPsych = currentUser?.role === 'psychologist';
-            
             if (!isPsych && currentUser?.appointments && currentUser.appointments.length > 0) {
                 const filterBtns = document.querySelectorAll('.filter-client-appointments-btn');
                 if (filterBtns.length) {
@@ -1615,12 +1653,10 @@
                     renderClientAppointmentsList('upcoming');
                 }
             }
-            
             if (isPsych) {
                 document.querySelectorAll('.profile-edit-post').forEach(b => { b.onclick = () => openEditPostModal(b.dataset.id, b.dataset.text); });
-                document.querySelectorAll('.profile-delete-post').forEach(b => { b.onclick = () => openConfirmModal('Удалить пост?', 'Это действие нельзя отменить.', async () => { await fetch(`/api/posts/${b.dataset.id}`, { method:'DELETE', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ authorId: currentUser.id }) }); renderProfile(true); }); });
-                document.querySelectorAll('.task-cb').forEach(cb => { cb.onchange = async () => { await fetch(`/api/tasks/${cb.dataset.id}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ completed: cb.checked }) }); const label = cb.closest('.task-item').querySelector('.task-text'); if (label) label.classList.toggle('task-completed', cb.checked); }; });
-                
+                document.querySelectorAll('.profile-delete-post').forEach(b => { b.onclick = () => openConfirmModal('Удалить пост?', 'Это действие нельзя отменить.', async () => { await fetchJSON(`/api/posts/${b.dataset.id}`, { method:'DELETE', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ authorId: currentUser.id }) }); renderProfile(true); }); });
+                document.querySelectorAll('.task-cb').forEach(cb => { cb.onchange = async () => { await fetchJSON(`/api/tasks/${cb.dataset.id}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ completed: cb.checked }) }); const label = cb.closest('.task-item').querySelector('.task-text'); if (label) label.classList.toggle('task-completed', cb.checked); }; });
                 const aptFilterBtns = document.querySelectorAll('.filter-appointments-btn');
                 if (aptFilterBtns.length) {
                     aptFilterBtns.forEach(btn => {
@@ -1632,7 +1668,6 @@
                     });
                     renderAppointmentsList('upcoming');
                 }
-                
                 const clientFilterBtns = document.querySelectorAll('.filter-clients-btn');
                 if (clientFilterBtns.length) {
                     clientFilterBtns.forEach(btn => {
@@ -1645,12 +1680,11 @@
                     renderClientsList('upcoming');
                 }
             }
-            
             if (!isPsych && currentUser && document.querySelectorAll('.homework-cb').length) {
                 document.querySelectorAll('.homework-cb').forEach(cb => {
                     cb.onchange = async () => {
                         const status = cb.checked ? 'done' : 'pending';
-                        await fetch(`/api/homeworks/${cb.dataset.id}`, {
+                        await fetchJSON(`/api/homeworks/${cb.dataset.id}`, {
                             method: 'PUT',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ status })
@@ -1661,7 +1695,7 @@
                 });
             }
         }
-        
+
         function renderAppointmentsList(filter = 'upcoming') {
             const container = document.getElementById('appointmentsList');
             if (!container) return;
@@ -1708,7 +1742,7 @@
             });
             container.innerHTML = html;
         }
-        
+
         function renderClientAppointmentsList(filter = 'upcoming') {
             const container = document.getElementById('clientAppointmentsList');
             if (!container) return;
@@ -1754,7 +1788,7 @@
             });
             container.innerHTML = html;
         }
-        
+
         function renderClientsList(filter = 'upcoming') {
             const container = document.getElementById('clientsList');
             if (!container) return;
@@ -1778,7 +1812,7 @@
             });
             container.innerHTML = html;
         }
-        
+
         // ======================= КАЛЕНДАРЬ =======================
         async function renderProfileCalendar() {
             const container = document.getElementById('profileCalendar');
@@ -1807,9 +1841,9 @@
             container.innerHTML = `<div class="apple-calendar"><div class="apple-calendar-header"><button class="apple-calendar-nav-btn" onclick="changeProfileMonth(-1)"><i class="fas fa-chevron-left"></i></button><h3>${monthNames[month]} ${year}</h3><button class="apple-calendar-nav-btn" onclick="changeProfileMonth(1)"><i class="fas fa-chevron-right"></i></button></div><div class="apple-weekdays"><span>Пн</span><span>Вт</span><span>Ср</span><span>Чт</span><span>Пт</span><span>Сб</span><span>Вс</span></div><div class="apple-days" id="appleDaysContainer">${daysHtml}</div></div>`;
             document.querySelectorAll('.apple-day').forEach(day => { day.onclick = () => { const evs = JSON.parse(day.getAttribute('data-events') || '[]'); if (evs.length) showDayEventsApple(day.getAttribute('data-date'), evs); else showToast('Нет событий на эту дату'); }; });
         }
-        
+
         window.changeProfileMonth = (delta) => { currentCalendarDate.setMonth(currentCalendarDate.getMonth() + delta); renderProfileCalendar(); };
-        
+
         function showDayEventsApple(date, events) {
             let content = `<div style="margin-bottom: 16px;"><i class="fas fa-calendar-day"></i> <strong>${date}</strong></div>`;
             events.forEach(ev => {
@@ -1829,7 +1863,7 @@
             document.body.insertAdjacentHTML('beforeend', html);
             setTimeout(() => document.getElementById(modalId).classList.add('active'), 10);
         }
-        
+
         // ======================= ЗАДАЧИ =======================
         async function addTaskWithDate() {
             return new Promise((resolve) => {
@@ -1846,7 +1880,7 @@
                     const text = textInput.value.trim();
                     if (!text) { showToast('Введите текст задачи', true); return; }
                     const dueDate = dueDateInput.value || null;
-                    await authFetch('/api/tasks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ psychologistId: currentUser.id, text, dueDate }) });
+                    await fetchJSON('/api/tasks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ psychologistId: currentUser.id, text, dueDate }) });
                     showToast('Задача добавлена');
                     cleanup();
                     renderProfile(true);
@@ -1860,7 +1894,7 @@
         
         async function deleteTask(taskId) {
             openConfirmModal('Удалить задачу?', '', async () => {
-                await authFetch(`/api/tasks/${taskId}`, { method:'DELETE' });
+                await fetchJSON(`/api/tasks/${taskId}`, { method:'DELETE' });
                 renderProfile(true);
             });
         }
@@ -1887,8 +1921,7 @@
                 if (d.success) { att = d.fileUrl; attT = file.type.startsWith('image/') ? 'image' : 'file'; }
                 else { showToast(d.error || 'Ошибка загрузки файла', true); return; }
             }
-            const res = await fetch('/api/notes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ psychologistId: currentUser.id, title, content, attachment: att, attachmentType: attT }) });
-            const data = await res.json();
+            const data = await fetchJSON('/api/notes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ psychologistId: currentUser.id, title, content, attachment: att, attachmentType: attT }) });
             if (data.success) { closeModal('noteModal'); showToast('Заметка сохранена'); renderProfile(true); }
             else showToast(data.error || 'Ошибка сохранения заметки', true);
         }
@@ -1903,8 +1936,8 @@
         async function updateNote(id) {
             const title = document.getElementById('editNoteTitle').value;
             const content = document.getElementById('editNoteContent').value;
-            await authFetch(`/api/notes/${id}`, { method:'DELETE' });
-            await authFetch('/api/notes', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ psychologistId: currentUser.id, title, content, attachment: null, attachmentType: null }) });
+            await fetchJSON(`/api/notes/${id}`, { method:'DELETE' });
+            await fetchJSON('/api/notes', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ psychologistId: currentUser.id, title, content, attachment: null, attachmentType: null }) });
             closeModal('editNoteModal');
             showToast('Заметка обновлена');
             renderProfile(true);
@@ -1912,7 +1945,7 @@
         
         async function deleteNote(id) {
             openConfirmModal('Удалить заметку?', '', async () => {
-                await authFetch(`/api/notes/${id}`, { method:'DELETE' });
+                await fetchJSON(`/api/notes/${id}`, { method:'DELETE' });
                 closeModal('editNoteModal');
                 showToast('Заметка удалена');
                 renderProfile(true);
@@ -1933,8 +1966,7 @@
                 fd.append('title', title);
                 fd.append('certificate', file);
                 showToast('Загружаем...');
-                const res = await authFetch('/api/certificates', { method:'POST', body: fd });
-                const data = await res.json();
+                const data = await fetchJSON('/api/certificates', { method:'POST', body: fd });
                 if (data.success) {
                     if (data.user) currentUser = data.user;
                     else await refreshUser();
@@ -1948,8 +1980,7 @@
         
         async function deleteCertificateProfile(certId) {
             openConfirmModal('Удалить сертификат?', 'Это действие нельзя отменить.', async () => {
-                const res = await authFetch(`/api/certificates/${currentUser.id}/${certId}`, { method:'DELETE' });
-                const data = await res.json();
+                const data = await fetchJSON(`/api/certificates/${currentUser.id}/${certId}`, { method:'DELETE' });
                 if (data.success) {
                     if (data.user) currentUser = data.user;
                     else await refreshUser();
@@ -1996,8 +2027,7 @@
                 fd.append('experience', document.getElementById('editExp').value);
                 fd.append('price', document.getElementById('editPrice').value);
             }
-            const res = await authFetch('/api/user/profile', { method:'PUT', body: fd });
-            const data = await res.json();
+            const data = await fetchJSON('/api/user/profile', { method:'PUT', body: fd });
             if (data.success) {
                 currentUser = data.user;
                 showToast('Профиль обновлён');
@@ -2017,10 +2047,9 @@
                 const uploadRes = await authFetch('/api/upload-avatar', { method:'POST', body: fd });
                 const uploadData = await uploadRes.json();
                 if (uploadData.success) {
-                    const updateRes = await authFetch('/api/user/profile', { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ userId: currentUser.id, avatar: uploadData.avatarUrl }) });
-                    const updateData = await updateRes.json();
-                    if (updateData.success) {
-                        currentUser = updateData.user;
+                    const updateRes = await fetchJSON('/api/user/profile', { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ userId: currentUser.id, avatar: uploadData.avatarUrl }) });
+                    if (updateRes.success) {
+                        currentUser = updateRes.user;
                         showToast('Аватар обновлён');
                         renderProfile(true);
                     }
@@ -2055,8 +2084,8 @@
                 if (!sched[date]) sched[date] = [];
                 if (sched[date].includes(time)) { showToast('Такое время уже есть', true); return; }
                 sched[date].push(time); sched[date].sort();
-                const res = await authFetch('/api/schedule', { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ userId: currentUser.id, schedule: sched }) });
-                if (res.ok) {
+                const res = await fetchJSON('/api/schedule', { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ userId: currentUser.id, schedule: sched }) });
+                if (res.success) {
                     currentUser.schedule = sched;
                     document.getElementById('schedule-list').innerHTML = renderSlots();
                     showToast('Время добавлено');
@@ -2067,7 +2096,7 @@
                 if (sched[date]) {
                     sched[date] = sched[date].filter(t => t !== time);
                     if (!sched[date].length) delete sched[date];
-                    await fetch('/api/schedule', { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ userId: currentUser.id, schedule: sched }) });
+                    await fetchJSON('/api/schedule', { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ userId: currentUser.id, schedule: sched }) });
                     currentUser.schedule = sched;
                     document.getElementById('schedule-list').innerHTML = renderSlots();
                 }
@@ -2076,8 +2105,7 @@
         
         // ======================= ЗАПИСЬ НА ПРИЁМ =======================
         async function confirmAppointment(appointmentId, clientId) {
-            const res = await authFetch('/api/appointment/confirm', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ appointmentId, psychologistId: currentUser.id, clientId }) });
-            const data = await res.json();
+            const data = await fetchJSON('/api/appointment/confirm', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ appointmentId, psychologistId: currentUser.id, clientId }) });
             if (data.success) {
                 showToast('Запись подтверждена');
                 await refreshUser();
@@ -2117,14 +2145,13 @@
             });
             window.submitBook = async (pid, mid) => {
                 if (!selectedDate || !selectedTime) { showToast('Выберите время', true); return; }
-                const r = await authFetch('/api/appointment', {
+                const data = await fetchJSON('/api/appointment', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ clientId: currentUser.id, psychologistId: pid, date: selectedDate, time: selectedTime })
                 });
-                const d = await r.json();
-                if (d.success) { showToast('Заявка отправлена!'); closeModal(mid); await refreshUser(); if (currentTab === 'profile') renderProfile(true); isNotificationsCacheValid = false; }
-                else showToast(d.error || 'Ошибка', true);
+                if (data.success) { showToast('Заявка отправлена!'); closeModal(mid); await refreshUser(); if (currentTab === 'profile') renderProfile(true); isNotificationsCacheValid = false; }
+                else showToast(data.error || 'Ошибка', true);
             };
         }
         
@@ -2142,10 +2169,9 @@
             });
             window._submitReview = async (pid, mid) => {
                 if (!rating) { showToast('Выберите рейтинг', true); return; }
-                const r = await authFetch('/api/reviews', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ psychologistId: pid, clientId: currentUser.id, rating, text: document.getElementById('revText').value }) });
-                const d = await r.json();
-                if (d.success) { showToast('Отзыв отправлен!'); closeModal(mid); await refreshUser(); if (currentTab === 'psychologists') viewPsychologistPage(pid); }
-                else showToast(d.error || 'Ошибка', true);
+                const data = await fetchJSON('/api/reviews', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ psychologistId: pid, clientId: currentUser.id, rating, text: document.getElementById('revText').value }) });
+                if (data.success) { showToast('Отзыв отправлен!'); closeModal(mid); await refreshUser(); if (currentTab === 'psychologists') viewPsychologistPage(pid); }
+                else showToast(data.error || 'Ошибка', true);
             };
         }
         
@@ -2224,8 +2250,7 @@
                 let progress = 0;
                 const interval = setInterval(() => { progress += 10; if (progress <= 90) progressBar.style.width = progress + '%'; }, 200);
                 try {
-                    const res = await authFetch('/api/posts', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ authorId: currentUser.id, text: txt, image: imageUrl, video: videoUrl }) });
-                    const data = await res.json();
+                    const data = await fetchJSON('/api/posts', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ authorId: currentUser.id, text: txt, image: imageUrl, video: videoUrl }) });
                     clearInterval(interval);
                     progressBar.style.width = '100%';
                     if (data.success) {
@@ -2288,10 +2313,10 @@
                 const q = e.target.value;
                 if (q.length < 2) { document.getElementById('searchRes').innerHTML = ''; return; }
                 searchTimeout = setTimeout(async () => {
-                    const r = await fetchJSON(`/api/search/psychologists?q=${encodeURIComponent(q)}`);
-                    if (r.success) {
+                    const data = await fetchJSON(`/api/search/psychologists?q=${encodeURIComponent(q)}`);
+                    if (data.success) {
                         let resHtml = '';
-                        for (const p of r.psychologists) {
+                        for (const p of data.psychologists) {
                             resHtml += `<div class="psychologist-item" style="padding:10px;cursor:pointer;border-radius:12px;transition:background 0.2s;" onclick="closeModal('${modalId}');viewPsychologistPage('${p.id}')"><img src="${escapeHtml(p.avatar)}" style="width:42px;height:42px;border-radius:50%;object-fit:cover;border:2px solid var(--green-border);"><div><div style="font-weight:600;font-size:14px;">${escapeHtml(p.full_name)}</div><div style="font-size:12px;color:var(--text-muted);">${escapeHtml(p.specialization||'Психолог')}</div></div></div>`;
                         }
                         document.getElementById('searchRes').innerHTML = resHtml || '<div class="empty-state" style="padding:16px;"><i class="fas fa-search"></i><div>Ничего не найдено</div></div>';
@@ -2411,7 +2436,7 @@
         
         async function openChat(userId, userName) {
             currentChatPartner = { id: userId, name: userName };
-            await authFetch('/api/messages/read', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: currentUser.id, fromUserId: userId }) });
+            await fetchJSON('/api/messages/read', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: currentUser.id, fromUserId: userId }) });
             if (currentUser.unreadCounts && currentUser.unreadCounts[userId]) delete currentUser.unreadCounts[userId];
             if (currentTab === 'chats') { const chatItems = document.querySelectorAll('.chat-contact'); for (const item of chatItems) { if (item.getAttribute('data-contact-id') === userId) { const badge = item.querySelector('.unread-badge'); if (badge) badge.remove(); break; } } }
             document.getElementById('mainContent').innerHTML = `<div class="chat-page"><div class="chat-messages-container"><div class="chat-messages-header"><button class="back-btn" onclick="renderChats()"><i class="fas fa-arrow-left"></i></button><img src="" id="chatPartnerAvatar" style="width:36px;height:36px;border-radius:50%;object-fit:cover;border:2px solid var(--green-border);" onerror="this.style.display='none'"><div style="flex:1"><div style="font-weight:600;font-size:15px;">${escapeHtml(userName)}</div></div></div><div class="chat-messages-list" id="chatMessagesList"></div><div class="chat-input-area"><div class="chat-controls"><button id="attachImageBtn" title="Фото"><i class="fas fa-image"></i></button><button id="voiceRecordBtn" title="Голосовое"><i class="fas fa-microphone"></i></button></div><input type="file" id="imageInput" accept="image/*" style="display:none"><input type="text" id="chatMessageInput" placeholder="Сообщение..."><button class="send-btn-chat" id="sendMsgBtn"><i class="fas fa-paper-plane"></i></button></div></div></div>`;
@@ -2436,7 +2461,7 @@
                     const res = await authFetch('/api/upload-chat-image', { method: 'POST', body: formData });
                     const data = await res.json();
                     if (data.success) {
-                        await fetch('/api/messages', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ from: currentUser.id, to: currentChatPartner.id, text: '', image: data.imageUrl }) });
+                        await fetchJSON('/api/messages', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ from: currentUser.id, to: currentChatPartner.id, text: '', image: data.imageUrl }) });
                         await loadChatMessages();
                         scrollToBottom();
                     }
@@ -2458,7 +2483,7 @@
                                 const res = await authFetch('/api/upload-voice', { method: 'POST', body: fd });
                                 const data = await res.json();
                                 if (data.success) {
-                                    await authFetch('/api/messages', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ from: currentUser.id, to: currentChatPartner.id, text: '', voice: data.voiceUrl }) });
+                                    await fetchJSON('/api/messages', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ from: currentUser.id, to: currentChatPartner.id, text: '', voice: data.voiceUrl }) });
                                     await loadChatMessages();
                                     scrollToBottom();
                                     showToast('Голосовое отправлено');
@@ -2566,7 +2591,7 @@
             const tempMsg = { id: Date.now().toString(), from: currentUser.id, to: currentChatPartner.id, text, created_at: new Date().toISOString() };
             appendMessageToChat(tempMsg);
             try {
-                await authFetch('/api/messages', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ from: currentUser.id, to: currentChatPartner.id, text }) });
+                await fetchJSON('/api/messages', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ from: currentUser.id, to: currentChatPartner.id, text }) });
                 isChatsCacheValid = false;
             } catch(e) { showToast('Ошибка отправки', true); }
             scrollToBottom();
@@ -2810,697 +2835,88 @@
                 contentHtml = '<div class="empty-state" style="padding:40px;">Нет ответов на этот опросник.</div>';
             } else {
                 for (const response of responses) {
-                    contentHtml += `<div class="glass-card" style="margin-bottom: 16px; padding: 16px;"><h4 style="color: var(--green); margin-bottom: 8px;">👤 ${escapeHtml(response.clientName)}</h4><div style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;">Ответил: ${new Date(response.answeredAt).toLocaleString()}</div><div style="border-top: 1px solid var(--border); padding-top: 12px;">${response.answers.map(a => `<div style="margin-bottom: 12px;"><div style="font-weight: 600; font-size: 13px;">❓ ${escapeHtml(a.question)}</div><div style="font-size: 13px; color: rgba(255,255,255,0.8); margin-top: 4px;">✍️ Ответ: ${escapeHtml(a.answer)}</div></div>`).join('')}</div></div>`;
+                    contentHtml += `
+                        <div class="glass-card" style="margin-bottom: 16px; padding: 16px;">
+                            <h4 style="color: var(--green); margin-bottom: 8px;">👤 ${escapeHtml(response.clientName)}</h4>
+                            <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;">Ответил: ${new Date(response.answeredAt).toLocaleString()}</div>
+                            <div style="border-top: 1px solid var(--border); padding-top: 12px;">
+                                ${response.answers.map(a => `
+                                    <div style="margin-bottom: 12px;">
+                                        <div style="font-weight: 600; font-size: 13px;">❓ ${escapeHtml(a.question)}</div>
+                                        <div style="font-size: 13px; color: rgba(255,255,255,0.8); margin-top: 4px;">✍️ Ответ: ${escapeHtml(a.answer)}</div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    `;
                 }
             }
-            const html = `<div class="modal" id="${modalId}"><div class="modal-content" style="max-width: 600px;"><div class="modal-handle"></div><h3>📋 Ответы на опросник</h3><div style="max-height: 70vh; overflow-y: auto; padding-right: 8px;">${contentHtml}</div><div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('${modalId}')">Закрыть</button></div></div></div>`;
+            const html = `
+                <div class="modal" id="${modalId}">
+                    <div class="modal-content" style="max-width: 600px;">
+                        <div class="modal-handle"></div>
+                        <h3>📋 Ответы на опросник</h3>
+                        <div style="max-height: 70vh; overflow-y: auto; padding-right: 8px;">
+                            ${contentHtml}
+                        </div>
+                        <div class="modal-buttons">
+                            <button class="btn-secondary" onclick="closeModal('${modalId}')">Закрыть</button>
+                        </div>
+                    </div>
+                </div>
+            `;
             document.body.insertAdjacentHTML('beforeend', html);
             setTimeout(() => document.getElementById(modalId).classList.add('active'), 10);
         }
         
         // ======================= ВИДЕОЗВОНОК =======================
-        async function getIceServers() {
-            return [
-                { urls: 'stun:stun.l.google.com:19302' },
-                { urls: 'stun:stun1.l.google.com:19302' },
-                { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
-                { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' }
-            ];
-        }
-        
-        async function createPeerConnectionCall() {
-            if (peerConnection) peerConnection.close();
-            const config = { iceServers: await getIceServers(), iceTransportPolicy: 'all' };
-            peerConnection = new RTCPeerConnection(config);
-            if (localStream) localStream.getTracks().forEach(t => peerConnection.addTrack(t, localStream));
-            peerConnection.ontrack = (event) => {
-                const stream = event.streams[0];
-                document.getElementById('remoteVideo').srcObject = stream;
-                document.getElementById('floatingRemoteVideo').srcObject = stream;
-                document.getElementById('waitingMessageCall').style.display = 'none';
-                callConnectionEstablished = true;
-                updateRemoteVideoMode(remoteScreenMode);
-                if (!callStartTime) startCallTimer();
-            };
-            peerConnection.onicecandidate = (event) => {
-                if (event.candidate && socket && callPartnerSocketId)
-                    socket.emit('ice-candidate', { target: callPartnerSocketId, candidate: event.candidate });
-            };
-            peerConnection.oniceconnectionstatechange = () => {
-                if (!peerConnection) return;
-                const state = peerConnection.iceConnectionState;
-                if (state === 'connected') {
-                    callConnectionEstablished = true;
-                    document.getElementById('waitingMessageCall').style.display = 'none';
-                    if (!callStartTime) startCallTimer();
-                } else if (state === 'failed' || state === 'disconnected') {
-                    callConnectionEstablished = false;
-                    document.getElementById('waitingMessageCall').style.display = 'flex';
-                    setTimeout(() => { if (!callConnectionEstablished) reconnectCall(); }, 3000);
-                }
-            };
-            return peerConnection;
-        }
-        
-        function startCallTimer() {
-            if (callTimerInterval) clearInterval(callTimerInterval);
-            callStartTime = Date.now();
-            const timerElement = document.getElementById('callTimer');
-            if (timerElement) timerElement.style.display = 'block';
-            callTimerInterval = setInterval(() => {
-                if (!callStartTime) return;
-                const elapsed = Math.floor((Date.now() - callStartTime) / 1000);
-                const mins = Math.floor(elapsed / 60);
-                const secs = elapsed % 60;
-                document.getElementById('callTimer').textContent = `${mins.toString().padStart(2,'0')}:${secs.toString().padStart(2,'0')}`;
-            }, 1000);
-        }
-        
-        function stopCallTimer() {
-            if (callTimerInterval) clearInterval(callTimerInterval);
-            callTimerInterval = null;
-            const timerElement = document.getElementById('callTimer');
-            if (timerElement) timerElement.style.display = 'none';
-            if (callStartTime && currentCallRoomId) {
-                const duration = Math.floor((Date.now() - callStartTime) / 1000);
-                fetch('/api/appointment/duration', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ roomId: currentCallRoomId, duration })
-                }).catch(console.error);
-                callStartTime = null;
-            }
-        }
-        
-        async function startLocalStreamCall() {
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-                localStream = stream;
-                document.getElementById('localVideo').srcObject = localStream;
-                cameraTrack = localStream.getVideoTracks()[0];
-                if (socket && callPartnerSocketId) await initWebRTCCall(currentCallRole === 'psychologist');
-            } catch (e) { showToast('Нет доступа к камере/микрофону', true); }
-        }
-        
-        async function initWebRTCCall(createOffer = true) {
-            if (!localStream) return;
-            await createPeerConnectionCall();
-            if (createOffer && socket && callPartnerSocketId) {
-                const offer = await peerConnection.createOffer();
-                await peerConnection.setLocalDescription(offer);
-                socket.emit('offer', { target: callPartnerSocketId, sdp: offer });
-            }
-        }
-        
-        async function replaceVideoTrackCall(newTrack) {
-            if (!peerConnection) return;
-            const sender = peerConnection.getSenders().find(s => s.track?.kind === 'video');
-            if (sender) await sender.replaceTrack(newTrack);
-            else if (newTrack) peerConnection.addTrack(newTrack, localStream);
-            if (newTrack) {
-                const newStream = new MediaStream();
-                newStream.addTrack(newTrack);
-                if (localStream.getAudioTracks()[0]) newStream.addTrack(localStream.getAudioTracks()[0]);
-                document.getElementById('localVideo').srcObject = newStream;
-            }
-        }
-        
-        async function startScreenShareCall() {
-            if (isScreenSharing || !navigator.mediaDevices?.getDisplayMedia) return showToast('Не поддерживается', true);
-            try {
-                const screen = await navigator.mediaDevices.getDisplayMedia({ video: true });
-                screenStream = screen;
-                const track = screen.getVideoTracks()[0];
-                if (cameraTrack) cameraTrack.enabled = false;
-                await replaceVideoTrackCall(track);
-                updateLocalVideoMode(true);
-                isScreenSharing = true;
-                if (socket) socket.emit('call-message', { text: 'Начал трансляцию экрана' });
-                if (socket) socket.emit('screen-share-started', { roomId: currentCallRoomId });
-                track.onended = () => stopScreenShareCall();
-            } catch(e) { showToast('Ошибка трансляции', true); }
-        }
-        
-        async function stopScreenShareCall() {
-            if (!isScreenSharing) return;
-            if (screenStream) screenStream.getTracks().forEach(t => t.stop());
-            screenStream = null;
-            if (cameraTrack) { cameraTrack.enabled = true; await replaceVideoTrackCall(cameraTrack); }
-            else await replaceVideoTrackCall(null);
-            updateLocalVideoMode(false);
-            isScreenSharing = false;
-            if (socket) socket.emit('call-message', { text: 'Остановил трансляцию экрана' });
-            if (socket) socket.emit('screen-share-stopped', { roomId: currentCallRoomId });
-        }
-        
+        async function getIceServers() { return [ { urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }, { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' }, { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' } ]; }
+        async function createPeerConnectionCall() { if (peerConnection) peerConnection.close(); const config = { iceServers: await getIceServers(), iceTransportPolicy: 'all' }; peerConnection = new RTCPeerConnection(config); if (localStream) localStream.getTracks().forEach(t => peerConnection.addTrack(t, localStream)); peerConnection.ontrack = (event) => { const stream = event.streams[0]; document.getElementById('remoteVideo').srcObject = stream; document.getElementById('floatingRemoteVideo').srcObject = stream; document.getElementById('waitingMessageCall').style.display = 'none'; callConnectionEstablished = true; updateRemoteVideoMode(remoteScreenMode); if (!callStartTime) startCallTimer(); }; peerConnection.onicecandidate = (event) => { if (event.candidate && socket && callPartnerSocketId) socket.emit('ice-candidate', { target: callPartnerSocketId, candidate: event.candidate }); }; peerConnection.oniceconnectionstatechange = () => { if (!peerConnection) return; const state = peerConnection.iceConnectionState; if (state === 'connected') { callConnectionEstablished = true; document.getElementById('waitingMessageCall').style.display = 'none'; if (!callStartTime) startCallTimer(); } else if (state === 'failed' || state === 'disconnected') { callConnectionEstablished = false; document.getElementById('waitingMessageCall').style.display = 'flex'; setTimeout(() => { if (!callConnectionEstablished) reconnectCall(); }, 3000); } }; return peerConnection; }
+        function startCallTimer() { if (callTimerInterval) clearInterval(callTimerInterval); callStartTime = Date.now(); const timerElement = document.getElementById('callTimer'); if (timerElement) timerElement.style.display = 'block'; callTimerInterval = setInterval(() => { if (!callStartTime) return; const elapsed = Math.floor((Date.now() - callStartTime) / 1000); const mins = Math.floor(elapsed / 60); const secs = elapsed % 60; document.getElementById('callTimer').textContent = `${mins.toString().padStart(2,'0')}:${secs.toString().padStart(2,'0')}`; }, 1000); }
+        function stopCallTimer() { if (callTimerInterval) clearInterval(callTimerInterval); callTimerInterval = null; const timerElement = document.getElementById('callTimer'); if (timerElement) timerElement.style.display = 'none'; if (callStartTime && currentCallRoomId) { const duration = Math.floor((Date.now() - callStartTime) / 1000); fetch('/api/appointment/duration', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ roomId: currentCallRoomId, duration }) }).catch(console.error); callStartTime = null; } }
+        async function startLocalStreamCall() { try { const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true }); localStream = stream; document.getElementById('localVideo').srcObject = localStream; cameraTrack = localStream.getVideoTracks()[0]; if (socket && callPartnerSocketId) await initWebRTCCall(currentCallRole === 'psychologist'); } catch (e) { showToast('Нет доступа к камере/микрофону', true); } }
+        async function initWebRTCCall(createOffer = true) { if (!localStream) return; await createPeerConnectionCall(); if (createOffer && socket && callPartnerSocketId) { const offer = await peerConnection.createOffer(); await peerConnection.setLocalDescription(offer); socket.emit('offer', { target: callPartnerSocketId, sdp: offer }); } }
+        async function replaceVideoTrackCall(newTrack) { if (!peerConnection) return; const sender = peerConnection.getSenders().find(s => s.track?.kind === 'video'); if (sender) await sender.replaceTrack(newTrack); else if (newTrack) peerConnection.addTrack(newTrack, localStream); if (newTrack) { const newStream = new MediaStream(); newStream.addTrack(newTrack); if (localStream.getAudioTracks()[0]) newStream.addTrack(localStream.getAudioTracks()[0]); document.getElementById('localVideo').srcObject = newStream; } }
+        async function startScreenShareCall() { if (isScreenSharing || !navigator.mediaDevices?.getDisplayMedia) return showToast('Не поддерживается', true); try { const screen = await navigator.mediaDevices.getDisplayMedia({ video: true }); screenStream = screen; const track = screen.getVideoTracks()[0]; if (cameraTrack) cameraTrack.enabled = false; await replaceVideoTrackCall(track); updateLocalVideoMode(true); isScreenSharing = true; if (socket) socket.emit('call-message', { text: 'Начал трансляцию экрана' }); if (socket) socket.emit('screen-share-started', { roomId: currentCallRoomId }); track.onended = () => stopScreenShareCall(); } catch(e) { showToast('Ошибка трансляции', true); } }
+        async function stopScreenShareCall() { if (!isScreenSharing) return; if (screenStream) screenStream.getTracks().forEach(t => t.stop()); screenStream = null; if (cameraTrack) { cameraTrack.enabled = true; await replaceVideoTrackCall(cameraTrack); } else await replaceVideoTrackCall(null); updateLocalVideoMode(false); isScreenSharing = false; if (socket) socket.emit('call-message', { text: 'Остановил трансляцию экрана' }); if (socket) socket.emit('screen-share-stopped', { roomId: currentCallRoomId }); }
         function toggleScreenShareCall() { isScreenSharing ? stopScreenShareCall() : startScreenShareCall(); }
-        
-        function addCallChatMessage(text, isOutgoing = false, time = null) {
-            const container = document.getElementById('chatMessagesCall');
-            if (!container) return;
-            const empty = container.querySelector('.chat-empty');
-            if (empty) empty.remove();
-            const div = document.createElement('div');
-            div.className = 'chat-message-call ' + (isOutgoing ? 'outgoing' : 'incoming');
-            const t = time ? new Date(time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-            div.innerHTML = `<div>${escapeHtml(text)}</div><div class="chat-message-time">${t}</div>`;
-            container.appendChild(div);
-            container.scrollTop = container.scrollHeight;
-        }
-        
-        function sendCallChatMessage() {
-            const input = document.getElementById('chatInputCall');
-            if (!input) return;
-            const text = input.value.trim();
-            if (text && socket && callPartnerSocketId) {
-                addCallChatMessage(text, true);
-                socket.emit('call-message', { text });
-                input.value = '';
-            }
-        }
-        
-        function startCallRecording() {
-            if (!localStream) return;
-            recordedChunks = [];
-            const stream = new MediaStream([localStream.getAudioTracks()[0]]);
-            mediaRecorderCall = new MediaRecorder(stream, { mimeType: 'audio/webm' });
-            mediaRecorderCall.ondataavailable = e => { if (e.data.size) recordedChunks.push(e.data); };
-            mediaRecorderCall.onstop = async () => {
-                const blob = new Blob(recordedChunks, { type: 'audio/webm' });
-                const fd = new FormData();
-                fd.append('recording', blob, `call_${Date.now()}.webm`);
-                fd.append('from', currentUser.id);
-                fd.append('to', callPartnerSocketId || 'unknown');
-                fd.append('roomId', currentCallRoomId);
-                try { await fetch('/api/upload-recording', { method: 'POST', body: fd }); showToast('Запись сохранена'); } catch(e) {}
-            };
-            mediaRecorderCall.start(1000);
-            isRecordingCall = true;
-            const recordBtn = document.getElementById('recordCallBtn');
-            if (recordBtn) { recordBtn.classList.add('recording-active'); recordBtn.innerHTML = '<span class="rec-dot"></span> Запись ...'; }
-        }
-        
-        function stopCallRecording() {
-            if (mediaRecorderCall?.state === 'recording') {
-                mediaRecorderCall.stop();
-                isRecordingCall = false;
-                const recordBtn = document.getElementById('recordCallBtn');
-                if (recordBtn) { recordBtn.classList.remove('recording-active'); recordBtn.innerHTML = '<i class="fas fa-circle"></i> Запись'; }
-            }
-        }
-        
+        function addCallChatMessage(text, isOutgoing = false, time = null) { const container = document.getElementById('chatMessagesCall'); if (!container) return; const empty = container.querySelector('.chat-empty'); if (empty) empty.remove(); const div = document.createElement('div'); div.className = 'chat-message-call ' + (isOutgoing ? 'outgoing' : 'incoming'); const t = time ? new Date(time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); div.innerHTML = `<div>${escapeHtml(text)}</div><div class="chat-message-time">${t}</div>`; container.appendChild(div); container.scrollTop = container.scrollHeight; }
+        function sendCallChatMessage() { const input = document.getElementById('chatInputCall'); if (!input) return; const text = input.value.trim(); if (text && socket && callPartnerSocketId) { addCallChatMessage(text, true); socket.emit('call-message', { text }); input.value = ''; } }
+        function startCallRecording() { if (!localStream) return; recordedChunks = []; const stream = new MediaStream([localStream.getAudioTracks()[0]]); mediaRecorderCall = new MediaRecorder(stream, { mimeType: 'audio/webm' }); mediaRecorderCall.ondataavailable = e => { if (e.data.size) recordedChunks.push(e.data); }; mediaRecorderCall.onstop = async () => { const blob = new Blob(recordedChunks, { type: 'audio/webm' }); const fd = new FormData(); fd.append('recording', blob, `call_${Date.now()}.webm`); fd.append('from', currentUser.id); fd.append('to', callPartnerSocketId || 'unknown'); fd.append('roomId', currentCallRoomId); try { await authFetch('/api/upload-recording', { method: 'POST', body: fd }); showToast('Запись сохранена'); } catch(e) {} }; mediaRecorderCall.start(1000); isRecordingCall = true; const recordBtn = document.getElementById('recordCallBtn'); if (recordBtn) { recordBtn.classList.add('recording-active'); recordBtn.innerHTML = '<span class="rec-dot"></span> Запись ...'; } }
+        function stopCallRecording() { if (mediaRecorderCall?.state === 'recording') { mediaRecorderCall.stop(); isRecordingCall = false; const recordBtn = document.getElementById('recordCallBtn'); if (recordBtn) { recordBtn.classList.remove('recording-active'); recordBtn.innerHTML = '<i class="fas fa-circle"></i> Запись'; } } }
         function toggleCallRecording() { isRecordingCall ? stopCallRecording() : startCallRecording(); }
-        
-        function endCall() {
-            stopCallTimer();
-            if (socket) socket.emit('end-call');
-            stopCallRecording();
-            if (peerConnection) peerConnection.close();
-            if (localStream) localStream.getTracks().forEach(t => t.stop());
-            if (screenStream) screenStream.getTracks().forEach(t => t.stop());
-            document.getElementById('callContainer').style.display = 'none';
-            document.getElementById('floatingCall').style.display = 'none';
-            isCallActive = false;
-            currentCallRoomId = null;
-            currentCallRole = null;
-            callPartnerSocketId = null;
-            callConnectionEstablished = false;
-            callStartTime = null;
-        }
-        
-        function reconnectCall() {
-            if (!currentCallRoomId) { showToast('Нет активного звонка', true); return; }
-            if (peerConnection) { peerConnection.close(); peerConnection = null; }
-            callConnectionEstablished = false;
-            document.getElementById('waitingMessageCall').style.display = 'flex';
-            if (socket && socket.connected) {
-                socket.emit('request-reconnect', { roomId: currentCallRoomId, role: currentCallRole });
-            } else {
-                if (socket) socket.connect();
-                socket.once('connect', () => {
-                    socket.emit('join-call-room', currentCallRoomId, currentUser.id, currentCallRole);
-                });
-            }
-        }
-        
-        function updateRemoteVideoMode(isScreen) {
-            const remoteVideoElem = document.getElementById('remoteVideo');
-            if (!remoteVideoElem) return;
-            if (isScreen) remoteVideoElem.classList.add('screen-mode');
-            else remoteVideoElem.classList.remove('screen-mode');
-        }
-        
-        function updateLocalVideoMode(isScreen) {
-            const localVideo = document.getElementById('localVideo');
-            if (!localVideo) return;
-            if (isScreen) localVideo.classList.add('screen-mode');
-            else localVideo.classList.remove('screen-mode');
-        }
-        
-        function minimizeCall() {
-            if (!isCallActive) return;
-            document.getElementById('callContainer').style.display = 'none';
-            document.getElementById('floatingCall').style.display = 'flex';
-            const micEnabled = localStream?.getAudioTracks()[0]?.enabled ?? true;
-            const camEnabled = localStream?.getVideoTracks()[0]?.enabled ?? true;
-            const floatingMicBtn = document.getElementById('floatingMicCallBtn');
-            const floatingCamBtn = document.getElementById('floatingCamCallBtn');
-            if (floatingMicBtn) {
-                floatingMicBtn.innerHTML = micEnabled ? '<i class="fas fa-microphone"></i>' : '<i class="fas fa-microphone-slash"></i>';
-                floatingMicBtn.classList.toggle('muted', !micEnabled);
-            }
-            if (floatingCamBtn) {
-                floatingCamBtn.innerHTML = camEnabled ? '<i class="fas fa-video"></i>' : '<i class="fas fa-video-slash"></i>';
-                floatingCamBtn.classList.toggle('muted', !camEnabled);
-            }
-        }
-        
-        function restoreCall() {
-            document.getElementById('callContainer').style.display = 'flex';
-            document.getElementById('floatingCall').style.display = 'none';
-        }
-        
-        function showEmergencyContacts() {
-            const emergencyNumbers = [];
-            if (currentUser && currentUser.emergencyContacts) {
-                emergencyNumbers.push(...currentUser.emergencyContacts);
-            }
-            const defaultSOS = [
-                { name: 'Кризисная линия доверия', phone: '8-800-2000-122' },
-                { name: 'Скорая помощь', phone: '103' }
-            ];
-            const allNumbers = emergencyNumbers.concat(defaultSOS);
-            let listHtml = '';
-            allNumbers.forEach(c => {
-                listHtml += `<div style="margin-bottom:10px;"><strong>${escapeHtml(c.name)}</strong><br><a href="tel:${c.phone}" style="color:var(--green);font-size:16px;">${c.phone}</a></div>`;
-            });
-            const modalId = 'sosModal_' + Date.now();
-            const html = `<div class="modal" id="${modalId}"><div class="modal-content"><div class="modal-handle"></div><h3>⚠️ Экстренная помощь</h3><div style="margin-bottom:20px;">Если вам нужна немедленная поддержка, свяжитесь по этим номерам:</div>${listHtml}<div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('${modalId}')">Закрыть</button></div></div></div>`;
-            document.body.insertAdjacentHTML('beforeend', html);
-            setTimeout(() => document.getElementById(modalId).classList.add('active'), 10);
-        }
-        
-        function showCallTools() {
-            if (currentUser.role !== 'psychologist') { showToast('Только для психологов', true); return; }
-            const modalId = 'callToolsModal_' + Date.now();
-            const html = `<div class="modal" id="${modalId}"><div class="modal-content"><div class="modal-handle"></div><h3>Инструменты сессии</h3><button class="btn-sm btn-outline" style="width:100%; margin-bottom:12px;" onclick="openClientCardInCall(); closeModal('${modalId}');"><i class="fas fa-user"></i> Карта клиента</button><button class="btn-sm btn-outline" style="width:100%; margin-bottom:12px;" onclick="addHomeworkToClientInCall(); closeModal('${modalId}');"><i class="fas fa-tasks"></i> Домашнее задание</button><button class="btn-sm" style="width:100%;" onclick="scheduleNextSessionInCall(); closeModal('${modalId}');"><i class="fas fa-calendar-plus"></i> Запись на следующий сеанс</button><div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('${modalId}')">Закрыть</button></div></div></div>`;
-            document.body.insertAdjacentHTML('beforeend', html);
-            setTimeout(() => document.getElementById(modalId).classList.add('active'), 10);
-        }
-        
-        async function openClientCardInCall() {
-            if (!currentClientIdInCall) { showToast('Клиент не определён', true); return; }
-            const data = await fetchJSON(`/api/client-card/${currentClientIdInCall}?psychologistId=${currentUser.id}`);
-            if (!data.success) { showToast('Не удалось загрузить карту клиента', true); return; }
-            const { client, profile, notes, homeworks, progress } = data;
-            let emergencyHtml = '';
-            if (profile && profile.emergency_phone) {
-                try {
-                    const contacts = JSON.parse(profile.emergency_phone);
-                    emergencyHtml = contacts.map(c => `${escapeHtml(c.name)}: ${escapeHtml(c.phone)}`).join(', ');
-                } catch(e) { emergencyHtml = profile.emergency_phone; }
-            }
-            const modalId = 'clientCardModal_' + Date.now();
-            const html = `<div class="modal" id="${modalId}"><div class="modal-content" style="max-width: 500px; max-height: 80vh; overflow-y: auto;"><div class="modal-handle"></div><h3>Карта клиента: ${escapeHtml(client.fullName)}</h3><div><strong>Телефон:</strong> ${escapeHtml(client.phone || '—')}</div><div><strong>Дата рождения:</strong> ${profile?.birth_date || '—'}</div><div><strong>Пол:</strong> ${profile?.gender || '—'}</div><div><strong>Экстренные контакты:</strong> ${emergencyHtml || '—'}</div><div><strong>Жалобы:</strong> ${escapeHtml(profile?.complaints || '—')}</div><div><strong>Цели:</strong> ${escapeHtml(profile?.goals || '—')}</div><hr><h4>Домашние задания</h4><div id="clientHomeworksList_${modalId}">${homeworks.map(h => `<div class="task-item" data-id="${h.id}"><input type="checkbox" class="homework-cb-card" data-id="${h.id}" ${h.status === 'done' ? 'checked' : ''}><span>${escapeHtml(h.text)} ${h.due_date ? `(до ${h.due_date})` : ''}</span></div>`).join('')}</div><h4>Заметки психолога</h4><div id="clientNotesList_${modalId}">${notes.map(n => `<div><strong>${new Date(n.created_at).toLocaleString()}</strong><br>${escapeHtml(n.note)}</div>`).join('') || 'Нет заметок'}</div><h4>Прогресс</h4><div id="clientProgressList_${modalId}">${progress.map(p => `<div>${p.date}: ${p.value}/10 (${p.type === 'psychologist' ? 'оценка психолога' : 'самооценка'})${p.notes ? ` — ${escapeHtml(p.notes)}` : ''}</div>`).join('') || 'Нет данных'}</div><div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('${modalId}')">Закрыть</button></div></div></div>`;
-            document.body.insertAdjacentHTML('beforeend', html);
-            setTimeout(() => document.getElementById(modalId).classList.add('active'), 10);
-            setTimeout(() => {
-                document.querySelectorAll(`#clientHomeworksList_${modalId} .homework-cb-card`).forEach(cb => {
-                    cb.onchange = async () => {
-                        const status = cb.checked ? 'done' : 'pending';
-                        await fetch(`/api/homeworks/${cb.dataset.id}`, {
-                            method: 'PUT',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ status })
-                        });
-                        showToast(cb.checked ? 'Задание отмечено выполненным' : 'Статус обновлён');
-                    };
-                });
-            }, 100);
-        }
-        
-        async function addHomeworkToClientInCall() {
-            if (!currentClientIdInCall) { showToast('Клиент не определён', true); return; }
-            const modalId = 'hwModal_' + Date.now();
-            const html = `<div class="modal" id="${modalId}"><div class="modal-content"><div class="modal-handle"></div><h3>Домашнее задание</h3><textarea id="hwText_${modalId}" rows="3" placeholder="Текст задания..." style="width:100%; margin-bottom:12px;"></textarea><label>Срок выполнения (необязательно)</label><input type="date" id="hwDueDate_${modalId}" style="width:100%; margin:12px 0;"><div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('${modalId}')">Отмена</button><button class="btn-primary" onclick="submitHomeworkWithDate('${modalId}')">Сохранить</button></div></div></div>`;
-            document.body.insertAdjacentHTML('beforeend', html);
-            setTimeout(() => document.getElementById(modalId).classList.add('active'), 10);
-        }
-        
-        async function submitHomeworkWithDate(modalId) {
-            const text = document.getElementById(`hwText_${modalId}`).value.trim();
-            const dueDate = document.getElementById(`hwDueDate_${modalId}`).value;
-            if (!text) { showToast('Введите текст задания', true); return; }
-            const data = await fetchJSON('/api/homeworks', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ psychologistId: currentUser.id, clientId: currentClientIdInCall, text, dueDate: dueDate || null })
-            });
-            if (data.success) {
-                showToast('Домашнее задание добавлено');
-                closeModal(modalId);
-            } else showToast('Ошибка', true);
-        }
-        
-        async function scheduleNextSessionInCall() {
-            if (!currentClientIdInCall) { showToast('Клиент не определён', true); return; }
-            const scheduleRes = await fetchJSON(`/api/schedule/${currentUser.id}`);
-            const schedule = scheduleRes.schedule || {};
-            const dates = Object.keys(schedule).sort();
-            if (dates.length === 0) { showToast('Нет свободного времени в расписании', true); return; }
-            let slotsHtml = '';
-            for (const d of dates) {
-                slotsHtml += `<div style="margin-bottom:12px;"><div style="font-size:12px;color:var(--text-muted);margin-bottom:6px;">${d}</div><div style="display:flex;flex-wrap:wrap;gap:6px;">`;
-                for (const t of schedule[d]) slotsHtml += `<button class="time-slot" data-date="${d}" data-time="${t}">${t}</button>`;
-                slotsHtml += `</div></div>`;
-            }
-            const modalId = 'nextSessionModal_' + Date.now();
-            const html = `<div class="modal" id="${modalId}"><div class="modal-content"><div class="modal-handle"></div><h3>Запись на следующий сеанс</h3><div id="slotsNext_${modalId}" style="max-height:300px;overflow-y:auto;">${slotsHtml}</div><div id="selSlotNext_${modalId}" style="margin-top:10px;font-size:13px;color:var(--green);min-height:20px;"></div><div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('${modalId}')">Отмена</button><button class="btn-primary" id="confirmNextBtn_${modalId}" disabled onclick="window._confirmNextSession_${modalId}('${currentClientIdInCall}')">Записать</button></div></div></div>`;
-            document.body.insertAdjacentHTML('beforeend', html);
-            const modal = document.getElementById(modalId);
-            setTimeout(() => modal.classList.add('active'), 10);
-            let selectedDate = null, selectedTime = null;
-            modal.querySelectorAll(`#slotsNext_${modalId} .time-slot`).forEach(b => {
-                b.onclick = () => {
-                    modal.querySelectorAll(`#slotsNext_${modalId} .time-slot`).forEach(bb => bb.classList.remove('selected'));
-                    b.classList.add('selected');
-                    modal.querySelector(`#selSlotNext_${modalId}`).textContent = `✅ Выбрано: ${b.dataset.date} в ${b.dataset.time}`;
-                    document.getElementById(`confirmNextBtn_${modalId}`).disabled = false;
-                    selectedDate = b.dataset.date;
-                    selectedTime = b.dataset.time;
-                };
-            });
-            window[`_confirmNextSession_${modalId}`] = async (clientId) => {
-                if (!selectedDate || !selectedTime) { showToast('Выберите время', true); return; }
-                const data = await fetchJSON('/api/appointment', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ clientId, psychologistId: currentUser.id, date: selectedDate, time: selectedTime })
-                });
-                if (data.success) { showToast('Запись создана, ожидает подтверждения'); closeModal(modalId); }
-                else showToast(data.error || 'Ошибка', true);
-            };
-        }
-        
-        async function startCallInWindow(roomId, role, clientId = null) {
-            if (isCallActive) { showToast('Звонок уже активен. Сначала завершите его.', true); return; }
-            currentCallRoomId = roomId;
-            currentCallRole = role;
-            currentClientIdInCall = clientId;
-            isCallActive = true;
-            document.getElementById('callContainer').style.display = 'flex';
-            document.getElementById('floatingCall').style.display = 'none';
-            callPartnerSocketId = null;
-            callConnectionEstablished = false;
-            document.getElementById('waitingMessageCall').style.display = 'flex';
-            const remoteWrapper = document.querySelector('.remote-video-wrapper');
-            const localWrapper = document.querySelector('.local-video-wrapper');
-            if (remoteWrapper) { remoteWrapper.classList.add('big'); remoteWrapper.classList.remove('small'); }
-            if (localWrapper) { localWrapper.classList.add('small'); localWrapper.classList.remove('big'); }
-            await startLocalStreamCall();
-            if (!socket) initSocket();
-            if (socket) {
-                socket.emit('join-call-room', roomId, currentUser.id, role);
-                socket.off('room-joined');
-                socket.off('call-ready');
-                socket.off('offer');
-                socket.off('answer');
-                socket.off('ice-candidate');
-                socket.off('call-message');
-                socket.off('screen-share-started');
-                socket.off('screen-share-stopped');
-                socket.off('call-ended');
-                socket.off('partner-disconnected');
-                socket.on('room-joined', () => { document.getElementById('waitingMessageCall').style.display = 'flex'; callConnectionEstablished = false; });
-                socket.on('call-ready', async (data) => {
-                    callPartnerSocketId = data.partnerId;
-                    document.getElementById('waitingMessageCall').style.display = 'none';
-                    if (localStream) await initWebRTCCall(role === 'psychologist');
-                    else { const iv = setInterval(async () => { if (localStream) { clearInterval(iv); await initWebRTCCall(role === 'psychologist'); } }, 200); }
-                });
-                socket.on('offer', async (data) => {
-                    callPartnerSocketId = data.from;
-                    if (!peerConnection) await createPeerConnectionCall();
-                    await peerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp));
-                    const answer = await peerConnection.createAnswer();
-                    await peerConnection.setLocalDescription(answer);
-                    socket.emit('answer', { target: callPartnerSocketId, sdp: answer });
-                });
-                socket.on('answer', async (data) => { if (peerConnection) await peerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp)); });
-                socket.on('ice-candidate', async (data) => { if (peerConnection) { try { await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate)); } catch(e) {} } });
-                socket.on('call-message', (data) => addCallChatMessage(data.text, false, data.time));
-                socket.on('screen-share-started', () => { remoteScreenMode = true; updateRemoteVideoMode(true); });
-                socket.on('screen-share-stopped', () => { remoteScreenMode = false; updateRemoteVideoMode(false); });
-                socket.on('call-ended', () => { showToast('Сессия завершена'); endCall(); });
-                socket.on('partner-disconnected', () => { showToast('Собеседник отключился', true); document.getElementById('waitingMessageCall').style.display = 'flex'; callConnectionEstablished = false; });
-                socket.on('request-reconnect', async () => {
-                    console.log('Получен запрос на переподключение');
-                    if (peerConnection) {
-                        peerConnection.close();
-                        peerConnection = null;
-                    }
-                    callConnectionEstablished = false;
-                    document.getElementById('waitingMessageCall').style.display = 'flex';
-                    if (localStream && callPartnerSocketId) {
-                        await initWebRTCCall(currentCallRole === 'psychologist');
-                    }
-                });
-            }
-            document.getElementById('toggleMicCall').onclick = () => { if (localStream) { const t = localStream.getAudioTracks()[0]; if (t) { t.enabled = !t.enabled; document.getElementById('toggleMicCall').classList.toggle('muted'); document.getElementById('toggleMicCall').innerHTML = t.enabled ? '<i class="fas fa-microphone"></i>' : '<i class="fas fa-microphone-slash"></i>'; const fmic = document.getElementById('floatingMicCallBtn'); if (fmic) { fmic.innerHTML = t.enabled ? '<i class="fas fa-microphone"></i>' : '<i class="fas fa-microphone-slash"></i>'; fmic.classList.toggle('muted', !t.enabled); } } } };
-            document.getElementById('toggleCamCall').onclick = () => { if (localStream) { const t = localStream.getVideoTracks()[0]; if (t) { t.enabled = !t.enabled; document.getElementById('toggleCamCall').classList.toggle('muted'); document.getElementById('toggleCamCall').innerHTML = t.enabled ? '<i class="fas fa-video"></i>' : '<i class="fas fa-video-slash"></i>'; const fcam = document.getElementById('floatingCamCallBtn'); if (fcam) { fcam.innerHTML = t.enabled ? '<i class="fas fa-video"></i>' : '<i class="fas fa-video-slash"></i>'; fcam.classList.toggle('muted', !t.enabled); } } } };
-            document.getElementById('shareScreenCallBtn').onclick = toggleScreenShareCall;
-            document.getElementById('recordCallBtn').onclick = toggleCallRecording;
-            document.getElementById('reconnectCallBtn').onclick = reconnectCall;
-            document.getElementById('endCallBtnMain').onclick = endCall;
-            document.getElementById('chatToggleCallBtn').onclick = () => document.getElementById('chatPanelCall').classList.toggle('open');
-            document.getElementById('closeChatCallBtn').onclick = () => document.getElementById('chatPanelCall').classList.remove('open');
-            document.getElementById('sendChatCallBtn').onclick = sendCallChatMessage;
-            document.getElementById('chatInputCall').onkeypress = (e) => { if (e.key === 'Enter') sendCallChatMessage(); };
-            document.getElementById('minimizeCallBtn').onclick = minimizeCall;
-            document.getElementById('restoreCallBtn').onclick = restoreCall;
-            document.getElementById('floatingMicCallBtn').onclick = () => { if (localStream) { const t = localStream.getAudioTracks()[0]; if (t) { t.enabled = !t.enabled; const mainMic = document.getElementById('toggleMicCall'); if (mainMic) { mainMic.classList.toggle('muted', !t.enabled); mainMic.innerHTML = t.enabled ? '<i class="fas fa-microphone"></i>' : '<i class="fas fa-microphone-slash"></i>'; } document.getElementById('floatingMicCallBtn').innerHTML = t.enabled ? '<i class="fas fa-microphone"></i>' : '<i class="fas fa-microphone-slash"></i>'; document.getElementById('floatingMicCallBtn').classList.toggle('muted', !t.enabled); } } };
-            document.getElementById('floatingCamCallBtn').onclick = () => { if (localStream) { const t = localStream.getVideoTracks()[0]; if (t) { t.enabled = !t.enabled; const mainCam = document.getElementById('toggleCamCall'); if (mainCam) { mainCam.classList.toggle('muted', !t.enabled); mainCam.innerHTML = t.enabled ? '<i class="fas fa-video"></i>' : '<i class="fas fa-video-slash"></i>'; } document.getElementById('floatingCamCallBtn').innerHTML = t.enabled ? '<i class="fas fa-video"></i>' : '<i class="fas fa-video-slash"></i>'; document.getElementById('floatingCamCallBtn').classList.toggle('muted', !t.enabled); } } };
-            document.getElementById('floatingEndCallBtn').onclick = endCall;
-            document.getElementById('sosCallBtn').onclick = () => { showEmergencyContacts(); };
-            document.getElementById('toolsCallBtn').onclick = () => { showCallTools(); };
-            document.getElementById('goHomeCallBtn').onclick = () => { window.open('/', '_blank'); };
-            const menuBtn = document.getElementById('menuCallBtn');
-            const extraMenu = document.getElementById('extraMenuCall');
-            if (menuBtn && extraMenu) {
-                menuBtn.onclick = (e) => { e.stopPropagation(); extraMenu.style.display = extraMenu.style.display === 'flex' ? 'none' : 'flex'; };
-                document.addEventListener('click', (e) => { if (!menuBtn.contains(e.target) && !extraMenu.contains(e.target)) extraMenu.style.display = 'none'; });
-            }
-            if (!navigator.mediaDevices?.getDisplayMedia) document.getElementById('shareScreenCallBtn').style.display = 'none';
-            updateRemoteVideoMode(false);
-            function swapVideoRoles() {
-                if (!remoteWrapper || !localWrapper) return;
-                const isLocalBig = localWrapper.classList.contains('big');
-                if (!isLocalBig) {
-                    localWrapper.classList.remove('small'); localWrapper.classList.add('big');
-                    remoteWrapper.classList.remove('big'); remoteWrapper.classList.add('small');
-                } else {
-                    localWrapper.classList.remove('big'); localWrapper.classList.add('small');
-                    remoteWrapper.classList.remove('small'); remoteWrapper.classList.add('big');
-                }
-                updateLocalVideoMode(isScreenSharing);
-            }
-            if (localWrapper) localWrapper.onclick = swapVideoRoles;
-        }
+        function endCall() { stopCallTimer(); if (socket) socket.emit('end-call'); stopCallRecording(); if (peerConnection) peerConnection.close(); if (localStream) localStream.getTracks().forEach(t => t.stop()); if (screenStream) screenStream.getTracks().forEach(t => t.stop()); document.getElementById('callContainer').style.display = 'none'; document.getElementById('floatingCall').style.display = 'none'; isCallActive = false; currentCallRoomId = null; currentCallRole = null; callPartnerSocketId = null; callConnectionEstablished = false; callStartTime = null; }
+        function reconnectCall() { if (!currentCallRoomId) { showToast('Нет активного звонка', true); return; } if (peerConnection) { peerConnection.close(); peerConnection = null; } callConnectionEstablished = false; document.getElementById('waitingMessageCall').style.display = 'flex'; if (socket && socket.connected) { socket.emit('request-reconnect', { roomId: currentCallRoomId, role: currentCallRole }); } else { if (socket) socket.connect(); socket.once('connect', () => { socket.emit('join-call-room', currentCallRoomId, currentUser.id, currentCallRole); }); } }
+        function updateRemoteVideoMode(isScreen) { const remoteVideoElem = document.getElementById('remoteVideo'); if (!remoteVideoElem) return; if (isScreen) remoteVideoElem.classList.add('screen-mode'); else remoteVideoElem.classList.remove('screen-mode'); }
+        function updateLocalVideoMode(isScreen) { const localVideo = document.getElementById('localVideo'); if (!localVideo) return; if (isScreen) localVideo.classList.add('screen-mode'); else localVideo.classList.remove('screen-mode'); }
+        function minimizeCall() { if (!isCallActive) return; document.getElementById('callContainer').style.display = 'none'; document.getElementById('floatingCall').style.display = 'flex'; const micEnabled = localStream?.getAudioTracks()[0]?.enabled ?? true; const camEnabled = localStream?.getVideoTracks()[0]?.enabled ?? true; const floatingMicBtn = document.getElementById('floatingMicCallBtn'); const floatingCamBtn = document.getElementById('floatingCamCallBtn'); if (floatingMicBtn) { floatingMicBtn.innerHTML = micEnabled ? '<i class="fas fa-microphone"></i>' : '<i class="fas fa-microphone-slash"></i>'; floatingMicBtn.classList.toggle('muted', !micEnabled); } if (floatingCamBtn) { floatingCamBtn.innerHTML = camEnabled ? '<i class="fas fa-video"></i>' : '<i class="fas fa-video-slash"></i>'; floatingCamBtn.classList.toggle('muted', !camEnabled); } }
+        function restoreCall() { document.getElementById('callContainer').style.display = 'flex'; document.getElementById('floatingCall').style.display = 'none'; }
+        function showEmergencyContacts() { const emergencyNumbers = []; if (currentUser && currentUser.emergencyContacts) { emergencyNumbers.push(...currentUser.emergencyContacts); } const defaultSOS = [ { name: 'Кризисная линия доверия', phone: '8-800-2000-122' }, { name: 'Скорая помощь', phone: '103' } ]; const allNumbers = emergencyNumbers.concat(defaultSOS); let listHtml = ''; allNumbers.forEach(c => { listHtml += `<div style="margin-bottom:10px;"><strong>${escapeHtml(c.name)}</strong><br><a href="tel:${c.phone}" style="color:var(--green);font-size:16px;">${c.phone}</a></div>`; }); const modalId = 'sosModal_' + Date.now(); const html = `<div class="modal" id="${modalId}"><div class="modal-content"><div class="modal-handle"></div><h3>⚠️ Экстренная помощь</h3><div style="margin-bottom:20px;">Если вам нужна немедленная поддержка, свяжитесь по этим номерам:</div>${listHtml}<div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('${modalId}')">Закрыть</button></div></div></div>`; document.body.insertAdjacentHTML('beforeend', html); setTimeout(() => document.getElementById(modalId).classList.add('active'), 10); }
+        function showCallTools() { if (currentUser.role !== 'psychologist') { showToast('Только для психологов', true); return; } const modalId = 'callToolsModal_' + Date.now(); const html = `<div class="modal" id="${modalId}"><div class="modal-content"><div class="modal-handle"></div><h3>Инструменты сессии</h3><button class="btn-sm btn-outline" style="width:100%; margin-bottom:12px;" onclick="openClientCardInCall(); closeModal('${modalId}');"><i class="fas fa-user"></i> Карта клиента</button><button class="btn-sm btn-outline" style="width:100%; margin-bottom:12px;" onclick="addHomeworkToClientInCall(); closeModal('${modalId}');"><i class="fas fa-tasks"></i> Домашнее задание</button><button class="btn-sm" style="width:100%;" onclick="scheduleNextSessionInCall(); closeModal('${modalId}');"><i class="fas fa-calendar-plus"></i> Запись на следующий сеанс</button><div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('${modalId}')">Закрыть</button></div></div></div>`; document.body.insertAdjacentHTML('beforeend', html); setTimeout(() => document.getElementById(modalId).classList.add('active'), 10); }
+        async function openClientCardInCall() { if (!currentClientIdInCall) { showToast('Клиент не определён', true); return; } const data = await fetchJSON(`/api/client-card/${currentClientIdInCall}?psychologistId=${currentUser.id}`); if (!data.success) { showToast('Не удалось загрузить карту клиента', true); return; } const { client, profile, notes, homeworks, progress } = data; let emergencyHtml = ''; if (profile && profile.emergency_phone) { try { const contacts = JSON.parse(profile.emergency_phone); emergencyHtml = contacts.map(c => `${escapeHtml(c.name)}: ${escapeHtml(c.phone)}`).join(', '); } catch(e) { emergencyHtml = profile.emergency_phone; } } const modalId = 'clientCardModal_' + Date.now(); const html = `<div class="modal" id="${modalId}"><div class="modal-content" style="max-width: 500px; max-height: 80vh; overflow-y: auto;"><div class="modal-handle"></div><h3>Карта клиента: ${escapeHtml(client.fullName)}</h3><div><strong>Телефон:</strong> ${escapeHtml(client.phone || '—')}</div><div><strong>Дата рождения:</strong> ${profile?.birth_date || '—'}</div><div><strong>Пол:</strong> ${profile?.gender || '—'}</div><div><strong>Экстренные контакты:</strong> ${emergencyHtml || '—'}</div><div><strong>Жалобы:</strong> ${escapeHtml(profile?.complaints || '—')}</div><div><strong>Цели:</strong> ${escapeHtml(profile?.goals || '—')}</div><hr><h4>Домашние задания</h4><div id="clientHomeworksList_${modalId}">${homeworks.map(h => `<div class="task-item" data-id="${h.id}"><input type="checkbox" class="homework-cb-card" data-id="${h.id}" ${h.status === 'done' ? 'checked' : ''}><span>${escapeHtml(h.text)} ${h.due_date ? `(до ${h.due_date})` : ''}</span></div>`).join('')}</div><h4>Заметки психолога</h4><div id="clientNotesList_${modalId}">${notes.map(n => `<div><strong>${new Date(n.created_at).toLocaleString()}</strong><br>${escapeHtml(n.note)}</div>`).join('') || 'Нет заметок'}</div><h4>Прогресс</h4><div id="clientProgressList_${modalId}">${progress.map(p => `<div>${p.date}: ${p.value}/10 (${p.type === 'psychologist' ? 'оценка психолога' : 'самооценка'})${p.notes ? ` — ${escapeHtml(p.notes)}` : ''}</div>`).join('') || 'Нет данных'}</div><div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('${modalId}')">Закрыть</button></div></div></div>`; document.body.insertAdjacentHTML('beforeend', html); setTimeout(() => document.getElementById(modalId).classList.add('active'), 10); setTimeout(() => { document.querySelectorAll(`#clientHomeworksList_${modalId} .homework-cb-card`).forEach(cb => { cb.onchange = async () => { const status = cb.checked ? 'done' : 'pending'; await fetchJSON(`/api/homeworks/${cb.dataset.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) }); showToast(cb.checked ? 'Задание отмечено выполненным' : 'Статус обновлён'); }; }); }, 100); }
+        async function addHomeworkToClientInCall() { if (!currentClientIdInCall) { showToast('Клиент не определён', true); return; } const modalId = 'hwModal_' + Date.now(); const html = `<div class="modal" id="${modalId}"><div class="modal-content"><div class="modal-handle"></div><h3>Домашнее задание</h3><textarea id="hwText_${modalId}" rows="3" placeholder="Текст задания..." style="width:100%; margin-bottom:12px;"></textarea><label>Срок выполнения (необязательно)</label><input type="date" id="hwDueDate_${modalId}" style="width:100%; margin:12px 0;"><div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('${modalId}')">Отмена</button><button class="btn-primary" onclick="submitHomeworkWithDate('${modalId}')">Сохранить</button></div></div></div>`; document.body.insertAdjacentHTML('beforeend', html); setTimeout(() => document.getElementById(modalId).classList.add('active'), 10); }
+        async function submitHomeworkWithDate(modalId) { const text = document.getElementById(`hwText_${modalId}`).value.trim(); const dueDate = document.getElementById(`hwDueDate_${modalId}`).value; if (!text) { showToast('Введите текст задания', true); return; } const data = await fetchJSON('/api/homeworks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ psychologistId: currentUser.id, clientId: currentClientIdInCall, text, dueDate: dueDate || null }) }); if (data.success) { showToast('Домашнее задание добавлено'); closeModal(modalId); } else showToast('Ошибка', true); }
+        async function scheduleNextSessionInCall() { if (!currentClientIdInCall) { showToast('Клиент не определён', true); return; } const scheduleRes = await fetchJSON(`/api/schedule/${currentUser.id}`); const schedule = scheduleRes.schedule || {}; const dates = Object.keys(schedule).sort(); if (dates.length === 0) { showToast('Нет свободного времени в расписании', true); return; } let slotsHtml = ''; for (const d of dates) { slotsHtml += `<div style="margin-bottom:12px;"><div style="font-size:12px;color:var(--text-muted);margin-bottom:6px;">${d}</div><div style="display:flex;flex-wrap:wrap;gap:6px;">`; for (const t of schedule[d]) slotsHtml += `<button class="time-slot" data-date="${d}" data-time="${t}">${t}</button>`; slotsHtml += `</div></div>`; } const modalId = 'nextSessionModal_' + Date.now(); const html = `<div class="modal" id="${modalId}"><div class="modal-content"><div class="modal-handle"></div><h3>Запись на следующий сеанс</h3><div id="slotsNext_${modalId}" style="max-height:300px;overflow-y:auto;">${slotsHtml}</div><div id="selSlotNext_${modalId}" style="margin-top:10px;font-size:13px;color:var(--green);min-height:20px;"></div><div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('${modalId}')">Отмена</button><button class="btn-primary" id="confirmNextBtn_${modalId}" disabled onclick="window._confirmNextSession_${modalId}('${currentClientIdInCall}')">Записать</button></div></div></div>`; document.body.insertAdjacentHTML('beforeend', html); const modal = document.getElementById(modalId); setTimeout(() => modal.classList.add('active'), 10); let selectedDate = null, selectedTime = null; modal.querySelectorAll(`#slotsNext_${modalId} .time-slot`).forEach(b => { b.onclick = () => { modal.querySelectorAll(`#slotsNext_${modalId} .time-slot`).forEach(bb => bb.classList.remove('selected')); b.classList.add('selected'); modal.querySelector(`#selSlotNext_${modalId}`).textContent = `✅ Выбрано: ${b.dataset.date} в ${b.dataset.time}`; document.getElementById(`confirmNextBtn_${modalId}`).disabled = false; selectedDate = b.dataset.date; selectedTime = b.dataset.time; }; }); window[`_confirmNextSession_${modalId}`] = async (clientId) => { if (!selectedDate || !selectedTime) { showToast('Выберите время', true); return; } const data = await fetchJSON('/api/appointment', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ clientId, psychologistId: currentUser.id, date: selectedDate, time: selectedTime }) }); if (data.success) { showToast('Запись создана, ожидает подтверждения'); closeModal(modalId); } else showToast(data.error || 'Ошибка', true); }; }
+        async function startCallInWindow(roomId, role, clientId = null) { if (isCallActive) { showToast('Звонок уже активен. Сначала завершите его.', true); return; } currentCallRoomId = roomId; currentCallRole = role; currentClientIdInCall = clientId; isCallActive = true; document.getElementById('callContainer').style.display = 'flex'; document.getElementById('floatingCall').style.display = 'none'; callPartnerSocketId = null; callConnectionEstablished = false; document.getElementById('waitingMessageCall').style.display = 'flex'; const remoteWrapper = document.querySelector('.remote-video-wrapper'); const localWrapper = document.querySelector('.local-video-wrapper'); if (remoteWrapper) { remoteWrapper.classList.add('big'); remoteWrapper.classList.remove('small'); } if (localWrapper) { localWrapper.classList.add('small'); localWrapper.classList.remove('big'); } await startLocalStreamCall(); if (!socket) initSocket(); if (socket) { socket.emit('join-call-room', roomId, currentUser.id, role); socket.off('room-joined'); socket.off('call-ready'); socket.off('offer'); socket.off('answer'); socket.off('ice-candidate'); socket.off('call-message'); socket.off('screen-share-started'); socket.off('screen-share-stopped'); socket.off('call-ended'); socket.off('partner-disconnected'); socket.on('room-joined', () => { document.getElementById('waitingMessageCall').style.display = 'flex'; callConnectionEstablished = false; }); socket.on('call-ready', async (data) => { callPartnerSocketId = data.partnerId; document.getElementById('waitingMessageCall').style.display = 'none'; if (localStream) await initWebRTCCall(role === 'psychologist'); else { const iv = setInterval(async () => { if (localStream) { clearInterval(iv); await initWebRTCCall(role === 'psychologist'); } }, 200); } }); socket.on('offer', async (data) => { callPartnerSocketId = data.from; if (!peerConnection) await createPeerConnectionCall(); await peerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp)); const answer = await peerConnection.createAnswer(); await peerConnection.setLocalDescription(answer); socket.emit('answer', { target: callPartnerSocketId, sdp: answer }); }); socket.on('answer', async (data) => { if (peerConnection) await peerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp)); }); socket.on('ice-candidate', async (data) => { if (peerConnection) { try { await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate)); } catch(e) {} } }); socket.on('call-message', (data) => addCallChatMessage(data.text, false, data.time)); socket.on('screen-share-started', () => { remoteScreenMode = true; updateRemoteVideoMode(true); }); socket.on('screen-share-stopped', () => { remoteScreenMode = false; updateRemoteVideoMode(false); }); socket.on('call-ended', () => { showToast('Сессия завершена'); endCall(); }); socket.on('partner-disconnected', () => { showToast('Собеседник отключился', true); document.getElementById('waitingMessageCall').style.display = 'flex'; callConnectionEstablished = false; }); socket.on('request-reconnect', async () => { console.log('Получен запрос на переподключение'); if (peerConnection) { peerConnection.close(); peerConnection = null; } callConnectionEstablished = false; document.getElementById('waitingMessageCall').style.display = 'flex'; if (localStream && callPartnerSocketId) { await initWebRTCCall(currentCallRole === 'psychologist'); } }); } document.getElementById('toggleMicCall').onclick = () => { if (localStream) { const t = localStream.getAudioTracks()[0]; if (t) { t.enabled = !t.enabled; document.getElementById('toggleMicCall').classList.toggle('muted'); document.getElementById('toggleMicCall').innerHTML = t.enabled ? '<i class="fas fa-microphone"></i>' : '<i class="fas fa-microphone-slash"></i>'; const fmic = document.getElementById('floatingMicCallBtn'); if (fmic) { fmic.innerHTML = t.enabled ? '<i class="fas fa-microphone"></i>' : '<i class="fas fa-microphone-slash"></i>'; fmic.classList.toggle('muted', !t.enabled); } } } }; document.getElementById('toggleCamCall').onclick = () => { if (localStream) { const t = localStream.getVideoTracks()[0]; if (t) { t.enabled = !t.enabled; document.getElementById('toggleCamCall').classList.toggle('muted'); document.getElementById('toggleCamCall').innerHTML = t.enabled ? '<i class="fas fa-video"></i>' : '<i class="fas fa-video-slash"></i>'; const fcam = document.getElementById('floatingCamCallBtn'); if (fcam) { fcam.innerHTML = t.enabled ? '<i class="fas fa-video"></i>' : '<i class="fas fa-video-slash"></i>'; fcam.classList.toggle('muted', !t.enabled); } } } }; document.getElementById('shareScreenCallBtn').onclick = toggleScreenShareCall; document.getElementById('recordCallBtn').onclick = toggleCallRecording; document.getElementById('reconnectCallBtn').onclick = reconnectCall; document.getElementById('endCallBtnMain').onclick = endCall; document.getElementById('chatToggleCallBtn').onclick = () => document.getElementById('chatPanelCall').classList.toggle('open'); document.getElementById('closeChatCallBtn').onclick = () => document.getElementById('chatPanelCall').classList.remove('open'); document.getElementById('sendChatCallBtn').onclick = sendCallChatMessage; document.getElementById('chatInputCall').onkeypress = (e) => { if (e.key === 'Enter') sendCallChatMessage(); }; document.getElementById('minimizeCallBtn').onclick = minimizeCall; document.getElementById('restoreCallBtn').onclick = restoreCall; document.getElementById('floatingMicCallBtn').onclick = () => { if (localStream) { const t = localStream.getAudioTracks()[0]; if (t) { t.enabled = !t.enabled; const mainMic = document.getElementById('toggleMicCall'); if (mainMic) { mainMic.classList.toggle('muted', !t.enabled); mainMic.innerHTML = t.enabled ? '<i class="fas fa-microphone"></i>' : '<i class="fas fa-microphone-slash"></i>'; } document.getElementById('floatingMicCallBtn').innerHTML = t.enabled ? '<i class="fas fa-microphone"></i>' : '<i class="fas fa-microphone-slash"></i>'; document.getElementById('floatingMicCallBtn').classList.toggle('muted', !t.enabled); } } }; document.getElementById('floatingCamCallBtn').onclick = () => { if (localStream) { const t = localStream.getVideoTracks()[0]; if (t) { t.enabled = !t.enabled; const mainCam = document.getElementById('toggleCamCall'); if (mainCam) { mainCam.classList.toggle('muted', !t.enabled); mainCam.innerHTML = t.enabled ? '<i class="fas fa-video"></i>' : '<i class="fas fa-video-slash"></i>'; } document.getElementById('floatingCamCallBtn').innerHTML = t.enabled ? '<i class="fas fa-video"></i>' : '<i class="fas fa-video-slash"></i>'; document.getElementById('floatingCamCallBtn').classList.toggle('muted', !t.enabled); } } }; document.getElementById('floatingEndCallBtn').onclick = endCall; document.getElementById('sosCallBtn').onclick = () => { showEmergencyContacts(); }; document.getElementById('toolsCallBtn').onclick = () => { showCallTools(); }; document.getElementById('goHomeCallBtn').onclick = () => { window.open('/', '_blank'); }; const menuBtn = document.getElementById('menuCallBtn'); const extraMenu = document.getElementById('extraMenuCall'); if (menuBtn && extraMenu) { menuBtn.onclick = (e) => { e.stopPropagation(); extraMenu.style.display = extraMenu.style.display === 'flex' ? 'none' : 'flex'; }; document.addEventListener('click', (e) => { if (!menuBtn.contains(e.target) && !extraMenu.contains(e.target)) extraMenu.style.display = 'none'; }); } if (!navigator.mediaDevices?.getDisplayMedia) document.getElementById('shareScreenCallBtn').style.display = 'none'; updateRemoteVideoMode(false); function swapVideoRoles() { if (!remoteWrapper || !localWrapper) return; const isLocalBig = localWrapper.classList.contains('big'); if (!isLocalBig) { localWrapper.classList.remove('small'); localWrapper.classList.add('big'); remoteWrapper.classList.remove('big'); remoteWrapper.classList.add('small'); } else { localWrapper.classList.remove('big'); localWrapper.classList.add('small'); remoteWrapper.classList.remove('small'); remoteWrapper.classList.add('big'); } updateLocalVideoMode(isScreenSharing); } if (localWrapper) localWrapper.onclick = swapVideoRoles; }
         
         // ======================= НАВИГАЦИЯ =======================
-        function switchTab(tab, forceRefresh = false) {
-            currentTab = tab;
-            document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
-            const act = document.querySelector(`.nav-item[data-tab="${tab}"]`);
-            if (act) act.classList.add('active');
-            if (tab === 'feed') renderFeed(forceRefresh);
-            else if (tab === 'psychologists') renderPsychologistsList(forceRefresh);
-            else if (tab === 'chats') { refreshUser().then(() => renderChats(forceRefresh)); }
-            else if (tab === 'notifications') renderNotifications(forceRefresh);
-            else if (tab === 'questionnaires') renderQuestionnaires(forceRefresh);
-            else if (tab === 'profile') renderProfile(forceRefresh);
-        }
+        function switchTab(tab, forceRefresh = false) { currentTab = tab; document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active')); const act = document.querySelector(`.nav-item[data-tab="${tab}"]`); if (act) act.classList.add('active'); if (tab === 'feed') renderFeed(forceRefresh); else if (tab === 'psychologists') renderPsychologistsList(forceRefresh); else if (tab === 'chats') { refreshUser().then(() => renderChats(forceRefresh)); } else if (tab === 'notifications') renderNotifications(forceRefresh); else if (tab === 'questionnaires') renderQuestionnaires(forceRefresh); else if (tab === 'profile') renderProfile(forceRefresh); }
         
         // ======================= ВИДЕО НАБЛЮДАТЕЛЬ =======================
-        function initVideoObservers() {
-            if (videoObserver) videoObserver.disconnect();
-            const videos = document.querySelectorAll('.post-video');
-            if (videos.length === 0) return;
-            videoObserver = new IntersectionObserver((entries) => {
-                entries.forEach(entry => {
-                    const video = entry.target;
-                    if (entry.isIntersecting) {
-                        video.play().catch(e => console.log('Автовоспроизведение заблокировано', e));
-                    } else {
-                        video.pause();
-                        video.currentTime = 0;
-                    }
-                });
-            }, { threshold: 0.5 });
-            videos.forEach(video => videoObserver.observe(video));
-        }
+        function initVideoObservers() { if (videoObserver) videoObserver.disconnect(); const videos = document.querySelectorAll('.post-video'); if (videos.length === 0) return; videoObserver = new IntersectionObserver((entries) => { entries.forEach(entry => { const video = entry.target; if (entry.isIntersecting) { video.play().catch(e => console.log('Автовоспроизведение заблокировано', e)); } else { video.pause(); video.currentTime = 0; } }); }, { threshold: 0.5 }); videos.forEach(video => videoObserver.observe(video)); }
         
         // ======================= ЗАПРОС УВЕДОМЛЕНИЙ =======================
-        function requestNotificationPermission() {
-            if ('Notification' in window && Notification.permission !== 'granted' && Notification.permission !== 'denied') {
-                Notification.requestPermission();
-            }
-        }
+        function requestNotificationPermission() { if ('Notification' in window && Notification.permission !== 'granted' && Notification.permission !== 'denied') { Notification.requestPermission(); } }
         
-        function makeDraggable(element) {
-            let startX, startY, startLeft, startTop, isDragging = false;
-            const header = element.querySelector('.floating-header');
-            if (!header) return;
-            const onStart = (e) => {
-                if (e.target.closest('.floating-controls button') || e.target.closest('#restoreCallBtn')) return;
-                e.preventDefault();
-                const touch = e.touches ? e.touches[0] : e;
-                startX = touch.clientX;
-                startY = touch.clientY;
-                const rect = element.getBoundingClientRect();
-                startLeft = rect.left;
-                startTop = rect.top;
-                isDragging = true;
-                element.classList.add('dragging');
-            };
-            const onMove = (e) => {
-                if (!isDragging) return;
-                const touch = e.touches ? e.touches[0] : e;
-                const dx = touch.clientX - startX;
-                const dy = touch.clientY - startY;
-                let newLeft = startLeft + dx;
-                let newTop = startTop + dy;
-                newLeft = Math.min(window.innerWidth - element.offsetWidth, Math.max(0, newLeft));
-                newTop = Math.min(window.innerHeight - element.offsetHeight, Math.max(0, newTop));
-                element.style.left = newLeft + 'px';
-                element.style.top = newTop + 'px';
-                element.style.right = 'auto';
-                element.style.bottom = 'auto';
-            };
-            const onEnd = () => { isDragging = false; element.classList.remove('dragging'); };
-            header.addEventListener('mousedown', onStart);
-            window.addEventListener('mousemove', onMove);
-            window.addEventListener('mouseup', onEnd);
-            header.addEventListener('touchstart', onStart);
-            window.addEventListener('touchmove', onMove);
-            window.addEventListener('touchend', onEnd);
-        }
+        function makeDraggable(element) { let startX, startY, startLeft, startTop, isDragging = false; const header = element.querySelector('.floating-header'); if (!header) return; const onStart = (e) => { if (e.target.closest('.floating-controls button') || e.target.closest('#restoreCallBtn')) return; e.preventDefault(); const touch = e.touches ? e.touches[0] : e; startX = touch.clientX; startY = touch.clientY; const rect = element.getBoundingClientRect(); startLeft = rect.left; startTop = rect.top; isDragging = true; element.classList.add('dragging'); }; const onMove = (e) => { if (!isDragging) return; const touch = e.touches ? e.touches[0] : e; const dx = touch.clientX - startX; const dy = touch.clientY - startY; let newLeft = startLeft + dx; let newTop = startTop + dy; newLeft = Math.min(window.innerWidth - element.offsetWidth, Math.max(0, newLeft)); newTop = Math.min(window.innerHeight - element.offsetHeight, Math.max(0, newTop)); element.style.left = newLeft + 'px'; element.style.top = newTop + 'px'; element.style.right = 'auto'; element.style.bottom = 'auto'; }; const onEnd = () => { isDragging = false; element.classList.remove('dragging'); }; header.addEventListener('mousedown', onStart); window.addEventListener('mousemove', onMove); window.addEventListener('mouseup', onEnd); header.addEventListener('touchstart', onStart); window.addEventListener('touchmove', onMove); window.addEventListener('touchend', onEnd); }
         
-        function showAllReviews(reviews, psychologistName) {
-            const modalId = 'allReviewsModal_' + Date.now();
-            const html = `<div class="modal" id="${modalId}"><div class="modal-content" style="max-height: 70vh;"><div class="modal-handle"></div><h3>Все отзывы о ${escapeHtml(psychologistName)}</h3><div style="max-height: 60vh; overflow-y: auto; padding-right: 8px;">${reviews.map(r => `<div class="review-card glass-card" style="margin-bottom:12px;"><div class="review-header"><span class="review-name">${escapeHtml(r.clientName)}</span>${renderStars(r.rating)}</div><div class="review-text">${escapeHtml(r.text)}</div><div class="review-time">${new Date(r.createdAt).toLocaleString()}</div></div>`).join('')}</div><div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('${modalId}')">Закрыть</button></div></div></div>`;
-            document.body.insertAdjacentHTML('beforeend', html);
-            setTimeout(() => document.getElementById(modalId).classList.add('active'), 10);
-        }
+        function showAllReviews(reviews, psychologistName) { const modalId = 'allReviewsModal_' + Date.now(); const html = `<div class="modal" id="${modalId}"><div class="modal-content" style="max-height: 70vh;"><div class="modal-handle"></div><h3>Все отзывы о ${escapeHtml(psychologistName)}</h3><div style="max-height: 60vh; overflow-y: auto; padding-right: 8px;">${reviews.map(r => `<div class="review-card glass-card" style="margin-bottom:12px;"><div class="review-header"><span class="review-name">${escapeHtml(r.clientName)}</span>${renderStars(r.rating)}</div><div class="review-text">${escapeHtml(r.text)}</div><div class="review-time">${new Date(r.createdAt).toLocaleString()}</div></div>`).join('')}</div><div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('${modalId}')">Закрыть</button></div></div></div>`; document.body.insertAdjacentHTML('beforeend', html); setTimeout(() => document.getElementById(modalId).classList.add('active'), 10); }
         
-        function openReviewModalWithAppointment(psychologistId, psychologistName, appointmentId) {
-            let rating = 0;
-            const modalId = 'reviewModal_' + Date.now();
-            const html = `<div class="modal" id="${modalId}"><div class="modal-content"><div class="modal-handle"></div><h3>Отзыв о ${escapeHtml(psychologistName)}</h3><div id="starsContainer" style="display:flex;gap:6px;margin-bottom:18px;justify-content:center;">${[1,2,3,4,5].map(s => `<i class="far fa-star" data-r="${s}" style="font-size:32px;cursor:pointer;color:#f5c518;"></i>`).join('')}</div><textarea id="reviewText" rows="3" placeholder="Расскажите о своём опыте..."></textarea><div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('${modalId}')">Отмена</button><button class="btn-primary" onclick="submitReviewWithAppointment('${modalId}', '${psychologistId}', '${appointmentId}')">Отправить</button></div></div></div>`;
-            document.body.insertAdjacentHTML('beforeend', html);
-            const modal = document.getElementById(modalId);
-            setTimeout(() => modal.classList.add('active'), 10);
-            const stars = modal.querySelectorAll('#starsContainer i');
-            stars.forEach(s => {
-                s.onmouseenter = () => {
-                    stars.forEach((ss, i) => ss.className = i < parseInt(s.dataset.r) ? 'fas fa-star' : 'far fa-star');
-                };
-                s.onmouseleave = () => {
-                    stars.forEach((ss, i) => ss.className = i < rating ? 'fas fa-star' : 'far fa-star');
-                };
-                s.onclick = () => {
-                    rating = parseInt(s.dataset.r);
-                    stars.forEach((ss, i) => ss.className = i < rating ? 'fas fa-star' : 'far fa-star');
-                };
-            });
-            window[`_submitReview_${modalId}`] = async () => {
-                const text = document.getElementById('reviewText').value;
-                if (!rating) { showToast('Выберите рейтинг', true); return; }
-                const res = await authFetch('/api/reviews', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ psychologistId, clientId: currentUser.id, rating, text, appointmentId })
-                });
-                const data = await res.json();
-                if (data.success) {
-                    showToast('Отзыв отправлен!');
-                    closeModal(modalId);
-                    viewPsychologistPage(psychologistId);
-                } else {
-                    showToast(data.error || 'Ошибка', true);
-                }
-            };
-        }
-        
-        async function submitReviewWithAppointment(modalId, psychologistId, appointmentId) {
-            await window[`_submitReview_${modalId}`]();
-        }
-        
-        function editReviewModal(reviewId, currentRating, currentText) {
-            let rating = currentRating;
-            const modalId = 'editReviewModal_' + Date.now();
-            const html = `<div class="modal" id="${modalId}"><div class="modal-content"><div class="modal-handle"></div><h3>Редактировать отзыв</h3><div id="starsContainer" style="display:flex;gap:6px;margin-bottom:18px;justify-content:center;">${[1,2,3,4,5].map(s => `<i class="${s <= currentRating ? 'fas' : 'far'} fa-star" data-r="${s}" style="font-size:32px;cursor:pointer;color:#f5c518;"></i>`).join('')}</div><textarea id="reviewText" rows="3">${escapeHtml(currentText)}</textarea><div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('${modalId}')">Отмена</button><button class="btn-primary" onclick="updateReview('${modalId}', '${reviewId}')">Сохранить</button></div></div></div>`;
-            document.body.insertAdjacentHTML('beforeend', html);
-            const modal = document.getElementById(modalId);
-            setTimeout(() => modal.classList.add('active'), 10);
-            const stars = modal.querySelectorAll('#starsContainer i');
-            stars.forEach(s => {
-                s.onmouseenter = () => {
-                    stars.forEach((ss, i) => ss.className = i < parseInt(s.dataset.r) ? 'fas fa-star' : 'far fa-star');
-                };
-                s.onmouseleave = () => {
-                    stars.forEach((ss, i) => ss.className = i < rating ? 'fas fa-star' : 'far fa-star');
-                };
-                s.onclick = () => {
-                    rating = parseInt(s.dataset.r);
-                    stars.forEach((ss, i) => ss.className = i < rating ? 'fas fa-star' : 'far fa-star');
-                };
-            });
-        }
-        
-        async function updateReview(modalId, reviewId) {
-            const modal = document.getElementById(modalId);
-            const rating = modal.querySelectorAll('#starsContainer i.fas').length;
-            const text = modal.querySelector('#reviewText').value;
-            try {
-                const res = await authFetch(`/api/reviews/${reviewId}`, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ userId: currentUser.id, rating, text })
-                });
-                const data = await res.json();
-                if (data.success) {
-                    showToast('Отзыв обновлён');
-                    closeModal(modalId);
-                    const psychId = window.currentPsychId || (new URLSearchParams(window.location.search).get('id'));
-                    if (psychId) viewPsychologistPage(psychId);
-                    else location.reload();
-                } else {
-                    showToast(data.error || 'Ошибка при обновлении', true);
-                }
-            } catch (err) {
-                console.error('Update review fetch error:', err);
-                showToast('Ошибка соединения', true);
-            }
-        }
-        
-        async function deleteReview(reviewId) {
-            if (!confirm('Удалить отзыв?')) return;
-            const res = await authFetch(`/api/reviews/${reviewId}`, {
-                method: 'DELETE',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ userId: currentUser.id })
-            });
-            const data = await res.json();
-            if (data.success) {
-                showToast('Отзыв удалён');
-                const psychId = window.currentPsychId || (new URLSearchParams(window.location.search).get('id'));
-                if (psychId) viewPsychologistPage(psychId);
-                else location.reload();
-            } else {
-                showToast('Ошибка', true);
-            }
-        }
+        function openReviewModalWithAppointment(psychologistId, psychologistName, appointmentId) { let rating = 0; const modalId = 'reviewModal_' + Date.now(); const html = `<div class="modal" id="${modalId}"><div class="modal-content"><div class="modal-handle"></div><h3>Отзыв о ${escapeHtml(psychologistName)}</h3><div id="starsContainer" style="display:flex;gap:6px;margin-bottom:18px;justify-content:center;">${[1,2,3,4,5].map(s => `<i class="far fa-star" data-r="${s}" style="font-size:32px;cursor:pointer;color:#f5c518;"></i>`).join('')}</div><textarea id="reviewText" rows="3" placeholder="Расскажите о своём опыте..."></textarea><div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('${modalId}')">Отмена</button><button class="btn-primary" onclick="submitReviewWithAppointment('${modalId}', '${psychologistId}', '${appointmentId}')">Отправить</button></div></div></div>`; document.body.insertAdjacentHTML('beforeend', html); const modal = document.getElementById(modalId); setTimeout(() => modal.classList.add('active'), 10); const stars = modal.querySelectorAll('#starsContainer i'); stars.forEach(s => { s.onmouseenter = () => { stars.forEach((ss, i) => ss.className = i < parseInt(s.dataset.r) ? 'fas fa-star' : 'far fa-star'); }; s.onmouseleave = () => { stars.forEach((ss, i) => ss.className = i < rating ? 'fas fa-star' : 'far fa-star'); }; s.onclick = () => { rating = parseInt(s.dataset.r); stars.forEach((ss, i) => ss.className = i < rating ? 'fas fa-star' : 'far fa-star'); }; }); window[`_submitReview_${modalId}`] = async () => { const text = document.getElementById('reviewText').value; if (!rating) { showToast('Выберите рейтинг', true); return; } const data = await fetchJSON('/api/reviews', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ psychologistId, clientId: currentUser.id, rating, text, appointmentId }) }); if (data.success) { showToast('Отзыв отправлен!'); closeModal(modalId); viewPsychologistPage(psychologistId); } else { showToast(data.error || 'Ошибка', true); } }; }
+        async function submitReviewWithAppointment(modalId, psychologistId, appointmentId) { await window[`_submitReview_${modalId}`](); }
+        function editReviewModal(reviewId, currentRating, currentText) { let rating = currentRating; const modalId = 'editReviewModal_' + Date.now(); const html = `<div class="modal" id="${modalId}"><div class="modal-content"><div class="modal-handle"></div><h3>Редактировать отзыв</h3><div id="starsContainer" style="display:flex;gap:6px;margin-bottom:18px;justify-content:center;">${[1,2,3,4,5].map(s => `<i class="${s <= currentRating ? 'fas' : 'far'} fa-star" data-r="${s}" style="font-size:32px;cursor:pointer;color:#f5c518;"></i>`).join('')}</div><textarea id="reviewText" rows="3">${escapeHtml(currentText)}</textarea><div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('${modalId}')">Отмена</button><button class="btn-primary" onclick="updateReview('${modalId}', '${reviewId}')">Сохранить</button></div></div></div>`; document.body.insertAdjacentHTML('beforeend', html); const modal = document.getElementById(modalId); setTimeout(() => modal.classList.add('active'), 10); const stars = modal.querySelectorAll('#starsContainer i'); stars.forEach(s => { s.onmouseenter = () => { stars.forEach((ss, i) => ss.className = i < parseInt(s.dataset.r) ? 'fas fa-star' : 'far fa-star'); }; s.onmouseleave = () => { stars.forEach((ss, i) => ss.className = i < rating ? 'fas fa-star' : 'far fa-star'); }; s.onclick = () => { rating = parseInt(s.dataset.r); stars.forEach((ss, i) => ss.className = i < rating ? 'fas fa-star' : 'far fa-star'); }; }); }
+        async function updateReview(modalId, reviewId) { const modal = document.getElementById(modalId); const rating = modal.querySelectorAll('#starsContainer i.fas').length; const text = modal.querySelector('#reviewText').value; try { const data = await fetchJSON(`/api/reviews/${reviewId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: currentUser.id, rating, text }) }); if (data.success) { showToast('Отзыв обновлён'); closeModal(modalId); const psychId = window.currentPsychId || (new URLSearchParams(window.location.search).get('id')); if (psychId) viewPsychologistPage(psychId); else location.reload(); } else { showToast(data.error || 'Ошибка при обновлении', true); } } catch (err) { console.error('Update review fetch error:', err); showToast('Ошибка соединения', true); } }
+        async function deleteReview(reviewId) { if (!confirm('Удалить отзыв?')) return; const data = await fetchJSON(`/api/reviews/${reviewId}`, { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: currentUser.id }) }); if (data.success) { showToast('Отзыв удалён'); const psychId = window.currentPsychId || (new URLSearchParams(window.location.search).get('id')); if (psychId) viewPsychologistPage(psychId); else location.reload(); } else { showToast('Ошибка', true); } }
         
         // ======================= ИНИЦИАЛИЗАЦИЯ =======================
         async function init() {
