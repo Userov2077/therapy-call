@@ -840,7 +840,7 @@
                 const complaints = document.getElementById('profileComplaints').value;
                 const goals = document.getElementById('profileGoals').value;
                 
-                const res = await fetch('/api/client-profile', {
+                const res = await authFetch('/api/client-profile', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -2441,7 +2441,13 @@
             if (currentTab === 'chats') { const chatItems = document.querySelectorAll('.chat-contact'); for (const item of chatItems) { if (item.getAttribute('data-contact-id') === userId) { const badge = item.querySelector('.unread-badge'); if (badge) badge.remove(); break; } } }
             document.getElementById('mainContent').innerHTML = `<div class="chat-page"><div class="chat-messages-container"><div class="chat-messages-header"><button class="back-btn" onclick="renderChats()"><i class="fas fa-arrow-left"></i></button><img src="" id="chatPartnerAvatar" style="width:36px;height:36px;border-radius:50%;object-fit:cover;border:2px solid var(--green-border);" onerror="this.style.display='none'"><div style="flex:1"><div style="font-weight:600;font-size:15px;">${escapeHtml(userName)}</div></div></div><div class="chat-messages-list" id="chatMessagesList"></div><div class="chat-input-area"><div class="chat-controls"><button id="attachImageBtn" title="Фото"><i class="fas fa-image"></i></button><button id="voiceRecordBtn" title="Голосовое"><i class="fas fa-microphone"></i></button></div><input type="file" id="imageInput" accept="image/*" style="display:none"><input type="text" id="chatMessageInput" placeholder="Сообщение..."><button class="send-btn-chat" id="sendMsgBtn"><i class="fas fa-paper-plane"></i></button></div></div></div>`;
             await new Promise(resolve => setTimeout(resolve, 10));
-            fetch(`/api/user/${userId}`).then(r => r.json()).then(d => { const av = document.getElementById('chatPartnerAvatar'); if (av && d.success) av.src = d.user.avatar; }).catch(console.error);
+            authFetch(`/api/user/${userId}`)
+            .then(r => r.json())
+            .then(d => {
+                const av = document.getElementById('chatPartnerAvatar');
+                if (av && d.success) av.src = d.user.avatar;
+            })
+            .catch(console.error);
             await loadChatMessages();
             scrollToBottom();
             const sendBtn = document.getElementById('sendMsgBtn');
