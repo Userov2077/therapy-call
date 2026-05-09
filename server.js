@@ -1552,51 +1552,54 @@ io.on('connection', (socket) => {
         if (socket.userId) socket.join(socket.userId);
         console.log(`User ${socket.userId} registered`);
     });
-    socket.on('join-call-room', (roomId, userId, userType) => {
+    socket.on('join-call-room', async (roomId, userId, userType) => {
+    try {
         const aptRes = await pool.query(
-        `SELECT psychologist_id, client_id FROM appointments WHERE room_id = $1`,
-        [roomId]
-    );
-    if (aptRes.rows.length === 0) {
-        socket.emit('error', 'Неверная комната');
-        return;
+            `SELECT psychologist_id, client_id FROM appointments WHERE room_id = $1`,
+            [roomId]
+        );
+        if (aptRes.rows.length === 0) {
+            socket.emit('error', 'Неверная комната');
+            return;
+        }
+        const apt = aptRes.rows[0];
+        const isPsych = (userType === 'psychologist' && apt.psychologist_id === userId);
+        const isClient = (userType === 'client' && apt.client_id === userId);
+        if (!isPsych && !isClient) {
+            socket.emit('error', 'У вас нет прав для этого звонка');
+            return;
+        }
+        // --- далее ваш существующий код без изменений ---
+        if (!activeRooms.has(roomId)) activeRooms.set(roomId, { psychologist: null, client: null, users: new Map() });
+        const room = activeRooms.get(roomId);
+        if (userType === 'psychologist' && room.psychologist && room.psychologist !== socket.id) {
+            io.to(room.psychologist).emit('partner-disconnected');
+            const old = io.sockets.sockets.get(room.psychologist);
+            if (old) old.leave(roomId);
+            room.users.delete(room.psychologist);
+        } else if (userType === 'client' && room.client && room.client !== socket.id) {
+            io.to(room.client).emit('partner-disconnected');
+            const old = io.sockets.sockets.get(room.client);
+            if (old) old.leave(roomId);
+            room.users.delete(room.client);
+        }
+        room.users.set(socket.id, { userId, userType });
+        if (userType === 'psychologist') room.psychologist = socket.id;
+        else room.client = socket.id;
+        socket.join(roomId);
+        socket.roomId = roomId;
+        socket.userId = userId;
+        socket.userType = userType;
+        socket.emit('room-joined');
+        if (room.psychologist && room.client) {
+            io.to(room.psychologist).emit('call-ready', { partnerId: room.client });
+            io.to(room.client).emit('call-ready', { partnerId: room.psychologist });
+        }
+    } catch (err) {
+        console.error('join-call-room error:', err);
+        socket.emit('error', 'Ошибка сервера');
     }
-    const apt = aptRes.rows[0];
-    const isPsych = (userType === 'psychologist' && apt.psychologist_id === userId);
-    const isClient = (userType === 'client' && apt.client_id === userId);
-    if (!isPsych && !isClient) {
-        socket.emit('error', 'У вас нет прав для этого звонка');
-        return;
-    }
-
-        try {
-            if (!activeRooms.has(roomId)) activeRooms.set(roomId, { psychologist: null, client: null, users: new Map() });
-            const room = activeRooms.get(roomId);
-            if (userType === 'psychologist' && room.psychologist && room.psychologist !== socket.id) {
-                io.to(room.psychologist).emit('partner-disconnected');
-                const old = io.sockets.sockets.get(room.psychologist);
-                if (old) old.leave(roomId);
-                room.users.delete(room.psychologist);
-            } else if (userType === 'client' && room.client && room.client !== socket.id) {
-                io.to(room.client).emit('partner-disconnected');
-                const old = io.sockets.sockets.get(room.client);
-                if (old) old.leave(roomId);
-                room.users.delete(room.client);
-            }
-            room.users.set(socket.id, { userId, userType });
-            if (userType === 'psychologist') room.psychologist = socket.id;
-            else room.client = socket.id;
-            socket.join(roomId);
-            socket.roomId = roomId;
-            socket.userId = userId;
-            socket.userType = userType;
-            socket.emit('room-joined');
-            if (room.psychologist && room.client) {
-                io.to(room.psychologist).emit('call-ready', { partnerId: room.client });
-                io.to(room.client).emit('call-ready', { partnerId: room.psychologist });
-            }
-        } catch (err) { console.error('join-call-room error:', err); }
-    });
+});
     socket.on('call-message', (msgData) => {
         const room = activeRooms.get(socket.roomId);
         if (room) {
