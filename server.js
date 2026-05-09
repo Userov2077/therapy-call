@@ -1676,30 +1676,49 @@ io.on('connection', (socket) => {
 });
 
 // ========== ЗАПУСК ==========
+// ========== ЗДОРОВЬЕ ==========
+app.get('/health', (req, res) => res.status(200).send('OK'));
 
-app.get('/health', (req, res) => res.status(200).send('OK'));   // этот маршрут должен быть ПЕРВЫМ среди этих трёх
-
-// Обработчик 404 – перехватывает все запросы, которые не подошли ни к одному маршруту
+// ========== ОБРАБОТЧИК 404 (должен быть ПОСЛЕ всех маршрутов) ==========
 app.use((req, res) => {
     res.status(404).json({ success: false, error: 'Маршрут не найден' });
 });
 
-// Глобальный обработчик ошибок
+// ========== ГЛОБАЛЬНЫЙ ОБРАБОТЧИК ОШИБОК ==========
 app.use((err, req, res, next) => {
     console.error('Global error:', err.stack);
     res.status(err.status || 500).json({ success: false, error: err.message || 'Внутренняя ошибка сервера' });
 });
 
+// ========== ЗАПУСК СЕРВЕРА ==========
 const PORT = process.env.PORT || 3000;
+
 async function startServer() {
-    await initDatabase();
-    setInterval(async () => {
-        console.log('Running daily rating recalculation...');
-        const psychologistsRes = await pool.query('SELECT id FROM users WHERE role = $1', ['psychologist']);
-        for (const row of psychologistsRes.rows) { await recalcPsychologistRating(row.id); }
-        console.log('Daily rating recalculation finished.');
-    }, 24 * 60 * 60 * 1000);
-    
-    server.listen(PORT, '0.0.0.0', () => console.log(`✅ Сервер запущен на порту ${PORT}`));
+    try {
+        await initDatabase();
+        console.log('✅ База данных инициализирована');
+
+        // Периодический пересчёт рейтинга (раз в сутки)
+        setInterval(async () => {
+            console.log('Running daily rating recalculation...');
+            try {
+                const psychologistsRes = await pool.query('SELECT id FROM users WHERE role = $1', ['psychologist']);
+                for (const row of psychologistsRes.rows) {
+                    await recalcPsychologistRating(row.id);
+                }
+                console.log('Daily rating recalculation finished.');
+            } catch (err) {
+                console.error('Error during rating recalculation:', err);
+            }
+        }, 24 * 60 * 60 * 1000);
+
+        server.listen(PORT, '0.0.0.0', () => {
+            console.log(`✅ Сервер запущен на порту ${PORT}`);
+        });
+    } catch (err) {
+        console.error('Failed to start server:', err);
+        process.exit(1);
+    }
 }
-startServer().catch(console.error);
+
+startServer();
