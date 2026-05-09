@@ -665,30 +665,28 @@
         }
 
         async function toggleSubscription(psychologistId) {
-            if (!currentUser) { showToast('Войдите в аккаунт', true); return; }
-            const res = await fetchJSON('/api/subscriptions', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ followerId: currentUser.id, followingId: psychologistId })
-            });
-            const data = await res.json();
-            if (data.success) {
-                if (!currentUser.following) currentUser.following = [];
-                if (data.subscribed) {
-                    if (!currentUser.following.includes(psychologistId)) currentUser.following.push(psychologistId);
-                } else {
-                    currentUser.following = currentUser.following.filter(id => id !== psychologistId);
-                }
-                const btn = document.getElementById(`subsBtn${psychologistId}`);
-                if (btn) btn.textContent = data.subscribed ? 'Отписаться' : 'Подписаться';
-                showToast(data.subscribed ? 'Вы подписались' : 'Вы отписались');
-                if (currentTab === 'psychologists') viewPsychologistPage(psychologistId);
-                else if (currentTab === 'profile') renderProfile();
-            } else {
-                showToast('Ошибка', true);
-            }
+    if (!currentUser) { showToast('Войдите в аккаунт', true); return; }
+    const data = await fetchJSON('/api/subscriptions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ followerId: currentUser.id, followingId: psychologistId })
+    });
+    if (data.success) {
+        if (!currentUser.following) currentUser.following = [];
+        if (data.subscribed) {
+            if (!currentUser.following.includes(psychologistId)) currentUser.following.push(psychologistId);
+        } else {
+            currentUser.following = currentUser.following.filter(id => id !== psychologistId);
         }
-
+        const btn = document.getElementById(`subsBtn${psychologistId}`);
+        if (btn) btn.textContent = data.subscribed ? 'Отписаться' : 'Подписаться';
+        showToast(data.subscribed ? 'Вы подписались' : 'Вы отписались');
+        if (currentTab === 'psychologists') viewPsychologistPage(psychologistId);
+        else if (currentTab === 'profile') renderProfile();
+    } else {
+        showToast('Ошибка', true);
+    }
+}
         // ======================= АВТОРИЗАЦИЯ =======================
         function openLoginModal() {
             const modalId = 'loginM';
