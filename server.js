@@ -39,15 +39,41 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.use(helmet());
 
 // Rate limiting
-// Лимит запросов для API (защита от brute-force)
+// Лимит запросов для API (защита от brute-force) – привязываем к userId, а не к IP
 const apiLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 минут
-    max: 100, // максимум 100 запросов с одного IP
+    max: 150, // чуть увеличим до 150, чтобы не мешать нормальной работе
     message: { success: false, error: 'Слишком много запросов, попробуйте позже' },
-    // Отключаем проверку заголовка X-Forwarded-For (мы уже настроили trust proxy)
-    validate: { xForwardedForHeader: false }
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: (req) => {
+        // 1) Если авторизован – используем userId
+        if (req.user && req.user.userId) {
+            return `user:${req.user.userId}`;
+        }
+        // 2) Если есть токен в заголовке – пробуем извлечь userId
+        const authHeader = req.headers['authorization'];
+        if (authHeader) {
+            const token = authHeader.split(' ')[1];
+            if (token) {
+                try {
+                    const decoded = jwt.verify(token, JWT_SECRET);
+                    if (decoded && decoded.userId) {
+                        return `user:${decoded.userId}`;
+                    }
+                } catch (e) {
+                    // невалидный токен – игнорируем
+                }
+            }
+        }
+        // 3) Для неавторизованных – IP (но таких запросов будет меньше)
+        return req.ip || req.socket.remoteAddress;
+    },
+    skip: (req) => {
+        // Пропускаем health-проверки
+        return req.path === '/health';
+    }
 });
-
 app.use('/api/', apiLimiter);
 
 // Более строгий лимит для логина/регистрации
@@ -1510,27 +1536,37 @@ app.post('/api/client-profile', authenticateToken, requireClient, async (req, re
         if (req.user.userId !== userId) {
             return res.status(403).json({ success: false, error: 'Нет прав' });
         }
-        const user = await getUser(userId);
-        if (!user || user.role !== 'client') return res.json({ success: false, error: 'Доступ запрещён' });
-        await pool.query(`
-            INSERT INTO client_profiles (user_id, birth_date, gender, emergency_phone, complaints, goals, updated_at)
-            VALUES ($1, $2, $3, $4, $5, $6, NOW())
-            ON CONFLICT (user_id) DO UPDATE SET
+        // Проверяем, что пользователь существует и является клиентом
+        const userExists = await pool.query('SELECT 1 FROM users WHERE id=$1 AND role=$2', [userId, 'client']);
+        if (userExists.rows.length === 0) {
+            return res.status(404).json({ success: false, error: 'Клиент не найден' });
+        }
+        const emergencyPhoneJson = JSON.stringify(emergencyContacts || []);
+        await pool.query(
+            `INSERT INTO client_profiles (user_id, birth_date, gender, emergency_phone, complaints, goals, updated_at)
+             VALUES ($1, $2, $3, $4, $5, $6, NOW())
+             ON CONFLICT (user_id) DO UPDATE SET
                 birth_date = EXCLUDED.birth_date,
                 gender = EXCLUDED.gender,
                 emergency_phone = EXCLUDED.emergency_phone,
                 complaints = EXCLUDED.complaints,
                 goals = EXCLUDED.goals,
-                updated_at = NOW()
-        `, [userId, birthDate || null, gender || null, JSON.stringify(emergencyContacts || []), complaints || '', goals || '']);
-        user.emergencyContacts = emergencyContacts || [];
-        await updateUser(user);
+                updated_at = NOW()`,
+            [userId, birthDate || null, gender || null, emergencyPhoneJson, complaints || '', goals || '']
+        );
+        // Также обновляем emergency_contacts в таблице users для совместимости (если используется)
+        await pool.query('UPDATE users SET emergency_contacts = $1 WHERE id = $2', [emergencyPhoneJson, userId]);
         res.json({ success: true });
-    } catch (err) { console.error('Save client profile error:', err); res.json({ success: false, error: err.message }); }
+    } catch (err) {
+        console.error('Save client profile error:', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
 });
 
 // ========== WEBRTC / SOCKET.IO ==========
 const activeRooms = new Map();
+// Маппинг userId -> socket.id (для роутинга WebRTC сигналов)
+const userSockets = new Map();
 
 io.use((socket, next) => {
     const token = socket.handshake.query.token;
@@ -1547,11 +1583,14 @@ io.use((socket, next) => {
 io.on('connection', (socket) => {
     console.log('🔌 WebSocket connected:', socket.id);
     socket.on('register_user', (userId) => {
-        // можно проверить, что userId === socket.user.userId
-        socket.userId = userId || socket.user.userId;
-        if (socket.userId) socket.join(socket.userId);
-        console.log(`User ${socket.userId} registered`);
-    });
+    socket.userId = userId || socket.user.userId;
+    if (socket.userId) {
+        // Сохраняем маппинг
+        userSockets.set(socket.userId, socket.id);
+        socket.join(socket.userId);
+    }
+    console.log(`User ${socket.userId} registered with socket ${socket.id}`);
+});
     socket.on('join-call-room', async (roomId, userId, userType) => {
     try {
         const aptRes = await pool.query(
@@ -1592,8 +1631,12 @@ io.on('connection', (socket) => {
         socket.userType = userType;
         socket.emit('room-joined');
         if (room.psychologist && room.client) {
-            io.to(room.psychologist).emit('call-ready', { partnerId: room.client });
-            io.to(room.client).emit('call-ready', { partnerId: room.psychologist });
+            if (room.psychologist && room.client) {
+    const partnerPsychId = room.users.get(room.psychologist)?.userId;
+    const partnerClientId = room.users.get(room.client)?.userId;
+    io.to(room.psychologist).emit('call-ready', { partnerId: room.client, partnerUserId: partnerClientId });
+    io.to(room.client).emit('call-ready', { partnerId: room.psychologist, partnerUserId: partnerPsychId });
+}
         }
     } catch (err) {
         console.error('join-call-room error:', err);
@@ -1609,9 +1652,31 @@ io.on('connection', (socket) => {
     });
     socket.on('screen-share-started', ({ roomId }) => { socket.to(roomId).emit('screen-share-started'); });
     socket.on('screen-share-stopped', ({ roomId }) => { socket.to(roomId).emit('screen-share-stopped'); });
-    socket.on('offer', (data) => { socket.to(data.target).emit('offer', { sdp: data.sdp, from: socket.id }); });
-    socket.on('answer', (data) => { socket.to(data.target).emit('answer', { sdp: data.sdp, from: socket.id }); });
-    socket.on('ice-candidate', (data) => { socket.to(data.target).emit('ice-candidate', { candidate: data.candidate, from: socket.id }); });
+    socket.on('offer', async (data) => {
+    const { targetUserId, sdp } = data;
+    const targetSocketId = userSockets.get(targetUserId);
+    if (targetSocketId) {
+        io.to(targetSocketId).emit('offer', { sdp, fromUserId: socket.userId });
+    } else {
+        console.warn(`Offer: target user ${targetUserId} not connected`);
+    }
+});
+
+socket.on('answer', (data) => {
+    const { targetUserId, sdp } = data;
+    const targetSocketId = userSockets.get(targetUserId);
+    if (targetSocketId) {
+        io.to(targetSocketId).emit('answer', { sdp, fromUserId: socket.userId });
+    }
+});
+
+socket.on('ice-candidate', (data) => {
+    const { targetUserId, candidate } = data;
+    const targetSocketId = userSockets.get(targetUserId);
+    if (targetSocketId) {
+        io.to(targetSocketId).emit('ice-candidate', { candidate, fromUserId: socket.userId });
+    }
+});
     socket.on('end-call', async () => {
         if (socket.roomId) {
             socket.to(socket.roomId).emit('call-ended');
@@ -1656,6 +1721,9 @@ io.on('connection', (socket) => {
         }
     });
     socket.on('disconnect', (reason) => {
+        if (socket.userId) {
+            userSockets.delete(socket.userId);
+        }
         console.log('WebSocket disconnected:', socket.id, 'reason:', reason);
         if (socket.roomId) {
             socket.to(socket.roomId).emit('partner-disconnected');
