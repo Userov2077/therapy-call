@@ -133,11 +133,13 @@ function authenticateToken(req, res, next) {
     if (!token) {
         return res.status(401).json({ success: false, error: 'Требуется авторизация' });
     }
-    jwt.verify(token, JWT_SECRET, (err, user) => {
-        if (err) return res.status(403).json({ success: false, error: 'Недействительный токен' });
+    try {
+        const user = jwt.verify(token, JWT_SECRET);
         req.user = user;
         next();
-    });
+    } catch (err) {
+        return res.status(403).json({ success: false, error: 'Недействительный токен' });
+    }
 }
 
 function requirePsychologist(req, res, next) {
@@ -621,7 +623,7 @@ app.post('/api/appointment', authenticateToken, async (req, res) => {
             return res.json({ success: false, error: 'Это время уже занято или не входит в расписание' });
         }
         const slotId = slotRes.rows[0].id;
-        const roomId = nanoid(8).toUpperCase();
+        const roomId = nanoid(16).toUpperCase();
         const appointmentId = nanoid(12);
         await client.query(`UPDATE time_slots SET status='pending', appointment_id=$1 WHERE id=$2`, [appointmentId, slotId]);
         await client.query(`INSERT INTO appointments (id, psychologist_id, client_id, psychologist_name, client_name, date, time, room_id, status, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`, [appointmentId, psychologistId, clientId, psychologist.fullName, clientUser.fullName, date, time, roomId, 'pending', new Date().toISOString()]);
@@ -792,7 +794,8 @@ app.get('/api/posts', authenticateToken, async (req, res) => {
     try {
         const limit = Math.min(parseInt(req.query.limit) || 15, 50);
         const offset = parseInt(req.query.offset) || 0;
-        const userId = req.user.userId; // текущий аутентифицированный пользователь
+        const userId = req.user.userId;
+
         const postsRes = await pool.query(
             `SELECT p.id, p.text, p.image, p.video, p.created_at,
                     u.id AS author_id, u.full_name AS author_name, u.avatar AS author_avatar, u.rating AS author_rating,
@@ -805,6 +808,7 @@ app.get('/api/posts', authenticateToken, async (req, res) => {
              LIMIT $1 OFFSET $2`,
             [limit, offset]
         );
+
         const postIds = postsRes.rows.map(p => p.id);
         let commentsCountMap = {};
         let userLikedSet = new Set();
@@ -816,6 +820,7 @@ app.get('/api/posts', authenticateToken, async (req, res) => {
                 likedRes.rows.forEach(r => userLikedSet.add(r.post_id));
             }
         }
+
         const posts = postsRes.rows.map(p => ({
             id: p.id,
             text: p.text,
@@ -828,8 +833,12 @@ app.get('/api/posts', authenticateToken, async (req, res) => {
             comments: [],
             userLiked: userLikedSet.has(p.id)
         }));
+
         res.json({ success: true, posts, hasMore: postsRes.rows.length === limit });
-    } catch (err) { console.error('Get posts error:', err); res.json({ success: false }); }
+    } catch (err) {
+        console.error('Posts error:', err);
+        res.status(500).json({ success: false, error: 'Ошибка загрузки постов' });
+    }
 });
 app.get('/api/posts/:id/comments', authenticateToken, async (req, res) => {
     try {
@@ -1544,6 +1553,22 @@ io.on('connection', (socket) => {
         console.log(`User ${socket.userId} registered`);
     });
     socket.on('join-call-room', (roomId, userId, userType) => {
+        const aptRes = await pool.query(
+        `SELECT psychologist_id, client_id FROM appointments WHERE room_id = $1`,
+        [roomId]
+    );
+    if (aptRes.rows.length === 0) {
+        socket.emit('error', 'Неверная комната');
+        return;
+    }
+    const apt = aptRes.rows[0];
+    const isPsych = (userType === 'psychologist' && apt.psychologist_id === userId);
+    const isClient = (userType === 'client' && apt.client_id === userId);
+    if (!isPsych && !isClient) {
+        socket.emit('error', 'У вас нет прав для этого звонка');
+        return;
+    }
+
         try {
             if (!activeRooms.has(roomId)) activeRooms.set(roomId, { psychologist: null, client: null, users: new Map() });
             const room = activeRooms.get(roomId);
@@ -1651,7 +1676,20 @@ io.on('connection', (socket) => {
 });
 
 // ========== ЗАПУСК ==========
-app.get('/health', (req, res) => res.status(200).send('OK'));
+
+app.get('/health', (req, res) => res.status(200).send('OK'));   // этот маршрут должен быть ПЕРВЫМ среди этих трёх
+
+// Обработчик 404 – перехватывает все запросы, которые не подошли ни к одному маршруту
+app.use((req, res) => {
+    res.status(404).json({ success: false, error: 'Маршрут не найден' });
+});
+
+// Глобальный обработчик ошибок
+app.use((err, req, res, next) => {
+    console.error('Global error:', err.stack);
+    res.status(err.status || 500).json({ success: false, error: err.message || 'Внутренняя ошибка сервера' });
+});
+
 const PORT = process.env.PORT || 3000;
 async function startServer() {
     await initDatabase();
@@ -1661,6 +1699,7 @@ async function startServer() {
         for (const row of psychologistsRes.rows) { await recalcPsychologistRating(row.id); }
         console.log('Daily rating recalculation finished.');
     }, 24 * 60 * 60 * 1000);
+    
     server.listen(PORT, '0.0.0.0', () => console.log(`✅ Сервер запущен на порту ${PORT}`));
 }
 startServer().catch(console.error);
