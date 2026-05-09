@@ -16,6 +16,7 @@ const helmet = require('helmet');
 require('dotenv').config();
 
 const app = express();
+app.set('trust proxy', true);
 const server = http.createServer(app);
 const io = socketIo(server, {
     cors: { origin: "*", methods: ["GET", "POST"], credentials: true },
@@ -38,17 +39,23 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.use(helmet());
 
 // Rate limiting
+// Лимит запросов для API (защита от brute-force)
 const apiLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000,
-    max: 100,
-    message: { success: false, error: 'Слишком много запросов, попробуйте позже' }
+    windowMs: 15 * 60 * 1000, // 15 минут
+    max: 100, // максимум 100 запросов с одного IP
+    message: { success: false, error: 'Слишком много запросов, попробуйте позже' },
+    // Отключаем проверку заголовка X-Forwarded-For (мы уже настроили trust proxy)
+    validate: { xForwardedForHeader: false }
 });
+
 app.use('/api/', apiLimiter);
 
+// Более строгий лимит для логина/регистрации
 const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
     max: 5,
-    skipSuccessfulRequests: true
+    skipSuccessfulRequests: true,
+    validate: { xForwardedForHeader: false }
 });
 app.use('/api/login', authLimiter);
 app.use('/api/register', authLimiter);
