@@ -2989,7 +2989,8 @@
     setTimeout(() => document.getElementById(modalId).classList.add('active'), 10);
 }
         function showCallTools() { if (currentUser.role !== 'psychologist') { showToast('Только для психологов', true); return; } const modalId = 'callToolsModal_' + Date.now(); const html = `<div class="modal" id="${modalId}"><div class="modal-content"><div class="modal-handle"></div><h3>Инструменты сессии</h3><button class="btn-sm btn-outline" style="width:100%; margin-bottom:12px;" onclick="openClientCardInCall(); closeModal('${modalId}');"><i class="fas fa-user"></i> Карта клиента</button><button class="btn-sm btn-outline" style="width:100%; margin-bottom:12px;" onclick="addHomeworkToClientInCall(); closeModal('${modalId}');"><i class="fas fa-tasks"></i> Домашнее задание</button><button class="btn-sm" style="width:100%;" onclick="scheduleNextSessionInCall(); closeModal('${modalId}');"><i class="fas fa-calendar-plus"></i> Запись на следующий сеанс</button><div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('${modalId}')">Закрыть</button></div></div></div>`; document.body.insertAdjacentHTML('beforeend', html); setTimeout(() => document.getElementById(modalId).classList.add('active'), 10); }
-        async function openClientCardInCall() {
+        // 1. ОБНОВЛЕННАЯ ФУНКЦИЯ КАРТЫ КЛИЕНТА
+async function openClientCardInCall() {
     if (!currentClientIdInCall) {
         showToast('Клиент не определён', true);
         return;
@@ -3001,24 +3002,23 @@
     }
     const { client, profile, notes, homeworks, progress } = data;
 
-    // Формируем строку экстренных контактов
     let emergencyHtml = '—';
     if (profile && profile.emergency_phone) {
         try {
             const contacts = JSON.parse(profile.emergency_phone);
             emergencyHtml = contacts.map(c => `${escapeHtml(c.name)}: ${escapeHtml(c.phone)}`).join(', ');
-        } catch(e) {
-            emergencyHtml = profile.emergency_phone;
-        }
+        } catch(e) { emergencyHtml = profile.emergency_phone; }
     }
 
-    // Чиним дату рождения: отрезаем "T00:00:00.000Z"
     let birthDateDisplay = '—';
     if (profile && profile.birth_date) {
         birthDateDisplay = profile.birth_date.split('T')[0];
     }
 
-    const modalId = 'clientCardModal_' + Date.now();
+    // Сохраняем ID модалки в глобальную переменную, чтобы потом её можно было перезагрузить
+    window.currentClientCardModalId = 'clientCardModal_' + Date.now();
+    const modalId = window.currentClientCardModalId;
+
     const html = `
         <div class="modal" id="${modalId}">
             <div class="modal-content" style="max-width: 500px; max-height: 80vh; overflow-y: auto; overflow-x: hidden;">
@@ -3029,7 +3029,6 @@
                 <div class="info-row" style="align-items: flex-start;"><i class="fas fa-calendar-alt" style="margin-top: 3px;"></i> <div style="flex:1; word-break: break-word;"><strong>Дата рождения:</strong> ${birthDateDisplay}</div></div>
                 <div class="info-row" style="align-items: flex-start;"><i class="fas fa-venus-mars" style="margin-top: 3px;"></i> <div style="flex:1; word-break: break-word;"><strong>Пол:</strong> ${profile?.gender || '—'}</div></div>
                 <div class="info-row" style="align-items: flex-start;"><i class="fas fa-exclamation-triangle" style="margin-top: 3px;"></i> <div style="flex:1; word-break: break-word;"><strong>Экстренные контакты:</strong> ${emergencyHtml}</div></div>
-                
                 <div class="info-row" style="align-items: flex-start;"><i class="fas fa-frown" style="margin-top: 3px;"></i> <div style="flex:1; word-break: break-word; white-space: pre-wrap;"><strong>Жалобы:</strong><br>${escapeHtml(profile?.complaints || '—')}</div></div>
                 <div class="info-row" style="align-items: flex-start;"><i class="fas fa-bullseye" style="margin-top: 3px;"></i> <div style="flex:1; word-break: break-word; white-space: pre-wrap;"><strong>Цели:</strong><br>${escapeHtml(profile?.goals || '—')}</div></div>
 
@@ -3048,17 +3047,22 @@
                     `).join('') : '<div class="glass-card" style="padding: 10px; font-size: 13px; color: var(--text-muted);">Нет заданий</div>'}
                 </div>
 
-                <h4 style="margin-bottom: 12px;"><i class="fas fa-sticky-note"></i> Заметки психолога</h4>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                    <h4 style="margin: 0;"><i class="fas fa-sticky-note"></i> Заметки психолога</h4>
+                    <button class="btn-sm btn-outline" style="padding: 4px 10px; font-size: 12px;" onclick="openAddClientNoteModal('${client.id}', '${escapeHtml(client.fullName).replace(/'/g, "\\'")}')"><i class="fas fa-plus"></i></button>
+                </div>
                 <div id="clientNotesList_${modalId}" style="margin-bottom: 16px;">
                     ${notes.length ? notes.map(n => `
                         <div class="glass-card" style="padding: 10px; margin-bottom: 8px; overflow-wrap: break-word; word-break: break-word; white-space: pre-wrap; font-size: 13px; line-height: 1.4;">
-                            <strong style="color: var(--green); font-size: 11px;">${new Date(n.created_at).toLocaleString()}</strong><br>
-                            ${escapeHtml(n.note)}
+                            <strong style="color: var(--green); font-size: 11px;">${new Date(n.created_at).toLocaleString()}</strong><br>${escapeHtml(n.note)}
                         </div>
                     `).join('') : '<div class="glass-card" style="padding: 10px; font-size: 13px; color: var(--text-muted);">Нет заметок</div>'}
                 </div>
 
-                <h4 style="margin-bottom: 12px;"><i class="fas fa-chart-line"></i> Прогресс</h4>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                    <h4 style="margin: 0;"><i class="fas fa-chart-line"></i> Прогресс</h4>
+                    <button class="btn-sm btn-outline" style="padding: 4px 10px; font-size: 12px;" onclick="openAddClientProgressModal('${client.id}')"><i class="fas fa-plus"></i></button>
+                </div>
                 <div id="clientProgressList_${modalId}">
                     ${progress.length ? progress.map(p => `
                         <div class="info-row" style="margin-bottom: 6px; align-items: flex-start;">
@@ -3080,20 +3084,186 @@
     document.body.insertAdjacentHTML('beforeend', html);
     setTimeout(() => document.getElementById(modalId).classList.add('active'), 10);
 
-    // Обработчики для чекбоксов домашних заданий
     setTimeout(() => {
         document.querySelectorAll(`#clientHomeworksList_${modalId} .homework-cb-card`).forEach(cb => {
             cb.onchange = async () => {
                 const status = cb.checked ? 'done' : 'pending';
                 await fetchJSON(`/api/homeworks/${cb.dataset.id}`, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ status })
+                    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status })
                 });
                 showToast(cb.checked ? 'Задание отмечено выполненным' : 'Статус обновлён');
             };
         });
     }, 100);
+}
+
+// 2. ФУНКЦИЯ ОТКРЫТИЯ ОКНА НОВОЙ ЗАМЕТКИ
+function openAddClientNoteModal(clientId, clientName) {
+    const modalId = 'addClientNoteModal_' + Date.now();
+    const html = `
+        <div class="modal" id="${modalId}" style="z-index: 2500;">
+            <div class="modal-content">
+                <div class="modal-handle"></div>
+                <h3>Новая заметка</h3>
+                <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;">Она появится здесь и в вашем основном профиле.</div>
+                <textarea id="clientNoteContent_${modalId}" rows="4" placeholder="Текст заметки..." style="width: 100%; margin-bottom: 12px;"></textarea>
+                <label style="font-size: 12px; color: var(--text-muted); display: block; margin-bottom: 6px;">Прикрепить файл (до 5 МБ):</label>
+                <input type="file" id="clientNoteFile_${modalId}" style="font-size: 12px; margin-bottom: 12px; width: 100%;">
+                <div class="modal-buttons">
+                    <button class="btn-secondary" onclick="closeModal('${modalId}')">Отмена</button>
+                    <button class="btn-primary" id="saveClientNoteBtn_${modalId}" onclick="submitClientNote('${clientId}', '${clientName}', '${modalId}')">Сохранить</button>
+                </div>
+            </div>
+        </div>
+    `;
+    document.body.insertAdjacentHTML('beforeend', html);
+    setTimeout(() => document.getElementById(modalId).classList.add('active'), 10);
+}
+
+// 3. ОТПРАВКА ЗАМЕТКИ В 2 ТАБЛИЦЫ
+async function submitClientNote(clientId, clientName, modalId) {
+    const content = document.getElementById(`clientNoteContent_${modalId}`).value.trim();
+    if (!content) { showToast('Введите текст заметки', true); return; }
+    
+    const btn = document.getElementById(`saveClientNoteBtn_${modalId}`);
+    btn.disabled = true;
+    btn.innerHTML = 'Загрузка...';
+
+    const file = document.getElementById(`clientNoteFile_${modalId}`)?.files[0];
+    let fileUrl = null;
+    let fileType = null;
+
+    if (file) {
+        if (file.size > 5 * 1024 * 1024) { showToast('Файл слишком большой', true); btn.disabled = false; btn.innerHTML = 'Сохранить'; return; }
+        const fd = new FormData(); fd.append('file', file);
+        const r = await authFetch('/api/upload', { method: 'POST', body: fd });
+        const d = await r.json();
+        if (d.success) { 
+            fileUrl = d.fileUrl; 
+            fileType = file.type.startsWith('image/') ? 'image' : 'file'; 
+        } else { 
+            showToast(d.error || 'Ошибка загрузки файла', true); 
+            btn.disabled = false; btn.innerHTML = 'Сохранить'; 
+            return; 
+        }
+    }
+
+    const title = `Клиент: ${clientName}`;
+    
+    // Сохраняем в основной профиль
+    await fetchJSON('/api/notes', { 
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify({ psychologistId: currentUser.id, title, content, attachment: fileUrl, attachmentType: fileType }) 
+    });
+
+    // Сохраняем в карту клиента
+    let cardNoteText = content;
+    if (fileUrl) cardNoteText += `\n\n[Прикреплен файл]: ${fileUrl}`;
+
+    const res = await fetchJSON('/api/client-notes', { 
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify({ psychologistId: currentUser.id, clientId, note: cardNoteText }) 
+    });
+
+    if (res.success) {
+        showToast('Заметка добавлена');
+        closeModal(modalId);
+        closeModal(window.currentClientCardModalId);
+        setTimeout(() => openClientCardInCall(), 350);
+    } else {
+        showToast('Ошибка сохранения', true);
+        btn.disabled = false; btn.innerHTML = 'Сохранить';
+    }
+}
+
+// 4. ФУНКЦИЯ ОТКРЫТИЯ ОКНА ПРОГРЕССА
+function openAddClientProgressModal(clientId) {
+    const modalId = 'addProgressModal_' + Date.now();
+    const html = `
+        <div class="modal" id="${modalId}" style="z-index: 2500;">
+            <div class="modal-content">
+                <div class="modal-handle"></div>
+                <h3>Отметить прогресс</h3>
+                
+                <label style="font-size: 12px; color: var(--text-muted); display: block; margin-bottom: 6px;">Что оцениваем?</label>
+                <select id="scaleType_${modalId}" style="width: 100%; margin-bottom: 12px;" onchange="updateScaleHint('${modalId}')">
+                    <option value="standard">Общее состояние (1-10 баллов)</option>
+                    <option value="beck_dep">Депрессия (Шкала Бека, 0-63)</option>
+                    <option value="beck_anx">Тревога (Шкала Бека, 0-63)</option>
+                </select>
+
+                <label style="font-size: 12px; color: var(--text-muted); display: block; margin-bottom: 6px;">Набранный балл:</label>
+                <input type="number" id="scaleScore_${modalId}" placeholder="Введите балл..." style="width: 100%; margin-bottom: 4px;">
+                <div id="scaleHint_${modalId}" style="font-size: 11px; color: var(--green); margin-bottom: 12px; min-height: 14px;">Введите от 1 до 10</div>
+
+                <label style="font-size: 12px; color: var(--text-muted); display: block; margin-bottom: 6px;">Комментарий / Диагноз:</label>
+                <textarea id="scaleNote_${modalId}" rows="2" placeholder="Например: Улучшился сон..." style="width: 100%; margin-bottom: 12px;"></textarea>
+
+                <div class="modal-buttons">
+                    <button class="btn-secondary" onclick="closeModal('${modalId}')">Отмена</button>
+                    <button class="btn-primary" onclick="submitClientProgress('${clientId}', '${modalId}')">Сохранить</button>
+                </div>
+            </div>
+        </div>
+    `;
+    document.body.insertAdjacentHTML('beforeend', html);
+    setTimeout(() => document.getElementById(modalId).classList.add('active'), 10);
+}
+
+window.updateScaleHint = function(modalId) {
+    const type = document.getElementById(`scaleType_${modalId}`).value;
+    const hint = document.getElementById(`scaleHint_${modalId}`);
+    if (type === 'standard') hint.textContent = 'Введите от 1 до 10 (где 10 - отлично)';
+    else if (type === 'beck_dep') hint.textContent = '0-13 (Норма), 14-19 (Легкая), 20-28 (Умеренная), 29-63 (Тяжелая)';
+    else if (type === 'beck_anx') hint.textContent = '0-7 (Норма), 8-15 (Слабая), 16-25 (Умеренная), 26-63 (Тяжелая)';
+};
+
+// 5. ОТПРАВКА ПРОГРЕССА
+async function submitClientProgress(clientId, modalId) {
+    const type = document.getElementById(`scaleType_${modalId}`).value;
+    const scoreRaw = parseInt(document.getElementById(`scaleScore_${modalId}`).value);
+    const userNote = document.getElementById(`scaleNote_${modalId}`).value.trim();
+
+    if (isNaN(scoreRaw)) { showToast('Введите корректный балл', true); return; }
+
+    let severity10 = 5; 
+    let finalNoteText = '';
+
+    if (type === 'standard') {
+        if (scoreRaw < 1 || scoreRaw > 10) { showToast('Введите от 1 до 10', true); return; }
+        severity10 = scoreRaw;
+        finalNoteText = userNote;
+    } 
+    else if (type === 'beck_dep') {
+        if (scoreRaw < 0 || scoreRaw > 63) { showToast('Балл Бека должен быть от 0 до 63', true); return; }
+        if (scoreRaw <= 13) { severity10 = 9; finalNoteText = `Шкала депрессии Бека: ${scoreRaw} (Норма). `; }
+        else if (scoreRaw <= 19) { severity10 = 6; finalNoteText = `Шкала депрессии Бека: ${scoreRaw} (Легкая депрессия). `; }
+        else if (scoreRaw <= 28) { severity10 = 4; finalNoteText = `Шкала депрессии Бека: ${scoreRaw} (Умеренная депрессия). `; }
+        else { severity10 = 2; finalNoteText = `Шкала депрессии Бека: ${scoreRaw} (Тяжелая депрессия). `; }
+        finalNoteText += userNote;
+    }
+    else if (type === 'beck_anx') {
+        if (scoreRaw < 0 || scoreRaw > 63) { showToast('Балл Бека должен быть от 0 до 63', true); return; }
+        if (scoreRaw <= 7) { severity10 = 9; finalNoteText = `Шкала тревоги Бека: ${scoreRaw} (Норма). `; }
+        else if (scoreRaw <= 15) { severity10 = 6; finalNoteText = `Шкала тревоги Бека: ${scoreRaw} (Слабая тревога). `; }
+        else if (scoreRaw <= 25) { severity10 = 4; finalNoteText = `Шкала тревоги Бека: ${scoreRaw} (Умеренная тревога). `; }
+        else { severity10 = 2; finalNoteText = `Шкала тревоги Бека: ${scoreRaw} (Тяжелая тревога). `; }
+        finalNoteText += userNote;
+    }
+
+    const data = await fetchJSON('/api/client-progress', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ psychologistId: currentUser.id, clientId, value: severity10, type: 'psychologist', notes: finalNoteText.trim() })
+    });
+
+    if (data.success) {
+        showToast('Прогресс зафиксирован');
+        closeModal(modalId);
+        closeModal(window.currentClientCardModalId);
+        setTimeout(() => openClientCardInCall(), 350);
+    } else {
+        showToast('Ошибка сохранения', true);
+    }
 }
         async function addHomeworkToClientInCall() { if (!currentClientIdInCall) { showToast('Клиент не определён', true); return; } const modalId = 'hwModal_' + Date.now(); const html = `<div class="modal" id="${modalId}"><div class="modal-content"><div class="modal-handle"></div><h3>Домашнее задание</h3><textarea id="hwText_${modalId}" rows="3" placeholder="Текст задания..." style="width:100%; margin-bottom:12px;"></textarea><label>Срок выполнения (необязательно)</label><input type="date" id="hwDueDate_${modalId}" style="width:100%; margin:12px 0;"><div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('${modalId}')">Отмена</button><button class="btn-primary" onclick="submitHomeworkWithDate('${modalId}')">Сохранить</button></div></div></div>`; document.body.insertAdjacentHTML('beforeend', html); setTimeout(() => document.getElementById(modalId).classList.add('active'), 10); }
         async function submitHomeworkWithDate(modalId) { const text = document.getElementById(`hwText_${modalId}`).value.trim(); const dueDate = document.getElementById(`hwDueDate_${modalId}`).value; if (!text) { showToast('Введите текст задания', true); return; } const data = await fetchJSON('/api/homeworks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ psychologistId: currentUser.id, clientId: currentClientIdInCall, text, dueDate: dueDate || null }) }); if (data.success) { showToast('Домашнее задание добавлено'); closeModal(modalId); } else showToast('Ошибка', true); }
