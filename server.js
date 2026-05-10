@@ -40,12 +40,15 @@ app.use(helmet());
 
 // Rate limiting
 // Лимит запросов для API (защита от brute-force) – привязываем к userId, а не к IP
+// Rate limiting
+// Лимит запросов для API (защита от brute-force) – привязываем к userId, а не к IP
 const apiLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 минут
     max: 150, // чуть увеличим до 150, чтобы не мешать нормальной работе
     message: { success: false, error: 'Слишком много запросов, попробуйте позже' },
     standardHeaders: true,
     legacyHeaders: false,
+    validate: false, // <-- ОТКЛЮЧАЕМ СТРОГИЕ ПРОВЕРКИ IPV6
     keyGenerator: (req) => {
         // 1) Если авторизован – используем userId
         if (req.user && req.user.userId) {
@@ -66,8 +69,8 @@ const apiLimiter = rateLimit({
                 }
             }
         }
-        // 3) Для неавторизованных – IP (но таких запросов будет меньше)
-        return req.ip || req.socket.remoteAddress;
+        // 3) Для неавторизованных – IP
+        return req.ip || req.socket.remoteAddress || 'anonymous';
     },
     skip: (req) => {
         // Пропускаем health-проверки
@@ -81,7 +84,7 @@ const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
     max: 5,
     skipSuccessfulRequests: true,
-    validate: { xForwardedForHeader: false }
+    validate: false // <-- ОТКЛЮЧАЕМ ПРОВЕРКИ И ЗДЕСЬ ТОЖЕ
 });
 app.use('/api/login', authLimiter);
 app.use('/api/register', authLimiter);
