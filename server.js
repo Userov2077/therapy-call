@@ -30,10 +30,11 @@ app.set('trust proxy', 1);
 const server = http.createServer(app);
 const io = socketIo(server, {
     cors: { origin: "*", methods: ["GET", "POST"], credentials: true },
-    allowUpgrades: true,
+    // ЖЕСТКАЯ НАСТРОЙКА ДЛЯ RAILWAY
+    transports: ['websocket', 'polling'], 
+    allowUpgrades: false, // Отключаем попытки апгрейда, так как клиент сразу бьет по вебсокету
     pingTimeout: 60000,
-    pingInterval: 15000,
-    upgradeTimeout: 30000,
+    pingInterval: 25000,  // Чуть увеличим интервал пинга, чтобы не спамить
     perMessageDeflate: false
 });
 

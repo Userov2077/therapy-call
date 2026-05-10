@@ -1017,10 +1017,13 @@
             if (!token) return;
             socket = io({
                 query: { token },
+                transports: ['websocket'], // <-- Вот главная строка
+                upgrade: false,
                 reconnection: true,
                 reconnectionAttempts: Infinity,
                 reconnectionDelay: 1000,
-                reconnectionDelayMax: 5000
+                reconnectionDelayMax: 5000,
+                timeout: 20000
             });
             socket.on('connect', () => { if (currentUser) socket.emit('register_user', currentUser.id); });
             socket.on('connect_error', (err) => { console.error('Socket connect error:', err.message); showToast('Ошибка соединения с сервером', true); });
