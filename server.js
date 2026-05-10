@@ -1784,7 +1784,10 @@ socket.on('ice-candidate', (data) => {
     });
     socket.on('disconnect', (reason) => {
         if (socket.userId) {
-            userSockets.delete(socket.userId);
+            // Удаляем сокет ТОЛЬКО если он не был перезаписан новым подключением
+            if (userSockets.get(socket.userId) === socket.id) {
+                userSockets.delete(socket.userId);
+            }
         }
         console.log('WebSocket disconnected:', socket.id, 'reason:', reason);
         if (socket.roomId) {

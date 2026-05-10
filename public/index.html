@@ -1025,7 +1025,16 @@
                 reconnectionDelayMax: 5000,
                 timeout: 20000
             });
-            socket.on('connect', () => { if (currentUser) socket.emit('register_user', currentUser.id); });
+            socket.on('connect', () => { 
+                if (currentUser) {
+                    socket.emit('register_user', currentUser.id); 
+                    // Если мы переподключились (вышли из фона), сбрасываем кэш и запрашиваем свежие данные
+                    isChatsCacheValid = false;
+                    refreshUser().then(() => {
+                        if (currentTab === 'chats') renderChats(true);
+                    });
+                }
+            });
             socket.on('connect_error', (err) => { console.error('Socket connect error:', err.message); showToast('Ошибка соединения с сервером', true); });
             
             socket.on('post_created', (newPost) => {
@@ -1168,9 +1177,21 @@
                     const userRes = await fetchJSON(`/api/user/${msg.from}`);
                     const senderName = userRes.success ? userRes.user.fullName : 'Новое сообщение';
                     showFloatingNotification('Новое сообщение', `${senderName}: ${preview}`);
-                    if ('Notification' in window && Notification.permission === 'granted') {
-                        new Notification('Новое сообщение', { body: `${senderName}: ${preview}` });
-                    }
+                    
+                    // БЕЗОПАСНЫЙ ВЫЗОВ УВЕДОМЛЕНИЙ ДЛЯ PWA (Изолируем в отдельный try/catch)
+                    try {
+                        if ('Notification' in window && Notification.permission === 'granted') {
+                            if (navigator.serviceWorker && navigator.serviceWorker.ready) {
+                                navigator.serviceWorker.ready.then(reg => {
+                                    reg.showNotification('Новое сообщение', { body: `${senderName}: ${preview}`, icon: '/icons/icon-512.png' });
+                                }).catch(e => console.log('SW Notification skipped'));
+                            } else {
+                                new Notification('Новое сообщение', { body: `${senderName}: ${preview}` });
+                            }
+                        }
+                    } catch(err) { /* Игнорируем ошибку нативных пушей */ }
+
+                    // ТЕПЕРЬ КОД ДОЙДЕТ СЮДА И ОБНОВИТ НАКЛЕЙКИ
                     if (!currentChatPartner && currentTab === 'chats') {
                         renderChats(true);
                     } else if (!currentChatPartner) {
