@@ -4,9 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
     <title>Therapy Call | Сообщество психологов</title>
-    <link rel="icon" type="image/x-icon" href="/icons/favicon.ico">
+    <link rel="shortcut icon" href="/icons/favicon.ico" type="image/x-icon">
+    <link rel="icon" type="image/png" sizes="32x32" href="/icons/icon-512.png">
+    
     <link rel="apple-touch-icon" href="/icons/icon-512.png">
     <link rel="manifest" href="/manifest.json">
+    
     <meta name="theme-color" content="#050a06">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -52,9 +55,9 @@
 
         /* ------------------- НАВИГАЦИЯ ------------------- */
         .navbar {
-            position: fixed; top: 0; left: 0; right: 0; height: var(--nav-h);
+            position: fixed; top: 0; left: 0; right: 0; height: calc(var(--nav-h) + env(safe-area-inset-top));
             background: rgba(4,10,5,0.78); backdrop-filter: blur(28px) saturate(1.6);
-            z-index: 1000; padding: 0 20px;
+            z-index: 1000; padding: env(safe-area-inset-top) 20px 0;
             border-bottom: 1px solid var(--border);
             display: flex; justify-content: space-between; align-items: center;
         }
@@ -80,7 +83,7 @@
         .nav-item.active i { transform: scale(1.1); }
 
         /* ------------------- БАЗОВЫЕ ЭЛЕМЕНТЫ ------------------- */
-        .main-content { padding-top: calc(var(--nav-h) + 12px); min-height: 100vh; }
+        .main-content { padding-top: calc(var(--nav-h) + env(safe-area-inset-top) + 12px); min-height: 100vh; }
         .container { max-width: 680px; margin: 0 auto; padding: 0 16px; }
         
         .glass-card { background: var(--glass); backdrop-filter: blur(22px) saturate(1.4); border: 1px solid var(--border); border-radius: var(--radius-lg); transition: all 0.28s; }
@@ -398,7 +401,7 @@
 
         /* ------------------- АДАПТИВ ДЛЯ МОБИЛЬНЫХ ------------------- */
         @media (max-width: 768px) {
-            .modal-content { padding: 20px 16px 24px; }
+            .modal-content { padding: calc(20px + env(safe-area-inset-top)) 16px 24px; }
             .btn-sm, .btn-login, .btn-register, .btn-logout { padding: 6px 14px; font-size: 12px; }
             .floating-notif { top: auto; bottom: calc(var(--bottom-h) + 10px); left: 16px; right: 16px; max-width: none; transform: translateY(120%); }
             .floating-notif.show { transform: translateY(0); }
