@@ -407,16 +407,17 @@
             .floating-notif.show { transform: translateY(0); }
             
             /* Жесткая привязка чата к границам экрана */
-            .chat-page { 
-                position: fixed !important;
-                top: calc(var(--nav-h) + 12px) !important;
-                bottom: calc(var(--bottom-h) + env(safe-area-inset-bottom)) !important;
-                left: 0; right: 0;
-                height: auto !important;
-                padding: 0 8px 10px 8px !important;
-                background: #050a06;
-                z-index: 10;
-            }
+        .chat-page { 
+            position: fixed !important;
+            /* ДОБАВИЛИ env(safe-area-inset-top) ЧТОБЫ ОПУСТИТЬ ЧАТ ИЗ-ПОД ЧЕЛКИ */
+            top: calc(var(--nav-h) + env(safe-area-inset-top) + 12px) !important;
+            bottom: calc(var(--bottom-h) + env(safe-area-inset-bottom)) !important;
+            left: 0; right: 0;
+            height: auto !important;
+            padding: 0 8px 10px 8px !important;
+            background: #050a06;
+            z-index: 10;
+        }
             
             .message { max-width: 82%; }
             .apple-day { font-size: 12px; }
@@ -3490,7 +3491,24 @@ async function submitClientProgress(clientId, modalId) {
     document.getElementById('toolsCallBtn').onclick = () => { showCallTools(); }; document.getElementById('goHomeCallBtn').onclick = () => { window.open('/', '_blank'); }; const menuBtn = document.getElementById('menuCallBtn'); const extraMenu = document.getElementById('extraMenuCall'); if (menuBtn && extraMenu) { menuBtn.onclick = (e) => { e.stopPropagation(); extraMenu.style.display = extraMenu.style.display === 'flex' ? 'none' : 'flex'; }; document.addEventListener('click', (e) => { if (!menuBtn.contains(e.target) && !extraMenu.contains(e.target)) extraMenu.style.display = 'none'; }); } if (!navigator.mediaDevices?.getDisplayMedia) document.getElementById('shareScreenCallBtn').style.display = 'none'; updateRemoteVideoMode(false); function swapVideoRoles() { if (!remoteWrapper || !localWrapper) return; const isLocalBig = localWrapper.classList.contains('big'); if (!isLocalBig) { localWrapper.classList.remove('small'); localWrapper.classList.add('big'); remoteWrapper.classList.remove('big'); remoteWrapper.classList.add('small'); } else { localWrapper.classList.remove('big'); localWrapper.classList.add('small'); remoteWrapper.classList.remove('small'); remoteWrapper.classList.add('big'); } updateLocalVideoMode(isScreenSharing); } if (localWrapper) localWrapper.onclick = swapVideoRoles; }
         
         // ======================= НАВИГАЦИЯ =======================
-        function switchTab(tab, forceRefresh = false) { currentTab = tab; document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active')); const act = document.querySelector(`.nav-item[data-tab="${tab}"]`); if (act) act.classList.add('active'); if (tab === 'feed') renderFeed(forceRefresh); else if (tab === 'psychologists') renderPsychologistsList(forceRefresh); else if (tab === 'chats') { refreshUser().then(() => renderChats(forceRefresh)); } else if (tab === 'notifications') renderNotifications(forceRefresh); else if (tab === 'questionnaires') renderQuestionnaires(forceRefresh); else if (tab === 'profile') renderProfile(forceRefresh); }
+        function switchTab(tab, forceRefresh = false) { 
+            currentTab = tab; 
+            
+            // Сбрасываем активного собеседника при уходе со страницы чата!
+            if (tab !== 'chats') {
+                currentChatPartner = null; 
+            }
+            
+            document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active')); 
+            const act = document.querySelector(`.nav-item[data-tab="${tab}"]`); 
+            if (act) act.classList.add('active'); 
+            if (tab === 'feed') renderFeed(forceRefresh); 
+            else if (tab === 'psychologists') renderPsychologistsList(forceRefresh); 
+            else if (tab === 'chats') { refreshUser().then(() => renderChats(forceRefresh)); } 
+            else if (tab === 'notifications') renderNotifications(forceRefresh); 
+            else if (tab === 'questionnaires') renderQuestionnaires(forceRefresh); 
+            else if (tab === 'profile') renderProfile(forceRefresh); 
+        }
         
         // ======================= ВИДЕО НАБЛЮДАТЕЛЬ =======================
         function initVideoObservers() { if (videoObserver) videoObserver.disconnect(); const videos = document.querySelectorAll('.post-video'); if (videos.length === 0) return; videoObserver = new IntersectionObserver((entries) => { entries.forEach(entry => { const video = entry.target; if (entry.isIntersecting) { video.play().catch(e => console.log('Автовоспроизведение заблокировано', e)); } else { video.pause(); video.currentTime = 0; } }); }, { threshold: 0.5 }); videos.forEach(video => videoObserver.observe(video)); }
