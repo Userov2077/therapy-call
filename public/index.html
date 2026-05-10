@@ -1568,196 +1568,201 @@
 
         // ======================= ПРОФИЛЬ =======================
         async function renderProfile(forceRefresh = false) {
-            if (!currentUser) { showToast('Войдите в аккаунт', true); return; }
-            if (!forceRefresh && isProfileCacheValid && cachedProfileHtml) {
-                document.getElementById('mainContent').innerHTML = cachedProfileHtml;
-                attachProfileEventHandlers();
-                return;
-            }
-            const isPsych = currentUser.role === 'psychologist';
-            let myQuestionnaires = [];
-            if (isPsych) {
-                const questRes = await fetchJSON(`/api/questionnaires/psychologist/${currentUser.id}`);
-                if (questRes.success) myQuestionnaires = questRes.questionnaires || [];
-            }
-            let clientHomeworks = [];
-            if (!isPsych && currentUser.role === 'client') {
-                const hwRes = await fetchJSON(`/api/client-homeworks/${currentUser.id}`);
-                if (hwRes.success) clientHomeworks = hwRes.homeworks || [];
-            }
-            document.getElementById('mainContent').innerHTML = `<div class="container"><div class="empty-state"><i class="fas fa-circle-notch fa-spin"></i></div></div>`;
-            const [postsRes, tasksRes, notesRes, subsRes, statsRes] = await Promise.all([
-                fetchJSON(`/api/posts?userId=${currentUser.id}`),
-                isPsych ? fetchJSON(`/api/tasks/${currentUser.id}`) : Promise.resolve({ tasks: [] }),
-                isPsych ? fetchJSON(`/api/notes/${currentUser.id}`) : Promise.resolve({ notes: [] }),
-                fetchJSON(`/api/subscriptions/${currentUser.id}`),
-                isPsych ? fetchJSON(`/api/psychologist/${currentUser.id}/stats`) : Promise.resolve({ success: false })
-            ]);
-            const myPosts = (postsRes.posts || []).filter(p => p.author.id === currentUser.id);
-            const tasks = tasksRes.tasks || [];
-            const notes = notesRes.notes || [];
-            const followersCount = subsRes.followers?.length || 0;
-            const totalLikesOnPosts = statsRes.success ? statsRes.totalLikes : 0;
-            let appointmentsHtml = '';
-            if (!isPsych && currentUser.appointments && currentUser.appointments.length > 0) {
-                appointmentsHtml = `
-                    <div class="profile-sections">
-                        <div class="collapsible-section open" id="sec-client-appointments">
-                            <div class="collapsible-header" onclick="toggleSection(this)">
-                                <div class="collapsible-header-left">
-                                    <div class="collapsible-icon">📅</div>
-                                    <div>
-                                        <div class="collapsible-title">Мои записи</div>
-                                        <div class="collapsible-subtitle" id="clientAppointmentsSubtitle"></div>
-                                    </div>
-                                </div>
-                                <i class="fas fa-chevron-down collapsible-chevron"></i>
-                            </div>
-                            <div class="collapsible-body">
-                                <div style="margin-bottom: 12px; display: flex; gap: 8px; flex-wrap: wrap;">
-                                    <button class="btn-sm btn-outline filter-client-appointments-btn active" data-filter="upcoming">Предстоящие</button>
-                                    <button class="btn-sm btn-outline filter-client-appointments-btn" data-filter="past">Прошедшие</button>
-                                    <button class="btn-sm btn-outline filter-client-appointments-btn" data-filter="pending">Ожидают</button>
-                                </div>
-                                <div id="clientAppointmentsList" style="max-height: 300px; overflow-y: auto; padding-right: 4px;"></div>
+    if (!currentUser) { showToast('Войдите в аккаунт', true); return; }
+    if (!forceRefresh && isProfileCacheValid && cachedProfileHtml) {
+        document.getElementById('mainContent').innerHTML = cachedProfileHtml;
+        attachProfileEventHandlers();
+        return;
+    }
+    const isPsych = currentUser.role === 'psychologist';
+    let myQuestionnaires = [];
+    if (isPsych) {
+        const questRes = await fetchJSON(`/api/questionnaires/psychologist/${currentUser.id}`);
+        if (questRes.success) myQuestionnaires = questRes.questionnaires || [];
+    }
+    let clientHomeworks = [];
+    if (!isPsych && currentUser.role === 'client') {
+        const hwRes = await fetchJSON(`/api/client-homeworks/${currentUser.id}`);
+        if (hwRes.success) clientHomeworks = hwRes.homeworks || [];
+    }
+    document.getElementById('mainContent').innerHTML = `<div class="container"><div class="empty-state"><i class="fas fa-circle-notch fa-spin"></i></div></div>`;
+    const [postsRes, tasksRes, notesRes, subsRes, statsRes] = await Promise.all([
+        fetchJSON(`/api/posts?userId=${currentUser.id}`),
+        isPsych ? fetchJSON(`/api/tasks/${currentUser.id}`) : Promise.resolve({ tasks: [] }),
+        isPsych ? fetchJSON(`/api/notes/${currentUser.id}`) : Promise.resolve({ notes: [] }),
+        fetchJSON(`/api/subscriptions/${currentUser.id}`),
+        isPsych ? fetchJSON(`/api/psychologist/${currentUser.id}/stats`) : Promise.resolve({ success: false })
+    ]);
+    const myPosts = (postsRes.posts || []).filter(p => p.author.id === currentUser.id);
+    const tasks = tasksRes.tasks || [];
+    const notes = notesRes.notes || [];
+    const followersCount = subsRes.followers?.length || 0;
+    const totalLikesOnPosts = statsRes.success ? statsRes.totalLikes : 0;
+    
+    let appointmentsHtml = '';
+    if (!isPsych && currentUser.appointments && currentUser.appointments.length > 0) {
+        appointmentsHtml = `
+            <div class="profile-sections">
+                <div class="collapsible-section open" id="sec-client-appointments">
+                    <div class="collapsible-header" onclick="toggleSection(this)">
+                        <div class="collapsible-header-left">
+                            <div class="collapsible-icon">📅</div>
+                            <div>
+                                <div class="collapsible-title">Мои записи</div>
+                                <div class="collapsible-subtitle" id="clientAppointmentsSubtitle"></div>
                             </div>
                         </div>
+                        <i class="fas fa-chevron-down collapsible-chevron"></i>
                     </div>
-                `;
-            }
-            let homeworksHtml = '';
-            if (!isPsych && clientHomeworks.length > 0) {
-                homeworksHtml = `
-                    <div class="profile-sections">
-                        <div class="collapsible-section open">
-                            <div class="collapsible-header" onclick="toggleSection(this)">
-                                <div class="collapsible-header-left">
-                                    <div class="collapsible-icon">✅</div>
-                                    <div>
-                                        <div class="collapsible-title">Мои задания</div>
-                                        <div class="collapsible-subtitle">от психолога</div>
-                                    </div>
-                                </div>
-                                <i class="fas fa-chevron-down collapsible-chevron"></i>
-                            </div>
-                            <div class="collapsible-body">
-                                <div id="clientHomeworksList">
-                                    ${clientHomeworks.map(hw => `
-                                        <div class="task-item">
-                                            <input type="checkbox" class="homework-cb" data-id="${hw.id}" ${hw.status === 'done' ? 'checked' : ''}>
-                                            <div style="flex:1">
-                                                <div class="${hw.status === 'done' ? 'task-completed' : ''}">${escapeHtml(hw.text)}</div>
-                                                ${hw.due_date ? `<div class="task-due">📅 до ${hw.due_date}</div>` : ''}
-                                            </div>
-                                        </div>
-                                    `).join('')}
-                                </div>
-                            </div>
+                    <div class="collapsible-body">
+                        <div style="margin-bottom: 12px; display: flex; gap: 8px; flex-wrap: wrap;">
+                            <button class="btn-sm btn-outline filter-client-appointments-btn active" data-filter="upcoming">Предстоящие</button>
+                            <button class="btn-sm btn-outline filter-client-appointments-btn" data-filter="past">Прошедшие</button>
+                            <button class="btn-sm btn-outline filter-client-appointments-btn" data-filter="pending">Ожидают</button>
                         </div>
+                        <div id="clientAppointmentsList" style="max-height: 300px; overflow-y: auto; padding-right: 4px;"></div>
                     </div>
-                `;
-            }
-            let psychSections = '';
-            if (isPsych) {
-                const certificates = currentUser.certificates || [];
-                const undoneTasks = tasks.filter(t => !t.completed).length;
-                psychSections = `
-                    <div class="profile-sections">
-                        <div class="collapsible-section" id="sec-tasks"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">📋</div><div><div class="collapsible-title">Задачи</div><div class="collapsible-subtitle">${undoneTasks > 0 ? `${undoneTasks} не выполнено` : 'Все выполнены'}</div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body"><div id="tasksList">${tasks.map(t => `<div class="task-item"><input type="checkbox" class="task-checkbox task-cb" data-id="${t.id}" ${t.completed ? 'checked' : ''}><div style="flex:1"><div class="task-text ${t.completed ? 'task-completed' : ''}">${escapeHtml(t.text)}</div>${t.dueDate ? `<div class="task-due">📅 ${t.dueDate}</div>` : ''}</div><button class="task-delete" onclick="deleteTask('${t.id}')"><i class="fas fa-times"></i></button></div>`).join('')}</div>${tasks.length === 0 ? '<div class="empty-state" style="padding:16px;"><i class="fas fa-check-circle"></i><div>Нет задач</div></div>' : ''}<button class="section-add-btn" onclick="addTaskWithDate()"><i class="fas fa-plus"></i> Добавить задачу</button></div></div>
-                        <div class="collapsible-section" id="sec-calendar"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">📅</div><div><div class="collapsible-title">Календарь</div><div class="collapsible-subtitle">События</div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body"><div id="profileCalendar"></div></div></div>
-                        <div class="collapsible-section" id="sec-appointments"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">📞</div><div><div class="collapsible-title">Записи клиентов</div><div class="collapsible-subtitle" id="appointmentsSubtitle"></div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body"><div style="margin-bottom:12px;display:flex;gap:8px;flex-wrap:wrap;"><button class="btn-sm btn-outline filter-appointments-btn active" data-filter="upcoming">Предстоящие</button><button class="btn-sm btn-outline filter-appointments-btn" data-filter="past">Прошедшие</button><button class="btn-sm btn-outline filter-appointments-btn" data-filter="pending">Ожидают</button></div><div id="appointmentsList"></div></div></div>
-                        <div class="collapsible-section" id="sec-clients"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">👥</div><div><div class="collapsible-title">Клиенты</div><div class="collapsible-subtitle" id="clientsSubtitle"></div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body"><div style="margin-bottom:12px;display:flex;gap:8px;"><button class="btn-sm btn-outline filter-clients-btn active" data-filter="upcoming">Предстоящие</button><button class="btn-sm btn-outline filter-clients-btn" data-filter="past">Прошедшие</button></div><div id="clientsList"></div></div></div>
-                        <div class="collapsible-section" id="sec-notes"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">📝</div><div><div class="collapsible-title">Заметки</div><div class="collapsible-subtitle">${notes.length} заметок</div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body"><div class="notes-grid" id="notesGridProfile">${notes.map(n => `<div class="note-card" onclick="openNoteModal('${n.id}','${escapeHtml(n.title)}','${escapeHtml(n.content)}','${n.attachment || ''}')"><div class="note-title">${escapeHtml(n.title)}</div><div class="note-preview">${escapeHtml((n.content || '').substring(0, 70))}${(n.content || '').length > 70 ? '…' : ''}</div></div>`).join('')}${notes.length === 0 ? '<div class="empty-state" style="padding:16px;"><i class="fas fa-sticky-note"></i><div>Нет заметок</div></div>' : ''}</div><button class="section-add-btn" onclick="openAddNoteModal()"><i class="fas fa-plus"></i> Добавить заметку</button></div></div>
-                        <div class="collapsible-section" id="sec-certs"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">📜</div><div><div class="collapsible-title">Сертификаты и дипломы</div><div class="collapsible-subtitle">${certificates.length} документов</div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body"><div class="certificates-grid" id="certsGridProfile">${certificates.map(c => `<div class="certificate-card"><img src="${escapeHtml(c.image)}" onerror="this.src='https://placehold.co/100x80/1a2e1a/8bca8b?text=📜'"><div class="certificate-title">${escapeHtml(c.title)}</div><button class="delete-cert-btn" onclick="deleteCertificateProfile('${c.id}')"><i class="fas fa-times"></i></button></div>`).join('')}<div class="certificate-card add-cert-card" onclick="addCertificateProfile()"><i class="fas fa-plus"></i><span>Добавить</span></div></div></div></div>
-                        <div class="collapsible-section" id="sec-questionnaires">
-                            <div class="collapsible-header" onclick="toggleSection(this)">
-                                <div class="collapsible-header-left">
-                                    <div class="collapsible-icon">📋</div>
-                                    <div>
-                                        <div class="collapsible-title">Опросники</div>
-                                        <div class="collapsible-subtitle">Создавайте и управляйте анкетами</div>
-                                    </div>
-                                </div>
-                                <i class="fas fa-chevron-down collapsible-chevron"></i>
-                            </div>
-                            <div class="collapsible-body">
-                                <button class="section-add-btn" onclick="createQuestionnaire()"><i class="fas fa-plus"></i> Создать опросник</button>
-                                <div id="psychQuestionnairesList" style="margin-top: 12px;">
-                                    ${myQuestionnaires.map(q => `
-                                        <div class="task-item" style="justify-content: space-between;">
-                                            <div>
-                                                <div class="task-text">${escapeHtml(q.title)}</div>
-                                                <div class="task-due">${q.is_published ? '✅ Опубликован' : '⛔ Черновик'}</div>
-                                            </div>
-                                            <button class="btn-sm btn-outline" onclick="togglePublishQuestionnaire('${q.id}', ${!q.is_published})">${q.is_published ? 'Снять с публикации' : 'Опубликовать'}</button>
-                                            <button class="btn-sm btn-outline" onclick="viewQuestionnaireResponses('${q.id}')">Ответы</button>
-                                        </div>
-                                    `).join('') || '<div class="empty-state" style="padding:16px;"><i class="fas fa-info-circle"></i><div>Нет созданных опросников</div></div>'}
-                                </div>
+                </div>
+            </div>
+        `;
+    }
+    
+    let homeworksHtml = '';
+    if (!isPsych && clientHomeworks.length > 0) {
+        homeworksHtml = `
+            <div class="profile-sections">
+                <div class="collapsible-section open">
+                    <div class="collapsible-header" onclick="toggleSection(this)">
+                        <div class="collapsible-header-left">
+                            <div class="collapsible-icon">✅</div>
+                            <div>
+                                <div class="collapsible-title">Мои задания</div>
+                                <div class="collapsible-subtitle">от психолога</div>
                             </div>
                         </div>
+                        <i class="fas fa-chevron-down collapsible-chevron"></i>
                     </div>
-                `;
-            }
-            const html = `
-                <div class="container">
-                    <div class="profile-header">
-                        <div class="profile-avatar-wrap">
-                            <img class="profile-avatar-lg" src="${escapeHtml(currentUser.avatar)}" id="profileAvatar" onerror="this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser.fullName)}&background=8bca8b&color=fff'">
-                            <button class="avatar-edit-btn" onclick="changeAvatar()"><i class="fas fa-pen"></i></button>
-                        </div>
-                        <div class="profile-name">${escapeHtml(currentUser.fullName)}</div>
-                        <div class="profile-role-badge">${isPsych ? '🧠 Психолог' : '👤 Клиент'}</div>
-                        ${currentUser.about ? `<div class="profile-bio">${escapeHtml(currentUser.about)}</div>` : ''}
-                        ${isPsych ? renderStars(currentUser.rating || 0) : ''}
-                        <div class="profile-stats">
-                            ${isPsych ? `<div class="profile-stat"><div class="number">${myPosts.length}</div><div class="label">постов</div></div>` : ''}
-                            ${isPsych ? `<div class="profile-stat"><div class="number">${followersCount}</div><div class="label">подписчиков</div></div>` : ''}
-                            ${isPsych ? `<div class="profile-stat"><div class="number">${totalLikesOnPosts}</div><div class="label">лайков на постах</div></div>` : ''}
-                            ${isPsych ? `<div class="profile-stat"><div class="number">${(currentUser.rating || 0).toFixed(1)}</div><div class="label">рейтинг</div></div>` : ''}
-                        </div>
-                        <div class="profile-actions">
-                            <button class="btn-sm btn-outline" onclick="editProfileModal()"><i class="fas fa-pen"></i> Редактировать</button>
-                            ${isPsych ? `<button class="btn-sm btn-outline" onclick="showScheduleEditor()"><i class="fas fa-clock"></i> Расписание</button><button class="btn-sm" onclick="createPostModal()"><i class="fas fa-plus"></i> Пост</button>` : ''}
-                        </div>
-                    </div>
-                    ${!isPsych ? appointmentsHtml : ''}
-                    ${!isPsych ? homeworksHtml : ''}
-                    ${isPsych ? psychSections : ''}
-                    ${isPsych ? `
-                    <div class="profile-posts-section">
-                        <div class="section-header-row">
-                            <h3>Мои посты</h3>
-                            <button class="btn-sm" onclick="createPostModal()"><i class="fas fa-plus"></i> Новый</button>
-                        </div>
-                        <div class="posts-grid" id="myPostsGridProfile">
-                            ${myPosts.map(p => `
-                                <div class="post-card glass-card">
-                                    <div class="post-text">${escapeHtml(p.text)}</div>
-                                    ${p.image ? `<img class="post-image" src="${escapeHtml(p.image)}" onclick="openImageModal('${escapeHtml(p.image)}')">` : ''}
-                                    ${p.video ? `<video class="post-video" controls preload="metadata"><source src="${escapeHtml(p.video)}" type="video/mp4"></video>` : ''}
-                                    <div class="post-stats">
-                                        <span style="color:var(--text-muted);font-size:13px;display:flex;gap:6px;align-items:center;"><i class="fa-regular fa-heart"></i> ${p.likesCount||0}</span>
-                                        <span style="color:var(--text-muted);font-size:13px;display:flex;gap:6px;align-items:center;"><i class="fa-regular fa-comment"></i> ${p.commentsCount||0}</span>
-                                    </div>
-                                    <div class="post-actions">
-                                        <button class="profile-edit-post" data-id="${p.id}" data-text="${escapeHtml(p.text)}"><i class="fas fa-pen"></i> Ред.</button>
-                                        <button class="profile-delete-post" data-id="${p.id}"><i class="fas fa-trash-alt"></i> Удалить</button>
+                    <div class="collapsible-body">
+                        <div id="clientHomeworksList">
+                            ${clientHomeworks.map(hw => `
+                                <div class="task-item">
+                                    <input type="checkbox" class="homework-cb" data-id="${hw.id}" ${hw.status === 'done' ? 'checked' : ''}>
+                                    <div style="flex:1">
+                                        <div class="${hw.status === 'done' ? 'task-completed' : ''}">${escapeHtml(hw.text)}</div>
+                                        ${hw.due_date ? `<div class="task-due">📅 до ${hw.due_date.split('T')[0]}</div>` : ''}
                                     </div>
                                 </div>
                             `).join('')}
-                            ${myPosts.length === 0 ? '<div class="empty-state glass-card" style="padding:24px;"><i class="fas fa-newspaper"></i><div>Нет постов</div></div>' : ''}
                         </div>
                     </div>
-                    ` : ''}
                 </div>
-            `;
-            document.getElementById('mainContent').innerHTML = html;
-            cachedProfileHtml = html;
-            isProfileCacheValid = true;
-            attachProfileEventHandlers();
-            checkUpcomingEvents();
-        }
+            </div>
+        `;
+    }
+
+    let psychSections = '';
+    if (isPsych) {
+        const certificates = currentUser.certificates || [];
+        const undoneTasks = tasks.filter(t => !t.completed).length;
+        psychSections = `
+            <div class="profile-sections">
+                <div class="collapsible-section" id="sec-tasks"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">📋</div><div><div class="collapsible-title">Задачи</div><div class="collapsible-subtitle">${undoneTasks > 0 ? `${undoneTasks} не выполнено` : 'Все выполнены'}</div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body"><div id="tasksList">${tasks.map(t => `<div class="task-item"><input type="checkbox" class="task-checkbox task-cb" data-id="${t.id}" ${t.completed ? 'checked' : ''}><div style="flex:1"><div class="task-text ${t.completed ? 'task-completed' : ''}">${escapeHtml(t.text)}</div>${t.dueDate ? `<div class="task-due">📅 ${t.dueDate}</div>` : ''}</div><button class="task-delete" onclick="deleteTask('${t.id}')"><i class="fas fa-times"></i></button></div>`).join('')}</div>${tasks.length === 0 ? '<div class="empty-state" style="padding:16px;"><i class="fas fa-check-circle"></i><div>Нет задач</div></div>' : ''}<button class="section-add-btn" onclick="addTaskWithDate()"><i class="fas fa-plus"></i> Добавить задачу</button></div></div>
+                <div class="collapsible-section" id="sec-calendar"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">📅</div><div><div class="collapsible-title">Календарь</div><div class="collapsible-subtitle">События</div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body"><div id="profileCalendar"></div></div></div>
+                <div class="collapsible-section" id="sec-appointments"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">📞</div><div><div class="collapsible-title">Записи клиентов</div><div class="collapsible-subtitle" id="appointmentsSubtitle"></div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body"><div style="margin-bottom:12px;display:flex;gap:8px;flex-wrap:wrap;"><button class="btn-sm btn-outline filter-appointments-btn active" data-filter="upcoming">Предстоящие</button><button class="btn-sm btn-outline filter-appointments-btn" data-filter="past">Прошедшие</button><button class="btn-sm btn-outline filter-appointments-btn" data-filter="pending">Ожидают</button></div><div id="appointmentsList"></div></div></div>
+                <div class="collapsible-section" id="sec-clients"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">👥</div><div><div class="collapsible-title">Клиенты</div><div class="collapsible-subtitle" id="clientsSubtitle"></div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body"><div style="margin-bottom:12px;display:flex;gap:8px;"><button class="btn-sm btn-outline filter-clients-btn active" data-filter="upcoming">Предстоящие</button><button class="btn-sm btn-outline filter-clients-btn" data-filter="past">Прошедшие</button></div><div id="clientsList"></div></div></div>
+                <div class="collapsible-section" id="sec-notes"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">📝</div><div><div class="collapsible-title">Заметки</div><div class="collapsible-subtitle">${notes.length} заметок</div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body"><div class="notes-grid" id="notesGridProfile">${notes.map(n => `<div class="note-card" onclick="openNoteModal('${n.id}','${escapeHtml(n.title)}','${escapeHtml(n.content)}','${n.attachment || ''}')"><div class="note-title">${escapeHtml(n.title)}</div><div class="note-preview">${escapeHtml((n.content || '').substring(0, 70))}${(n.content || '').length > 70 ? '…' : ''}</div></div>`).join('')}${notes.length === 0 ? '<div class="empty-state" style="padding:16px;"><i class="fas fa-sticky-note"></i><div>Нет заметок</div></div>' : ''}</div><button class="section-add-btn" onclick="openAddNoteModal()"><i class="fas fa-plus"></i> Добавить заметку</button></div></div>
+                <div class="collapsible-section" id="sec-certs"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">📜</div><div><div class="collapsible-title">Сертификаты и дипломы</div><div class="collapsible-subtitle">${certificates.length} документов</div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body"><div class="certificates-grid" id="certsGridProfile">${certificates.map(c => `<div class="certificate-card"><img src="${escapeHtml(c.image)}" onerror="this.src='https://placehold.co/100x80/1a2e1a/8bca8b?text=📜'"><div class="certificate-title">${escapeHtml(c.title)}</div><button class="delete-cert-btn" onclick="deleteCertificateProfile('${c.id}')"><i class="fas fa-times"></i></button></div>`).join('')}<div class="certificate-card add-cert-card" onclick="addCertificateProfile()"><i class="fas fa-plus"></i><span>Добавить</span></div></div></div></div>
+                
+                <div class="collapsible-section" id="sec-questionnaires">
+                    <div class="collapsible-header" onclick="toggleSection(this)">
+                        <div class="collapsible-header-left">
+                            <div class="collapsible-icon">📋</div>
+                            <div>
+                                <div class="collapsible-title">Опросники</div>
+                                <div class="collapsible-subtitle">Создавайте и управляйте анкетами</div>
+                            </div>
+                        </div>
+                        <i class="fas fa-chevron-down collapsible-chevron"></i>
+                    </div>
+                    <div class="collapsible-body">
+                        <button class="section-add-btn" onclick="createQuestionnaire()"><i class="fas fa-plus"></i> Создать опросник</button>
+                        <div id="psychQuestionnairesList" style="margin-top: 12px; display: flex; flex-direction: column; gap: 10px;">
+                            ${myQuestionnaires.map(q => `
+                                <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 14px;">
+                                    <div style="margin-bottom: 10px;">
+                                        <div style="font-weight: 600; font-size: 15px; color: #fff;">${escapeHtml(q.title)}</div>
+                                        <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">Статус: ${q.is_published ? '<span style="color:var(--green);">Опубликован</span>' : 'Черновик'}</div>
+                                    </div>
+                                    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                                        <button class="btn-sm btn-outline" style="flex: 1; padding: 6px; font-size: 12px;" onclick="togglePublishQuestionnaire('${q.id}', ${!q.is_published})">${q.is_published ? 'Скрыть' : 'Опубликовать'}</button>
+                                        <button class="btn-sm btn-outline" style="flex: 1; padding: 6px; font-size: 12px;" onclick="viewQuestionnaireResponses('${q.id}')">Ответы</button>
+                                    </div>
+                                </div>
+                            `).join('') || '<div class="empty-state" style="padding:16px;"><i class="fas fa-info-circle"></i><div>Нет созданных опросников</div></div>'}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+    const html = `
+        <div class="container">
+            <div class="profile-header">
+                <div class="profile-avatar-wrap">
+                    <img class="profile-avatar-lg" src="${escapeHtml(currentUser.avatar)}" id="profileAvatar" onerror="this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser.fullName)}&background=8bca8b&color=fff'">
+                    <button class="avatar-edit-btn" onclick="changeAvatar()"><i class="fas fa-pen"></i></button>
+                </div>
+                <div class="profile-name">${escapeHtml(currentUser.fullName)}</div>
+                <div class="profile-role-badge">${isPsych ? '🧠 Психолог' : '👤 Клиент'}</div>
+                ${currentUser.about ? `<div class="profile-bio">${escapeHtml(currentUser.about)}</div>` : ''}
+                ${isPsych ? renderStars(currentUser.rating || 0) : ''}
+                <div class="profile-stats">
+                    ${isPsych ? `<div class="profile-stat"><div class="number">${myPosts.length}</div><div class="label">постов</div></div>` : ''}
+                    ${isPsych ? `<div class="profile-stat"><div class="number">${followersCount}</div><div class="label">подписчиков</div></div>` : ''}
+                    ${isPsych ? `<div class="profile-stat"><div class="number">${totalLikesOnPosts}</div><div class="label">лайков на постах</div></div>` : ''}
+                    ${isPsych ? `<div class="profile-stat"><div class="number">${(currentUser.rating || 0).toFixed(1)}</div><div class="label">рейтинг</div></div>` : ''}
+                </div>
+                <div class="profile-actions">
+                    <button class="btn-sm btn-outline" onclick="editProfileModal()"><i class="fas fa-pen"></i> Редактировать</button>
+                    ${isPsych ? `<button class="btn-sm btn-outline" onclick="showScheduleEditor()"><i class="fas fa-clock"></i> Расписание</button><button class="btn-sm" onclick="createPostModal()"><i class="fas fa-plus"></i> Пост</button>` : ''}
+                </div>
+            </div>
+            ${!isPsych ? appointmentsHtml : ''}
+            ${!isPsych ? homeworksHtml : ''}
+            ${isPsych ? psychSections : ''}
+            ${isPsych ? `
+            <div class="profile-posts-section" style="margin-top: 32px;"> <div class="section-header-row">
+                    <h3>Мои посты</h3>
+                    <button class="btn-sm" onclick="createPostModal()"><i class="fas fa-plus"></i> Новый</button>
+                </div>
+                <div class="posts-grid" id="myPostsGridProfile">
+                    ${myPosts.map(p => `
+                        <div class="post-card glass-card">
+                            <div class="post-text">${escapeHtml(p.text)}</div>
+                            ${p.image ? `<img class="post-image" src="${escapeHtml(p.image)}" onclick="openImageModal('${escapeHtml(p.image)}')">` : ''}
+                            ${p.video ? `<video class="post-video" controls preload="metadata"><source src="${escapeHtml(p.video)}" type="video/mp4"></video>` : ''}
+                            <div class="post-stats">
+                                <span style="color:var(--text-muted);font-size:13px;display:flex;gap:6px;align-items:center;"><i class="fa-regular fa-heart"></i> ${p.likesCount||0}</span>
+                                <span style="color:var(--text-muted);font-size:13px;display:flex;gap:6px;align-items:center;"><i class="fa-regular fa-comment"></i> ${p.commentsCount||0}</span>
+                            </div>
+                            <div class="post-actions">
+                                <button class="profile-edit-post" data-id="${p.id}" data-text="${escapeHtml(p.text)}"><i class="fas fa-pen"></i> Ред.</button>
+                                <button class="profile-delete-post" data-id="${p.id}"><i class="fas fa-trash-alt"></i> Удалить</button>
+                            </div>
+                        </div>
+                    `).join('')}
+                    ${myPosts.length === 0 ? '<div class="empty-state glass-card" style="padding:24px;"><i class="fas fa-newspaper"></i><div>Нет постов</div></div>' : ''}
+                </div>
+            </div>
+            ` : ''}
+        </div>
+    `;
+    document.getElementById('mainContent').innerHTML = html;
+    cachedProfileHtml = html;
+    isProfileCacheValid = true;
+    attachProfileEventHandlers();
+    checkUpcomingEvents();
+}
 
         function attachProfileEventHandlers() {
             const isPsych = currentUser?.role === 'psychologist';
@@ -2784,61 +2789,88 @@
         
         // ======================= АНКЕТЫ =======================
         async function renderQuestionnaires(forceRefresh = false) {
-            if (!forceRefresh && isQuestionnairesCacheValid && cachedQuestionnairesHtml) {
-                document.getElementById('mainContent').innerHTML = cachedQuestionnairesHtml;
-                return;
-            }
-            if (!currentUser || currentUser.role !== 'client') { showToast('Раздел доступен только клиентам', true); return; }
-            document.getElementById('mainContent').innerHTML = `<div class="container"><div class="empty-state"><i class="fas fa-circle-notch fa-spin"></i></div></div>`;
-            const data = await fetchJSON('/api/questionnaires/available');
-            const questionnaires = data.questionnaires || [];
-            let html = `<div class="container"><div class="page-title">Анкеты</div><div class="questionnaires-list">`;
-            if (questionnaires.length === 0) {
-                html += '<div class="empty-state glass-card"><i class="fas fa-clipboard-list"></i><div>Нет доступных анкет</div></div>';
-            } else {
-                for (const q of questionnaires) {
-                    html += `<div class="glass-card" style="padding: 16px; margin-bottom: 12px;">
-                                <div style="font-weight: 600; font-size: 16px;">${escapeHtml(q.title)}</div>
-                                <div style="color: var(--text-muted); font-size: 13px; margin-top: 4px;">${escapeHtml(q.description || '')}</div>
-                                <button class="btn-sm" style="margin-top: 12px;" onclick="startQuestionnaire('${q.id}')">Пройти анкету</button>
-                            </div>`;
-                }
-            }
-            html += `</div></div>`;
-            cachedQuestionnairesHtml = html;
-            isQuestionnairesCacheValid = true;
-            document.getElementById('mainContent').innerHTML = html;
+    if (!forceRefresh && isQuestionnairesCacheValid && cachedQuestionnairesHtml) {
+        document.getElementById('mainContent').innerHTML = cachedQuestionnairesHtml;
+        return;
+    }
+    if (!currentUser || currentUser.role !== 'client') { showToast('Раздел доступен только клиентам', true); return; }
+    document.getElementById('mainContent').innerHTML = `<div class="container"><div class="empty-state"><i class="fas fa-circle-notch fa-spin"></i></div></div>`;
+    
+    const data = await fetchJSON('/api/questionnaires/available');
+    const questionnaires = data.questionnaires || [];
+    
+    let html = `<div class="container"><div class="page-title">Анкеты и Тесты</div><div class="questionnaires-list" style="display: flex; flex-direction: column; gap: 14px;">`;
+    if (questionnaires.length === 0) {
+        html += '<div class="empty-state glass-card"><i class="fas fa-clipboard-list"></i><div>Нет доступных анкет</div></div>';
+    } else {
+        for (const q of questionnaires) {
+            html += `
+                <div class="glass-card" style="padding: 18px; position: relative; overflow: hidden;">
+                    <div style="position: absolute; top: -15px; right: -10px; opacity: 0.03; font-size: 100px; pointer-events: none;"><i class="fas fa-brain"></i></div>
+                    <div style="position: relative; z-index: 1;">
+                        <div style="display: inline-block; padding: 4px 10px; background: var(--green-dim); color: var(--green); border-radius: 20px; font-size: 10px; font-weight: 600; margin-bottom: 10px; letter-spacing: 0.5px;">ПСИХОЛОГИЧЕСКИЙ ТЕСТ</div>
+                        <div style="font-weight: 700; font-size: 17px; margin-bottom: 6px; color: #fff;">${escapeHtml(q.title)}</div>
+                        <div style="color: rgba(255,255,255,0.6); font-size: 13px; line-height: 1.5; margin-bottom: 18px;">${escapeHtml(q.description || 'Описание отсутствует')}</div>
+                        <button class="btn-sm" style="width: 100%; padding: 10px;" onclick="startQuestionnaire('${q.id}', '${escapeHtml(q.title).replace(/'/g, "\\'")}')">Пройти тестирование</button>
+                    </div>
+                </div>`;
         }
+    }
+    html += `</div></div>`;
+    cachedQuestionnairesHtml = html;
+    isQuestionnairesCacheValid = true;
+    document.getElementById('mainContent').innerHTML = html;
+}
         
-        async function startQuestionnaire(questionnaireId) {
-            const res = await fetchJSON(`/api/questionnaires/${questionnaireId}/questions`);
-            if (!res.success || !res.questions) { showToast('Не удалось загрузить опросник', true); return; }
-            const questions = res.questions;
-            const modalId = 'takeQuestModal_' + Date.now();
-            const renderForm = () => {
-                return questions.map((q, idx) => {
-                    let inputHtml = '';
-                    if (q.type === 'text') {
-                        inputHtml = `<textarea data-qidx="${idx}" class="answer-text" rows="2" style="width:100%; margin-top:5px;"></textarea>`;
-                    } else if (q.type === 'number') {
-                        inputHtml = `<input type="number" data-qidx="${idx}" class="answer-number" style="width:100%; margin-top:5px;">`;
-                    } else if (q.type === 'choice') {
-                        const options = q.options || [];
-                        inputHtml = `<select data-qidx="${idx}" class="answer-choice" style="width:100%; margin-top:5px;"><option value="">Выберите</option>${options.map(opt => `<option value="${escapeHtml(opt)}">${escapeHtml(opt)}</option>`).join('')}</select>`;
-                    }
-                    return `
-                        <div style="margin-bottom: 20px;">
-                            <div style="font-weight: 600;">${escapeHtml(q.text)}</div>
-                            ${inputHtml}
-                            <input type="hidden" class="question-id" value="${q.id}">
-                        </div>
-                    `;
-                }).join('');
-            };
-            const html = `<div class="modal" id="${modalId}"><div class="modal-content" style="max-height: 80vh; overflow-y: auto;"><div class="modal-handle"></div><h3>Анкета</h3><form id="questForm_${modalId}">${renderForm()}</form><div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('${modalId}')">Отмена</button><button class="btn-primary" onclick="submitQuestionnaireAnswers('${questionnaireId}', '${modalId}')">Отправить</button></div></div></div>`;
-            document.body.insertAdjacentHTML('beforeend', html);
-            setTimeout(() => document.getElementById(modalId).classList.add('active'), 10);
-        }
+        async function startQuestionnaire(questionnaireId, title = 'Анкета') {
+    const res = await fetchJSON(`/api/questionnaires/${questionnaireId}/questions`);
+    if (!res.success || !res.questions) { showToast('Не удалось загрузить опросник', true); return; }
+    const questions = res.questions;
+    const modalId = 'takeQuestModal_' + Date.now();
+    
+    const renderForm = () => {
+        return questions.map((q, idx) => {
+            let inputHtml = '';
+            if (q.type === 'text') {
+                inputHtml = `<textarea data-qidx="${idx}" class="answer-text" rows="3" placeholder="Напишите ваш ответ..." style="width:100%; margin-top:12px; background: rgba(0,0,0,0.25);"></textarea>`;
+            } else if (q.type === 'number') {
+                inputHtml = `<input type="number" data-qidx="${idx}" class="answer-number" placeholder="0" style="width:100%; margin-top:12px; background: rgba(0,0,0,0.25);">`;
+            } else if (q.type === 'choice') {
+                const options = q.options || [];
+                inputHtml = `<select data-qidx="${idx}" class="answer-choice" style="width:100%; margin-top:12px; background: rgba(0,0,0,0.25);">
+                                <option value="">Выберите вариант...</option>
+                                ${options.map(opt => `<option value="${escapeHtml(opt)}">${escapeHtml(opt)}</option>`).join('')}
+                             </select>`;
+            }
+            return `
+                <div class="glass-card" style="margin-bottom: 16px; padding: 18px; border: 1px solid rgba(139,202,139,0.15);">
+                    <div style="font-size: 10px; color: var(--green); margin-bottom: 8px; font-weight: 700; letter-spacing: 0.5px;">ВОПРОС ${idx + 1} ИЗ ${questions.length}</div>
+                    <div style="font-weight: 600; font-size: 15px; line-height: 1.4; color: #fff;">${escapeHtml(q.text)}</div>
+                    ${inputHtml}
+                    <input type="hidden" class="question-id" value="${q.id}">
+                </div>
+            `;
+        }).join('');
+    };
+
+    const html = `
+        <div class="modal" id="${modalId}">
+            <div class="modal-content" style="max-width: 600px; max-height: 85vh; overflow-y: auto; background: #0a110c;">
+                <div class="modal-handle"></div>
+                <h3 style="text-align: center; margin-bottom: 24px; color: var(--green); font-size: 18px;">${escapeHtml(title)}</h3>
+                <form id="questForm_${modalId}">
+                    ${renderForm()}
+                </form>
+                <div class="modal-buttons" style="margin-top: 24px;">
+                    <button class="btn-secondary" onclick="closeModal('${modalId}')">Отмена</button>
+                    <button class="btn-primary" onclick="submitQuestionnaireAnswers('${questionnaireId}', '${modalId}')">Завершить и отправить</button>
+                </div>
+            </div>
+        </div>
+    `;
+    document.body.insertAdjacentHTML('beforeend', html);
+    setTimeout(() => document.getElementById(modalId).classList.add('active'), 10);
+}
         
         async function submitQuestionnaireAnswers(questionnaireId, modalId) {
             const answers = [];
@@ -2984,45 +3016,58 @@
         }
         
         function renderResponsesModal(questionnaireId, responses) {
-            const modalId = 'responsesModal_' + Date.now();
-            let contentHtml = '';
-            if (responses.length === 0) {
-                contentHtml = '<div class="empty-state" style="padding:40px;">Нет ответов на этот опросник.</div>';
-            } else {
-                for (const response of responses) {
-                    contentHtml += `
-                        <div class="glass-card" style="margin-bottom: 16px; padding: 16px;">
-                            <h4 style="color: var(--green); margin-bottom: 8px;">👤 ${escapeHtml(response.clientName)}</h4>
-                            <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;">Ответил: ${new Date(response.answeredAt).toLocaleString()}</div>
-                            <div style="border-top: 1px solid var(--border); padding-top: 12px;">
-                                ${response.answers.map(a => `
-                                    <div style="margin-bottom: 12px;">
-                                        <div style="font-weight: 600; font-size: 13px;">❓ ${escapeHtml(a.question)}</div>
-                                        <div style="font-size: 13px; color: rgba(255,255,255,0.8); margin-top: 4px;">✍️ Ответ: ${escapeHtml(a.answer)}</div>
-                                    </div>
-                                `).join('')}
+    const modalId = 'responsesModal_' + Date.now();
+    let contentHtml = '';
+    
+    if (responses.length === 0) {
+        contentHtml = '<div class="empty-state" style="padding:40px;"><i class="fas fa-inbox"></i><div style="margin-top:10px;">Нет ответов на этот опросник.</div></div>';
+    } else {
+        for (const response of responses) {
+            contentHtml += `
+                <details style="margin-bottom: 12px; background: rgba(255,255,255,0.03); border: 1px solid var(--border); border-radius: var(--radius-md); overflow: hidden;">
+                    <summary style="padding: 14px; cursor: pointer; outline: none; user-select: none; display: flex; justify-content: space-between; align-items: center; list-style: none;">
+                        <div>
+                            <div style="font-weight: 600; font-size: 14px; color: var(--green);">👤 ${escapeHtml(response.clientName)}</div>
+                            <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">Ответил(а): ${new Date(response.answeredAt).toLocaleString()}</div>
+                        </div>
+                        <i class="fas fa-chevron-down" style="font-size: 12px; color: var(--text-muted);"></i>
+                    </summary>
+                    <div style="padding: 0 14px 14px 14px; border-top: 1px solid rgba(255,255,255,0.05);">
+                        ${response.answers.map((a, i) => `
+                            <div style="margin-top: 12px; padding-top: ${i === 0 ? '0' : '12px'}; border-top: ${i === 0 ? 'none' : '1px dashed rgba(255,255,255,0.1)'};">
+                                <div style="font-weight: 500; font-size: 13px; color: #fff; margin-bottom: 6px; line-height: 1.4;">${i + 1}. ${escapeHtml(a.question)}</div>
+                                <div style="font-size: 13.5px; color: var(--green); background: rgba(139, 202, 139, 0.08); padding: 10px 12px; border-radius: 8px; border-left: 2px solid var(--green); word-wrap: break-word;">
+                                    ${escapeHtml(a.answer)}
+                                </div>
                             </div>
-                        </div>
-                    `;
-                }
-            }
-            const html = `
-                <div class="modal" id="${modalId}">
-                    <div class="modal-content" style="max-width: 600px;">
-                        <div class="modal-handle"></div>
-                        <h3>📋 Ответы на опросник</h3>
-                        <div style="max-height: 70vh; overflow-y: auto; padding-right: 8px;">
-                            ${contentHtml}
-                        </div>
-                        <div class="modal-buttons">
-                            <button class="btn-secondary" onclick="closeModal('${modalId}')">Закрыть</button>
-                        </div>
+                        `).join('')}
                     </div>
-                </div>
+                </details>
             `;
-            document.body.insertAdjacentHTML('beforeend', html);
-            setTimeout(() => document.getElementById(modalId).classList.add('active'), 10);
         }
+    }
+    
+    // Прячем стандартный треугольник summary для браузеров (чтобы наша кастомная стрелочка смотрелась красиво)
+    const customStyle = `<style>#${modalId} summary::-webkit-details-marker { display: none; }</style>`;
+
+    const html = `
+        ${customStyle}
+        <div class="modal" id="${modalId}">
+            <div class="modal-content" style="max-width: 600px;">
+                <div class="modal-handle"></div>
+                <h3 style="margin-bottom: 16px;"><i class="fas fa-clipboard-check" style="color:var(--green); margin-right:8px;"></i>Ответы клиентов</h3>
+                <div style="max-height: 65vh; overflow-y: auto; padding-right: 4px;">
+                    ${contentHtml}
+                </div>
+                <div class="modal-buttons" style="margin-top: 20px;">
+                    <button class="btn-primary" style="width: 100%;" onclick="closeModal('${modalId}')">Закрыть</button>
+                </div>
+            </div>
+        </div>
+    `;
+    document.body.insertAdjacentHTML('beforeend', html);
+    setTimeout(() => document.getElementById(modalId).classList.add('active'), 10);
+}
         
         // ======================= ВИДЕОЗВОНОК =======================
         async function getIceServers() { return [ { urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }, { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' }, { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' } ]; }
