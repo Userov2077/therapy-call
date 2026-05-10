@@ -1849,28 +1849,56 @@
         }
 
         function renderClientsList(filter = 'upcoming') {
-            const container = document.getElementById('clientsList');
-            if (!container) return;
-            const appointments = currentUser?.clients || [];
-            const now = new Date();
-            let filtered = [];
-            if (filter === 'upcoming') {
-                filtered = appointments.filter(a => a.status === 'confirmed' && new Date(a.date + 'T' + a.time) >= now);
-            } else {
-                filtered = appointments.filter(a => a.status === 'confirmed' && new Date(a.date + 'T' + a.time) < now);
-            }
-            const subtitle = document.getElementById('clientsSubtitle');
-            if (subtitle) subtitle.textContent = filter === 'upcoming' ? `${filtered.length} предстоящих` : `${filtered.length} прошедших`;
-            if (filtered.length === 0) {
-                container.innerHTML = '<div class="empty-state" style="padding:20px;"><i class="fas fa-calendar-times"></i><div>Нет записей</div></div>';
-                return;
-            }
-            let html = '';
-            filtered.forEach(apt => {
-                html += `<div class="client-item"><div><div class="client-name">${escapeHtml(apt.clientName)}</div><div class="client-time">${apt.date} в ${apt.time}</div></div><button class="btn-sm" onclick="startChatWith('${apt.clientId}','${escapeHtml(apt.clientName)}')"><i class="fas fa-comment-dots"></i> Написать</button></div>`;
-            });
-            container.innerHTML = html;
+    const container = document.getElementById('clientsList');
+    if (!container) return;
+    
+    const appointments = currentUser?.clients || [];
+    const now = new Date();
+    
+    // 1. Фильтруем записи
+    let filteredAppts = appointments.filter(a => {
+        const apptDate = new Date(a.date + 'T' + a.time);
+        return filter === 'upcoming' ? apptDate >= now : apptDate < now;
+    });
+
+    // 2. Группируем по клиентам (чтобы получить уникальный список людей)
+    const uniqueClientsMap = new Map();
+    filteredAppts.forEach(a => {
+        if (!uniqueClientsMap.has(a.clientId)) {
+            uniqueClientsMap.set(a.clientId, a);
         }
+    });
+    const clients = Array.from(uniqueClientsMap.values());
+
+    const subtitle = document.getElementById('clientsSubtitle');
+    if (subtitle) subtitle.textContent = `${clients.length} человек`;
+
+    if (clients.length === 0) {
+        container.innerHTML = '<div class="empty-state" style="padding:20px;"><i class="fas fa-users"></i><div>Нет клиентов в этой категории</div></div>';
+        return;
+    }
+
+    let html = '';
+    clients.forEach(c => {
+        html += `
+            <div class="client-item glass-card" style="margin-bottom: 10px; padding: 14px; display: flex; justify-content: space-between; align-items: center;">
+                <div style="flex: 1;">
+                    <div class="client-name" style="font-weight: 600; font-size: 15px;">${escapeHtml(c.clientName)}</div>
+                    <div style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">Последний сеанс: ${c.date}</div>
+                </div>
+                <div style="display: flex; gap: 8px;">
+                    <button class="btn-sm btn-outline" onclick="startChatWith('${c.clientId}','${escapeHtml(c.clientName).replace(/'/g, "\\'")}')" title="Чат">
+                        <i class="fas fa-comment-dots"></i>
+                    </button>
+                    <button class="btn-sm" onclick="openClientDossier('${c.clientId}')">
+                        <i class="fas fa-folder-open"></i> Досье
+                    </button>
+                </div>
+            </div>
+        `;
+    });
+    container.innerHTML = html;
+}
 
         // ======================= КАЛЕНДАРЬ =======================
         async function renderProfileCalendar() {
@@ -3319,6 +3347,106 @@ async function submitClientProgress(clientId, modalId) {
         function editReviewModal(reviewId, currentRating, currentText) { let rating = currentRating; const modalId = 'editReviewModal_' + Date.now(); const html = `<div class="modal" id="${modalId}"><div class="modal-content"><div class="modal-handle"></div><h3>Редактировать отзыв</h3><div id="starsContainer" style="display:flex;gap:6px;margin-bottom:18px;justify-content:center;">${[1,2,3,4,5].map(s => `<i class="${s <= currentRating ? 'fas' : 'far'} fa-star" data-r="${s}" style="font-size:32px;cursor:pointer;color:#f5c518;"></i>`).join('')}</div><textarea id="reviewText" rows="3">${escapeHtml(currentText)}</textarea><div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('${modalId}')">Отмена</button><button class="btn-primary" onclick="updateReview('${modalId}', '${reviewId}')">Сохранить</button></div></div></div>`; document.body.insertAdjacentHTML('beforeend', html); const modal = document.getElementById(modalId); setTimeout(() => modal.classList.add('active'), 10); const stars = modal.querySelectorAll('#starsContainer i'); stars.forEach(s => { s.onmouseenter = () => { stars.forEach((ss, i) => ss.className = i < parseInt(s.dataset.r) ? 'fas fa-star' : 'far fa-star'); }; s.onmouseleave = () => { stars.forEach((ss, i) => ss.className = i < rating ? 'fas fa-star' : 'far fa-star'); }; s.onclick = () => { rating = parseInt(s.dataset.r); stars.forEach((ss, i) => ss.className = i < rating ? 'fas fa-star' : 'far fa-star'); }; }); }
         async function updateReview(modalId, reviewId) { const modal = document.getElementById(modalId); const rating = modal.querySelectorAll('#starsContainer i.fas').length; const text = modal.querySelector('#reviewText').value; try { const data = await fetchJSON(`/api/reviews/${reviewId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: currentUser.id, rating, text }) }); if (data.success) { showToast('Отзыв обновлён'); closeModal(modalId); const psychId = window.currentPsychId || (new URLSearchParams(window.location.search).get('id')); if (psychId) viewPsychologistPage(psychId); else location.reload(); } else { showToast(data.error || 'Ошибка при обновлении', true); } } catch (err) { console.error('Update review fetch error:', err); showToast('Ошибка соединения', true); } }
         async function deleteReview(reviewId) { if (!confirm('Удалить отзыв?')) return; const data = await fetchJSON(`/api/reviews/${reviewId}`, { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: currentUser.id }) }); if (data.success) { showToast('Отзыв удалён'); const psychId = window.currentPsychId || (new URLSearchParams(window.location.search).get('id')); if (psychId) viewPsychologistPage(psychId); else location.reload(); } else { showToast('Ошибка', true); } }
+        // Функция для открытия досье из любого места (профиля или звонка)
+async function openClientDossier(clientId) {
+    showToast('Загрузка досье...');
+    const data = await fetchJSON(`/api/client-card/${clientId}?psychologistId=${currentUser.id}`);
+    if (!data.success) {
+        showToast('Не удалось загрузить данные клиента', true);
+        return;
+    }
+    
+    // Переиспользуем существующую логику отрисовки, просто подставив данные
+    // Для этого временно установим "виртуальный" ID клиента для функций добавления
+    window.currentClientIdInCall = clientId; 
+    
+    // Вызываем нашу основную функцию отрисовки (которую мы обновили в прошлом шаге)
+    // Но чтобы она работала корректно, мы немного подправим openClientCardInCall, 
+    // сделав её зависимой от аргумента, если он передан.
+    renderUniversalClientCard(data);
+}
+
+// Вспомогательная функция отрисовки (вынесем из звонка в общий доступ)
+function renderUniversalClientCard(data) {
+    const { client, profile, notes, homeworks, progress } = data;
+    
+    let emergencyHtml = '—';
+    if (profile && profile.emergency_phone) {
+        try {
+            const contacts = JSON.parse(profile.emergency_phone);
+            emergencyHtml = contacts.map(c => `${escapeHtml(c.name)}: ${escapeHtml(c.phone)}`).join(', ');
+        } catch(e) { emergencyHtml = profile.emergency_phone; }
+    }
+
+    let birthDateDisplay = (profile && profile.birth_date) ? profile.birth_date.split('T')[0] : '—';
+    window.currentClientCardModalId = 'clientCardModal_' + Date.now();
+    const modalId = window.currentClientCardModalId;
+
+    const html = `
+        <div class="modal" id="${modalId}">
+            <div class="modal-content" style="max-width: 500px; max-height: 85vh; overflow-y: auto;">
+                <div class="modal-handle"></div>
+                <div style="display:flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px;">
+                    <h3 style="margin:0; word-break: break-word;">📁 Досье: ${escapeHtml(client.fullName)}</h3>
+                    <button class="back-btn" onclick="closeModal('${modalId}')"><i class="fas fa-times"></i></button>
+                </div>
+
+                <div class="info-row"><i class="fas fa-phone"></i> <div><strong>Тел:</strong> ${escapeHtml(client.phone || '—')}</div></div>
+                <div class="info-row"><i class="fas fa-calendar-alt"></i> <div><strong>ДР:</strong> ${birthDateDisplay}</div></div>
+                <div class="info-row"><i class="fas fa-exclamation-triangle"></i> <div><strong>SOS:</strong> ${emergencyHtml}</div></div>
+                <div class="info-row" style="flex-direction:column; align-items:flex-start;">
+                    <strong><i class="fas fa-frown"></i> Жалобы:</strong>
+                    <div style="font-size:13px; color:rgba(255,255,255,0.8); margin-top:4px; white-space:pre-wrap;">${escapeHtml(profile?.complaints || '—')}</div>
+                </div>
+
+                <hr style="margin: 16px 0; border-color: var(--border);">
+
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                    <h4 style="margin: 0;"><i class="fas fa-tasks"></i> Задания</h4>
+                </div>
+                <div id="dossierHwList" style="margin-bottom: 16px;">
+                    ${homeworks.map(h => `
+                        <div class="task-item" style="background:rgba(255,255,255,0.03); margin-bottom:6px; padding:10px;">
+                            <input type="checkbox" ${h.status === 'done' ? 'checked' : ''} disabled>
+                            <div style="flex:1; font-size:13px; margin-left:10px;">${escapeHtml(h.text)}</div>
+                        </div>
+                    `).join('') || '<div style="font-size:12px; color:var(--text-muted);">Нет заданий</div>'}
+                </div>
+
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                    <h4 style="margin: 0;"><i class="fas fa-sticky-note"></i> Заметки</h4>
+                    <button class="btn-sm btn-outline" style="padding: 4px 8px;" onclick="openAddClientNoteModal('${client.id}', '${escapeHtml(client.fullName).replace(/'/g, "\\'")}')"><i class="fas fa-plus"></i></button>
+                </div>
+                <div id="dossierNotesList" style="margin-bottom: 16px;">
+                    ${notes.map(n => `
+                        <div class="glass-card" style="padding: 10px; margin-bottom: 8px; font-size: 13px;">
+                            <small style="color: var(--green);">${new Date(n.created_at).toLocaleDateString()}</small><br>${escapeHtml(n.note)}
+                        </div>
+                    `).join('') || '<div style="font-size:12px; color:var(--text-muted);">Нет заметок</div>'}
+                </div>
+
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                    <h4 style="margin: 0;"><i class="fas fa-chart-line"></i> Прогресс</h4>
+                    <button class="btn-sm btn-outline" style="padding: 4px 8px;" onclick="openAddClientProgressModal('${client.id}')"><i class="fas fa-plus"></i></button>
+                </div>
+                <div id="dossierProgressList">
+                    ${progress.map(p => `
+                        <div style="font-size:12px; margin-bottom:6px; padding:8px; background:rgba(139,202,139,0.05); border-radius:8px;">
+                            <strong>${p.date.split('T')[0]}</strong> — Состояние: ${p.value}/10
+                            <div style="color:rgba(255,255,255,0.6); margin-top:2px;">${escapeHtml(p.notes || '')}</div>
+                        </div>
+                    `).join('') || '<div style="font-size:12px; color:var(--text-muted);">Данных нет</div>'}
+                </div>
+
+                <div class="modal-buttons" style="margin-top:24px;">
+                    <button class="btn-primary" style="width:100%;" onclick="closeModal('${modalId}')">Готово</button>
+                </div>
+            </div>
+        </div>
+    `;
+    document.body.insertAdjacentHTML('beforeend', html);
+    setTimeout(() => document.getElementById(modalId).classList.add('active'), 10);
+}
         
         // ======================= ИНИЦИАЛИЗАЦИЯ =======================
         async function init() {
