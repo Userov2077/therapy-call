@@ -335,7 +335,17 @@
             .btn-sm, .btn-login, .btn-register, .btn-logout { padding: 6px 14px; font-size: 12px; }
             .floating-notif { top: auto; bottom: calc(var(--bottom-h) + 10px); left: 16px; right: 16px; max-width: none; transform: translateY(120%); }
             .floating-notif.show { transform: translateY(0); }
-            .chat-page { height: calc(100vh - var(--nav-h) - var(--bottom-h)); }
+            .chat-page { 
+                position: fixed !important;
+                top: calc(var(--nav-h) + 12px);
+                bottom: 0;
+                left: 0;
+                right: 0;
+                height: auto !important;
+                padding: 0 8px 10px 8px !important;
+                background: #050a06;
+                z-index: 10;
+            }
             .message { max-width: 82%; }
             .apple-day { font-size: 12px; }
             .time-slot { padding: 4px 10px; font-size: 12px; }
@@ -3137,12 +3147,13 @@ async function openClientCardInCall() {
                 <hr style="margin: 16px 0; border-color: var(--border);">
 
                 <h4 style="margin-bottom: 12px;"><i class="fas fa-tasks"></i> Домашние задания</h4>
-                <div id="clientHomeworksList_${modalId}" style="margin-bottom: 16px; display: flex; flex-direction: column; gap: 8px; width: 100%;">
+                <div id="clientHomeworksList_${modalId}" style="margin-bottom: 16px; display: flex; flex-direction: column; gap: 8px;">
                     ${homeworks.length ? homeworks.map(h => `
-                        <div data-id="${h.id}" style="display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; background: rgba(255,255,255,0.04); border-radius: 16px; border: 1px solid rgba(255,255,255,0.07); width: 100%; box-sizing: border-box;">
-                            <input type="checkbox" class="homework-cb-card" data-id="${h.id}" ${h.status === 'done' ? 'checked' : ''} style="flex-shrink: 0; margin-top: 2px; width: 18px; height: 18px; accent-color: #8bca8b; cursor: pointer;">
-                            <div style="flex: 1; min-width: 0; text-align: left;">
-                                <div style="word-break: break-word; white-space: pre-wrap; font-size: 13.5px; line-height: 1.4; color: #fff; margin: 0;">${escapeHtml(h.text)}</div>${h.due_date ? `<div style="color: rgba(255,255,255,0.45); font-size: 11px; margin-top: 4px;">📅 до ${h.due_date.split('T')[0]}</div>` : ''}
+                        <div style="display: flex; gap: 10px; padding: 12px; background: rgba(255,255,255,0.04); border-radius: 12px; border: 1px solid rgba(255,255,255,0.07);">
+                            <input type="checkbox" class="homework-cb-card" data-id="${h.id}" ${h.status === 'done' ? 'checked' : ''} style="flex-shrink: 0; margin-top: 2px;">
+                            <div style="flex: 1; min-width: 0;">
+                                <div style="word-wrap: break-word; white-space: normal; line-height: 1.4; color: #fff; font-size: 13.5px;">${escapeHtml(h.text)}</div>
+                                ${h.due_date ? `<div style="color: rgba(255,255,255,0.45); font-size: 11px; margin-top: 4px;">до ${h.due_date.split('T')[0]}</div>` : ''}
                             </div>
                         </div>
                     `).join('') : '<div class="glass-card" style="padding: 10px; font-size: 13px; color: var(--text-muted);">Нет заданий</div>'}
@@ -3439,7 +3450,7 @@ async function openClientDossier(clientId) {
     renderUniversalClientCard(data);
 }
 
-// Вспомогательная функция отрисовки досье (чиним Заметки от дублей)
+// Вспомогательная функция отрисовки досье (чиним Задания)
 function renderUniversalClientCard(data) {
     const { client, profile, notes, homeworks, progress } = data;
     
@@ -3478,18 +3489,17 @@ function renderUniversalClientCard(data) {
                     <h4 style="margin: 0;"><i class="fas fa-tasks"></i> Задания</h4>
                 </div>
                 
-                <div id="dossierHwList" style="margin-bottom: 16px; display: flex; flex-direction: column; gap: 8px; width: 100%;">
+                <div id="dossierHwList" style="margin-bottom: 16px; display: flex; flex-direction: column; gap: 8px;">
                     ${homeworks.map(h => `
-                        <div style="display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; background: rgba(255,255,255,0.04); border-radius: 16px; border: 1px solid rgba(255,255,255,0.07); width: 100%; box-sizing: border-box;">
+                        <div style="display: flex; gap: 10px; padding: 12px; background: rgba(255,255,255,0.04); border-radius: 12px; border: 1px solid rgba(255,255,255,0.07);">
                             <input type="checkbox" ${h.status === 'done' ? 'checked' : ''} disabled style="flex-shrink: 0; margin-top: 2px;">
-                            <div style="flex: 1; min-width: 0; text-align: left; word-break: break-all; overflow-wrap: break-word;">
-                                <div style="white-space: pre-wrap; font-size: 13.5px; line-height: 1.4; color: #fff; margin: 0;">${escapeHtml(h.text)}</div>
+                            <div style="flex: 1; min-width: 0;">
+                                <div style="word-wrap: break-word; white-space: normal; line-height: 1.4; color: #fff; font-size: 13.5px;">${escapeHtml(h.text)}</div>
                                 ${h.due_date ? `<div style="color: rgba(255,255,255,0.45); font-size: 11px; margin-top: 4px;">до ${h.due_date.split('T')[0]}</div>` : ''}
                             </div>
                         </div>
                     `).join('') || '<div style="font-size:12px; color:var(--text-muted);">Нет заданий</div>'}
                 </div>
-
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
                     <h4 style="margin: 0;"><i class="fas fa-sticky-note"></i> Заметки</h4>
                     <button class="btn-sm btn-outline" style="padding: 4px 8px;" onclick="openAddClientNoteModal('${client.id}', '${escapeHtml(client.fullName).replace(/'/g, "\\'")}')"><i class="fas fa-plus"></i></button>
@@ -3497,13 +3507,9 @@ function renderUniversalClientCard(data) {
                 
                 <div id="dossierNotesList" style="margin-bottom: 16px;">
                     ${notes.map(n => {
-                        // Регулярное выражение для поиска строки с файлом
                         const attachmentRegex = /\[Прикреплен файл\]:\s*(https?:\/\/[^\s]+)/;
                         const match = n.note.match(attachmentRegex);
                         const fileUrl = match ? match[1] : null;
-
-                        // Очищаем основной текст заметки от технической строки "[Прикреплен файл]: ..."
-                        // чтобы она не дублировалась (как на image_11.png)
                         const cleanedNoteText = n.note.replace(attachmentRegex, '').trim();
 
                         return `
