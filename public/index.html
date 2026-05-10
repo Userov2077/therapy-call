@@ -363,9 +363,33 @@
         .modal.active .modal-content { transform: translateY(0); }
         .modal-handle { width: 36px; height: 4px; background: rgba(255,255,255,0.18); border-radius: 2px; margin: 0 auto 20px; }
         .modal-content h3 { font-size: 20px; font-weight: 700; margin-bottom: 20px; }
-        .modal-content input, .modal-content textarea, .modal-content select { width: 100%; padding: 12px 14px; border-radius: var(--radius-md); border: 1px solid var(--border); background: rgba(255,255,255,0.06); color: white; font-size: 14px; margin-bottom: 12px; outline: none; font-family: inherit; }
+        .modal-content input:not([type="file"]):not([type="checkbox"]), 
+        .modal-content textarea, 
+        .modal-content select { 
+            width: 100%; 
+            padding: 12px 14px; 
+            border-radius: var(--radius-md); 
+            border: 1px solid var(--border); 
+            background: rgba(255,255,255,0.06); 
+            color: white; 
+            font-size: 16px !important; /* КРИТИЧНО: Отключает авто-зум на iPhone */
+            height: 48px; /* Жестко фиксируем одинаковую высоту */
+            margin-bottom: 12px; 
+            outline: none; 
+            font-family: inherit; 
+            box-sizing: border-box;
+            appearance: none; /* Убирает стандартные стили iOS */
+        }
         .modal-content input:focus, .modal-content textarea:focus, .modal-content select:focus { border-color: var(--green-border); }
-        .modal-content textarea { resize: vertical; min-height: 90px; }
+        .modal-content textarea { 
+            height: auto !important; /* Текстовому полю разрешаем растягиваться */
+            resize: vertical; 
+            min-height: 90px; 
+        }
+        .modal-content input[type="file"], .modal-content input[type="checkbox"] {
+            height: auto; 
+            font-size: 14px !important;
+        }
         .modal-buttons { display: flex; gap: 10px; margin-top: 18px; }
         .modal-buttons button { flex: 1; padding: 13px; border-radius: 40px; font-weight: 600; font-size: 14px; cursor: pointer; }
         .btn-primary { background: linear-gradient(135deg, var(--green), var(--green-dark)); border: none; color: #0d2010; }
@@ -1634,7 +1658,7 @@
     const totalLikesOnPosts = statsRes.success ? statsRes.totalLikes : 0;
     
     let appointmentsHtml = '';
-    if (!isPsych && currentUser.appointments && currentUser.appointments.length > 0) {
+    if (!isPsych) {
         appointmentsHtml = `
             <div class="profile-sections">
                 <div class="collapsible-section open" id="sec-client-appointments">
@@ -1662,7 +1686,7 @@
     }
     
     let homeworksHtml = '';
-    if (!isPsych && clientHomeworks.length > 0) {
+    if (!isPsych) {
         homeworksHtml = `
             <div class="profile-sections">
                 <div class="collapsible-section open">
@@ -2261,7 +2285,19 @@
                 `).join('') : '<div class="empty-state" style="padding:20px;"><i class="fas fa-calendar-times"></i><div>Нет добавленного времени</div></div>';
             };
             const modalId = 'scheduleModal';
-            const html = `<div class="modal" id="${modalId}"><div class="modal-content" style="max-height:85vh;display:flex;flex-direction:column;"><div class="modal-handle"></div><h3>📅 Свободное время</h3><div class="schedule-modal-form"><div style="display:flex;gap:8px;align-items:flex-end;"><div style="flex:1;"><label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px;">Дата</label><input type="date" id="slotDate" style="margin-bottom:0;width:100%;"></div><div style="flex:1;"><label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px;">Время</label><input type="time" id="slotTime" style="margin-bottom:0;width:100%;"></div><button class="btn-sm" style="height:44px;margin-bottom:0;" onclick="window.addSlot()"><i class="fas fa-plus"></i> Добавить</button></div></div><div class="schedule-modal-list" id="schedule-list">${renderSlots()}</div><div class="modal-buttons" style="margin-top:0;"><button class="btn-secondary" onclick="closeModal('${modalId}')">Закрыть</button></div></div></div>`;
+            const html = `<div class="modal" id="${modalId}"><div class="modal-content" style="max-height:85vh;display:flex;flex-direction:column;"><div class="modal-handle"></div><h3>📅 Свободное время</h3><div class="schedule-modal-form"><div style="display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap;">
+    <div style="flex: 1; min-width: 130px;">
+        <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px;">Дата</label>
+        <input type="date" id="slotDate" style="margin-bottom:0;width:100%;">
+    </div>
+    <div style="flex: 1; min-width: 100px;">
+        <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px;">Время</label>
+        <input type="time" id="slotTime" style="margin-bottom:0;width:100%;">
+    </div>
+    <button class="btn-sm" style="height:48px; margin-bottom:0; flex-grow:1; min-width:100px;" onclick="window.addSlot()">
+        <i class="fas fa-plus"></i> Добавить
+    </button>
+</div></div><div class="schedule-modal-list" id="schedule-list">${renderSlots()}</div><div class="modal-buttons" style="margin-top:0;"><button class="btn-secondary" onclick="closeModal('${modalId}')">Закрыть</button></div></div></div>`;
             document.body.insertAdjacentHTML('beforeend', html);
             setTimeout(() => document.getElementById(modalId).classList.add('active'), 10);
             window.addSlot = async () => {
