@@ -1,17 +1,31 @@
 self.addEventListener('push', function(event) {
-    if (!event.data) return;
+    console.log('[Service Worker] Получен Push-сигнал');
 
-    const data = event.data.json();
+    let data = {};
+    
+    // Безопасно пытаемся прочитать то, что прислал сервер
+    if (event.data) {
+        try {
+            data = event.data.json();
+        } catch (e) {
+            // Если пришел не JSON, а обычный текст
+            data = { title: 'Therapy Call', body: event.data.text() };
+        }
+    } else {
+        // Если сервер прислал пустой пуш (просто "проснуться")
+        data = { title: 'Therapy Call', body: 'У вас новое уведомление' };
+    }
+
     const options = {
-        body: data.body,
-        // icon: '/icon.png', <-- раскомментируй и укажи путь, если у тебя есть иконка PWA
+        body: data.body || '',
         vibrate: [200, 100, 200], // Вибрация для Android
         data: { url: data.url || '/' },
-        requireInteraction: true // Чтобы уведомление не исчезало само
+        requireInteraction: true // Чтобы не исчезало само
     };
 
+    // Отрисовываем уведомление
     event.waitUntil(
-        self.registration.showNotification(data.title, options)
+        self.registration.showNotification(data.title || 'Уведомление', options)
     );
 });
 
