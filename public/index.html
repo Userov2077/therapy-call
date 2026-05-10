@@ -3012,6 +3012,12 @@
         }
     }
 
+    // Чиним дату рождения: отрезаем "T00:00:00.000Z"
+    let birthDateDisplay = '—';
+    if (profile && profile.birth_date) {
+        birthDateDisplay = profile.birth_date.split('T')[0];
+    }
+
     const modalId = 'clientCardModal_' + Date.now();
     const html = `
         <div class="modal" id="${modalId}">
@@ -3020,7 +3026,7 @@
                 <h3 style="word-break: break-word;">Карта клиента: ${escapeHtml(client.fullName)}</h3>
 
                 <div class="info-row" style="align-items: flex-start;"><i class="fas fa-phone" style="margin-top: 3px;"></i> <div style="flex:1; word-break: break-word;"><strong>Телефон:</strong> ${escapeHtml(client.phone || '—')}</div></div>
-                <div class="info-row" style="align-items: flex-start;"><i class="fas fa-calendar-alt" style="margin-top: 3px;"></i> <div style="flex:1; word-break: break-word;"><strong>Дата рождения:</strong> ${profile?.birth_date || '—'}</div></div>
+                <div class="info-row" style="align-items: flex-start;"><i class="fas fa-calendar-alt" style="margin-top: 3px;"></i> <div style="flex:1; word-break: break-word;"><strong>Дата рождения:</strong> ${birthDateDisplay}</div></div>
                 <div class="info-row" style="align-items: flex-start;"><i class="fas fa-venus-mars" style="margin-top: 3px;"></i> <div style="flex:1; word-break: break-word;"><strong>Пол:</strong> ${profile?.gender || '—'}</div></div>
                 <div class="info-row" style="align-items: flex-start;"><i class="fas fa-exclamation-triangle" style="margin-top: 3px;"></i> <div style="flex:1; word-break: break-word;"><strong>Экстренные контакты:</strong> ${emergencyHtml}</div></div>
                 
@@ -3033,8 +3039,11 @@
                 <div id="clientHomeworksList_${modalId}" style="margin-bottom: 16px;">
                     ${homeworks.length ? homeworks.map(h => `
                         <div class="task-item" data-id="${h.id}" style="align-items: flex-start;">
-                            <input type="checkbox" class="homework-cb-card" data-id="${h.id}" ${h.status === 'done' ? 'checked' : ''} style="margin-top: 2px;">
-                            <span style="flex:1; word-break: break-word; line-height: 1.4;">${escapeHtml(h.text)} ${h.due_date ? `<span style="color:var(--text-muted); font-size: 11px;"><br>(до ${h.due_date})</span>` : ''}</span>
+                            <input type="checkbox" class="homework-cb-card" data-id="${h.id}" ${h.status === 'done' ? 'checked' : ''} style="margin-top: 2px; flex-shrink: 0;">
+                            <div style="flex: 1; min-width: 0; word-wrap: break-word; line-height: 1.4;">
+                                ${escapeHtml(h.text)} 
+                                ${h.due_date ? `<div style="color:var(--text-muted); font-size: 11px; margin-top: 4px;">(до ${h.due_date.split('T')[0]})</div>` : ''}
+                            </div>
                         </div>
                     `).join('') : '<div class="glass-card" style="padding: 10px; font-size: 13px; color: var(--text-muted);">Нет заданий</div>'}
                 </div>
@@ -3053,8 +3062,8 @@
                 <div id="clientProgressList_${modalId}">
                     ${progress.length ? progress.map(p => `
                         <div class="info-row" style="margin-bottom: 6px; align-items: flex-start;">
-                            <div style="flex:1; word-break: break-word; line-height: 1.4;">
-                                <strong>${p.date}</strong>: ${p.value}/10 <span style="font-size: 11px; color: var(--text-muted);">(${p.type === 'psychologist' ? 'оценка психолога' : 'самооценка'})</span>
+                            <div style="flex:1; min-width: 0; word-wrap: break-word; line-height: 1.4;">
+                                <strong>${p.date.split('T')[0]}</strong>: ${p.value}/10 <span style="font-size: 11px; color: var(--text-muted);">(${p.type === 'psychologist' ? 'оценка психолога' : 'самооценка'})</span>
                                 ${p.notes ? `<div style="margin-top: 4px; padding-top: 4px; border-top: 1px solid rgba(255,255,255,0.05); color: rgba(255,255,255,0.85);">${escapeHtml(p.notes)}</div>` : ''}
                             </div>
                         </div>
