@@ -2946,7 +2946,18 @@
         async function stopScreenShareCall() { if (!isScreenSharing) return; if (screenStream) screenStream.getTracks().forEach(t => t.stop()); screenStream = null; if (cameraTrack) { cameraTrack.enabled = true; await replaceVideoTrackCall(cameraTrack); } else await replaceVideoTrackCall(null); updateLocalVideoMode(false); isScreenSharing = false; if (socket) socket.emit('call-message', { text: 'Остановил трансляцию экрана' }); if (socket) socket.emit('screen-share-stopped', { roomId: currentCallRoomId }); }
         function toggleScreenShareCall() { isScreenSharing ? stopScreenShareCall() : startScreenShareCall(); }
         function addCallChatMessage(text, isOutgoing = false, time = null) { const container = document.getElementById('chatMessagesCall'); if (!container) return; const empty = container.querySelector('.chat-empty'); if (empty) empty.remove(); const div = document.createElement('div'); div.className = 'chat-message-call ' + (isOutgoing ? 'outgoing' : 'incoming'); const t = time ? new Date(time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); div.innerHTML = `<div>${escapeHtml(text)}</div><div class="chat-message-time">${t}</div>`; container.appendChild(div); container.scrollTop = container.scrollHeight; }
-        function sendCallChatMessage() { const input = document.getElementById('chatInputCall'); if (!input) return; const text = input.value.trim(); if (text && socket && callPartnerSocketId) { addCallChatMessage(text, true); socket.emit('call-message', { text }); input.value = ''; } }
+        function sendCallChatMessage() { 
+    const input = document.getElementById('chatInputCall'); 
+    if (!input) return; 
+    const text = input.value.trim(); 
+    
+    // Убрали проблемную зависимость от callPartnerSocketId
+    if (text && socket) { 
+        addCallChatMessage(text, true); 
+        socket.emit('call-message', { text }); 
+        input.value = ''; 
+    } 
+}
         function startCallRecording() { if (!localStream) return; recordedChunks = []; const stream = new MediaStream([localStream.getAudioTracks()[0]]); mediaRecorderCall = new MediaRecorder(stream, { mimeType: 'audio/webm' }); mediaRecorderCall.ondataavailable = e => { if (e.data.size) recordedChunks.push(e.data); }; mediaRecorderCall.onstop = async () => { const blob = new Blob(recordedChunks, { type: 'audio/webm' }); const fd = new FormData(); fd.append('recording', blob, `call_${Date.now()}.webm`); fd.append('from', currentUser.id); fd.append('to', callPartnerSocketId || 'unknown'); fd.append('roomId', currentCallRoomId); try { await authFetch('/api/upload-recording', { method: 'POST', body: fd }); showToast('Запись сохранена'); } catch(e) {} }; mediaRecorderCall.start(1000); isRecordingCall = true; const recordBtn = document.getElementById('recordCallBtn'); if (recordBtn) { recordBtn.classList.add('recording-active'); recordBtn.innerHTML = '<span class="rec-dot"></span> Запись ...'; } }
         function stopCallRecording() { if (mediaRecorderCall?.state === 'recording') { mediaRecorderCall.stop(); isRecordingCall = false; const recordBtn = document.getElementById('recordCallBtn'); if (recordBtn) { recordBtn.classList.remove('recording-active'); recordBtn.innerHTML = '<i class="fas fa-circle"></i> Запись'; } } }
         function toggleCallRecording() { isRecordingCall ? stopCallRecording() : startCallRecording(); }
@@ -3006,44 +3017,48 @@
         <div class="modal" id="${modalId}">
             <div class="modal-content" style="max-width: 500px; max-height: 80vh; overflow-y: auto;">
                 <div class="modal-handle"></div>
-                <h3>Карта клиента: ${escapeHtml(client.fullName)}</h3>
+                <h3 style="word-break: break-word;">Карта клиента: ${escapeHtml(client.fullName)}</h3>
 
-                <div class="info-row"><i class="fas fa-phone"></i> <strong>Телефон:</strong> ${escapeHtml(client.phone || '—')}</div>
-                <div class="info-row"><i class="fas fa-calendar-alt"></i> <strong>Дата рождения:</strong> ${profile?.birth_date || '—'}</div>
-                <div class="info-row"><i class="fas fa-venus-mars"></i> <strong>Пол:</strong> ${profile?.gender || '—'}</div>
-                <div class="info-row"><i class="fas fa-exclamation-triangle"></i> <strong>Экстренные контакты:</strong> ${emergencyHtml}</div>
-                <div class="info-row"><i class="fas fa-frown"></i> <strong>Жалобы:</strong> ${escapeHtml(profile?.complaints || '—')}</div>
-                <div class="info-row"><i class="fas fa-bullseye"></i> <strong>Цели:</strong> ${escapeHtml(profile?.goals || '—')}</div>
+                <div class="info-row" style="align-items: flex-start;"><i class="fas fa-phone" style="margin-top: 3px;"></i> <div style="flex:1; word-break: break-word;"><strong>Телефон:</strong> ${escapeHtml(client.phone || '—')}</div></div>
+                <div class="info-row" style="align-items: flex-start;"><i class="fas fa-calendar-alt" style="margin-top: 3px;"></i> <div style="flex:1; word-break: break-word;"><strong>Дата рождения:</strong> ${profile?.birth_date || '—'}</div></div>
+                <div class="info-row" style="align-items: flex-start;"><i class="fas fa-venus-mars" style="margin-top: 3px;"></i> <div style="flex:1; word-break: break-word;"><strong>Пол:</strong> ${profile?.gender || '—'}</div></div>
+                <div class="info-row" style="align-items: flex-start;"><i class="fas fa-exclamation-triangle" style="margin-top: 3px;"></i> <div style="flex:1; word-break: break-word;"><strong>Экстренные контакты:</strong> ${emergencyHtml}</div></div>
+                
+                <div class="info-row" style="align-items: flex-start;"><i class="fas fa-frown" style="margin-top: 3px;"></i> <div style="flex:1; word-break: break-word; white-space: pre-wrap;"><strong>Жалобы:</strong><br>${escapeHtml(profile?.complaints || '—')}</div></div>
+                <div class="info-row" style="align-items: flex-start;"><i class="fas fa-bullseye" style="margin-top: 3px;"></i> <div style="flex:1; word-break: break-word; white-space: pre-wrap;"><strong>Цели:</strong><br>${escapeHtml(profile?.goals || '—')}</div></div>
 
                 <hr style="margin: 16px 0; border-color: var(--border);">
 
                 <h4 style="margin-bottom: 12px;"><i class="fas fa-tasks"></i> Домашние задания</h4>
                 <div id="clientHomeworksList_${modalId}" style="margin-bottom: 16px;">
-                    ${homeworks.map(h => `
-                        <div class="task-item" data-id="${h.id}">
-                            <input type="checkbox" class="homework-cb-card" data-id="${h.id}" ${h.status === 'done' ? 'checked' : ''}>
-                            <span>${escapeHtml(h.text)} ${h.due_date ? `(до ${h.due_date})` : ''}</span>
+                    ${homeworks.length ? homeworks.map(h => `
+                        <div class="task-item" data-id="${h.id}" style="align-items: flex-start;">
+                            <input type="checkbox" class="homework-cb-card" data-id="${h.id}" ${h.status === 'done' ? 'checked' : ''} style="margin-top: 2px;">
+                            <span style="flex:1; word-break: break-word; line-height: 1.4;">${escapeHtml(h.text)} ${h.due_date ? `<span style="color:var(--text-muted); font-size: 11px;"><br>(до ${h.due_date})</span>` : ''}</span>
                         </div>
-                    `).join('')}
+                    `).join('') : '<div class="glass-card" style="padding: 10px; font-size: 13px; color: var(--text-muted);">Нет заданий</div>'}
                 </div>
 
                 <h4 style="margin-bottom: 12px;"><i class="fas fa-sticky-note"></i> Заметки психолога</h4>
                 <div id="clientNotesList_${modalId}" style="margin-bottom: 16px;">
                     ${notes.length ? notes.map(n => `
-                        <div class="glass-card" style="padding: 10px; margin-bottom: 8px;">
-                            <strong>${new Date(n.created_at).toLocaleString()}</strong><br>
+                        <div class="glass-card" style="padding: 10px; margin-bottom: 8px; word-break: break-word; white-space: pre-wrap; font-size: 13px; line-height: 1.4;">
+                            <strong style="color: var(--green); font-size: 11px;">${new Date(n.created_at).toLocaleString()}</strong><br>
                             ${escapeHtml(n.note)}
                         </div>
-                    `).join('') : '<div class="glass-card" style="padding: 10px;">Нет заметок</div>'}
+                    `).join('') : '<div class="glass-card" style="padding: 10px; font-size: 13px; color: var(--text-muted);">Нет заметок</div>'}
                 </div>
 
                 <h4 style="margin-bottom: 12px;"><i class="fas fa-chart-line"></i> Прогресс</h4>
                 <div id="clientProgressList_${modalId}">
                     ${progress.length ? progress.map(p => `
-                        <div class="info-row" style="margin-bottom: 6px;">
-                            ${p.date}: ${p.value}/10 (${p.type === 'psychologist' ? 'оценка психолога' : 'самооценка'})${p.notes ? ` — ${escapeHtml(p.notes)}` : ''}
+                        <div class="info-row" style="margin-bottom: 6px; align-items: flex-start;">
+                            <div style="flex:1; word-break: break-word; line-height: 1.4;">
+                                <strong>${p.date}</strong>: ${p.value}/10 <span style="font-size: 11px; color: var(--text-muted);">(${p.type === 'psychologist' ? 'оценка психолога' : 'самооценка'})</span>
+                                ${p.notes ? `<div style="margin-top: 4px; padding-top: 4px; border-top: 1px solid rgba(255,255,255,0.05); color: rgba(255,255,255,0.85);">${escapeHtml(p.notes)}</div>` : ''}
+                            </div>
                         </div>
-                    `).join('') : '<div class="info-row">Нет данных</div>'}
+                    `).join('') : '<div class="info-row" style="color: var(--text-muted);">Нет данных</div>'}
                 </div>
 
                 <div class="modal-buttons">
