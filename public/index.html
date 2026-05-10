@@ -3021,7 +3021,7 @@
     const modalId = 'clientCardModal_' + Date.now();
     const html = `
         <div class="modal" id="${modalId}">
-            <div class="modal-content" style="max-width: 500px; max-height: 80vh; overflow-y: auto;">
+            <div class="modal-content" style="max-width: 500px; max-height: 80vh; overflow-y: auto; overflow-x: hidden;">
                 <div class="modal-handle"></div>
                 <h3 style="word-break: break-word;">Карта клиента: ${escapeHtml(client.fullName)}</h3>
 
@@ -3036,13 +3036,13 @@
                 <hr style="margin: 16px 0; border-color: var(--border);">
 
                 <h4 style="margin-bottom: 12px;"><i class="fas fa-tasks"></i> Домашние задания</h4>
-                <div id="clientHomeworksList_${modalId}" style="margin-bottom: 16px;">
+                <div id="clientHomeworksList_${modalId}" style="margin-bottom: 16px; display: flex; flex-direction: column; gap: 8px;">
                     ${homeworks.length ? homeworks.map(h => `
-                        <div class="task-item" data-id="${h.id}" style="align-items: flex-start;">
-                            <input type="checkbox" class="homework-cb-card" data-id="${h.id}" ${h.status === 'done' ? 'checked' : ''} style="margin-top: 2px; flex-shrink: 0;">
-                            <div style="flex: 1; min-width: 0; word-wrap: break-word; line-height: 1.4;">
-                                ${escapeHtml(h.text)} 
-                                ${h.due_date ? `<div style="color:var(--text-muted); font-size: 11px; margin-top: 4px;">(до ${h.due_date.split('T')[0]})</div>` : ''}
+                        <div data-id="${h.id}" style="display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; background: rgba(255,255,255,0.04); border-radius: var(--radius-md); border: 1px solid var(--border); width: 100%; box-sizing: border-box;">
+                            <input type="checkbox" class="homework-cb-card" data-id="${h.id}" ${h.status === 'done' ? 'checked' : ''} style="flex-shrink: 0; margin-top: 2px; width: 18px; height: 18px; accent-color: var(--green); cursor: pointer;">
+                            <div style="flex: 1 1 100%; overflow-wrap: break-word; word-break: break-word; white-space: normal; line-height: 1.4; color: rgba(255,255,255,0.88); font-size: 13.5px;">
+                                ${escapeHtml(h.text)}
+                                ${h.due_date ? `<div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">📅 до ${h.due_date.split('T')[0]}</div>` : ''}
                             </div>
                         </div>
                     `).join('') : '<div class="glass-card" style="padding: 10px; font-size: 13px; color: var(--text-muted);">Нет заданий</div>'}
@@ -3051,7 +3051,7 @@
                 <h4 style="margin-bottom: 12px;"><i class="fas fa-sticky-note"></i> Заметки психолога</h4>
                 <div id="clientNotesList_${modalId}" style="margin-bottom: 16px;">
                     ${notes.length ? notes.map(n => `
-                        <div class="glass-card" style="padding: 10px; margin-bottom: 8px; word-break: break-word; white-space: pre-wrap; font-size: 13px; line-height: 1.4;">
+                        <div class="glass-card" style="padding: 10px; margin-bottom: 8px; overflow-wrap: break-word; word-break: break-word; white-space: pre-wrap; font-size: 13px; line-height: 1.4;">
                             <strong style="color: var(--green); font-size: 11px;">${new Date(n.created_at).toLocaleString()}</strong><br>
                             ${escapeHtml(n.note)}
                         </div>
@@ -3062,7 +3062,7 @@
                 <div id="clientProgressList_${modalId}">
                     ${progress.length ? progress.map(p => `
                         <div class="info-row" style="margin-bottom: 6px; align-items: flex-start;">
-                            <div style="flex:1; min-width: 0; word-wrap: break-word; line-height: 1.4;">
+                            <div style="flex: 1 1 100%; overflow-wrap: break-word; word-break: break-word; line-height: 1.4;">
                                 <strong>${p.date.split('T')[0]}</strong>: ${p.value}/10 <span style="font-size: 11px; color: var(--text-muted);">(${p.type === 'psychologist' ? 'оценка психолога' : 'самооценка'})</span>
                                 ${p.notes ? `<div style="margin-top: 4px; padding-top: 4px; border-top: 1px solid rgba(255,255,255,0.05); color: rgba(255,255,255,0.85);">${escapeHtml(p.notes)}</div>` : ''}
                             </div>
