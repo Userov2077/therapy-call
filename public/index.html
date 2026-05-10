@@ -3043,7 +3043,6 @@ async function openClientCardInCall() {
         birthDateDisplay = profile.birth_date.split('T')[0];
     }
 
-    // Сохраняем ID модалки в глобальную переменную, чтобы потом её можно было перезагрузить
     window.currentClientCardModalId = 'clientCardModal_' + Date.now();
     const modalId = window.currentClientCardModalId;
 
@@ -3057,19 +3056,18 @@ async function openClientCardInCall() {
                 <div class="info-row" style="align-items: flex-start;"><i class="fas fa-calendar-alt" style="margin-top: 3px;"></i> <div style="flex:1; word-break: break-word;"><strong>Дата рождения:</strong> ${birthDateDisplay}</div></div>
                 <div class="info-row" style="align-items: flex-start;"><i class="fas fa-venus-mars" style="margin-top: 3px;"></i> <div style="flex:1; word-break: break-word;"><strong>Пол:</strong> ${profile?.gender || '—'}</div></div>
                 <div class="info-row" style="align-items: flex-start;"><i class="fas fa-exclamation-triangle" style="margin-top: 3px;"></i> <div style="flex:1; word-break: break-word;"><strong>Экстренные контакты:</strong> ${emergencyHtml}</div></div>
-                <div class="info-row" style="align-items: flex-start;"><i class="fas fa-frown" style="margin-top: 3px;"></i> <div style="flex:1; word-break: break-word; white-space: pre-wrap;"><strong>Жалобы:</strong><br>${escapeHtml(profile?.complaints || '—')}</div></div>
-                <div class="info-row" style="align-items: flex-start;"><i class="fas fa-bullseye" style="margin-top: 3px;"></i> <div style="flex:1; word-break: break-word; white-space: pre-wrap;"><strong>Цели:</strong><br>${escapeHtml(profile?.goals || '—')}</div></div>
+                <div class="info-row" style="align-items: flex-start;"><i class="fas fa-frown" style="margin-top: 3px;"></i> <div style="flex:1; word-break: break-word; white-space: pre-wrap;"><strong>Жалобы:</strong><br><span style="color:rgba(255,255,255,0.8);">${escapeHtml(profile?.complaints || '—')}</span></div></div>
+                <div class="info-row" style="align-items: flex-start;"><i class="fas fa-bullseye" style="margin-top: 3px;"></i> <div style="flex:1; word-break: break-word; white-space: pre-wrap;"><strong>Цели:</strong><br><span style="color:rgba(255,255,255,0.8);">${escapeHtml(profile?.goals || '—')}</span></div></div>
 
                 <hr style="margin: 16px 0; border-color: var(--border);">
 
                 <h4 style="margin-bottom: 12px;"><i class="fas fa-tasks"></i> Домашние задания</h4>
-                <div id="clientHomeworksList_${modalId}" style="margin-bottom: 16px; display: flex; flex-direction: column; gap: 8px;">
+                <div id="clientHomeworksList_${modalId}" style="margin-bottom: 16px; display: flex; flex-direction: column; gap: 8px; width: 100%;">
                     ${homeworks.length ? homeworks.map(h => `
-                        <div data-id="${h.id}" style="display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; background: rgba(255,255,255,0.04); border-radius: var(--radius-md); border: 1px solid var(--border); width: 100%; box-sizing: border-box;">
-                            <input type="checkbox" class="homework-cb-card" data-id="${h.id}" ${h.status === 'done' ? 'checked' : ''} style="flex-shrink: 0; margin-top: 2px; width: 18px; height: 18px; accent-color: var(--green); cursor: pointer;">
-                            <div style="flex: 1 1 100%; overflow-wrap: break-word; word-break: break-word; white-space: normal; line-height: 1.4; color: rgba(255,255,255,0.88); font-size: 13.5px;">
-                                ${escapeHtml(h.text)}
-                                ${h.due_date ? `<div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">📅 до ${h.due_date.split('T')[0]}</div>` : ''}
+                        <div data-id="${h.id}" style="display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; background: rgba(255,255,255,0.04); border-radius: 16px; border: 1px solid rgba(255,255,255,0.07); width: 100%; box-sizing: border-box;">
+                            <input type="checkbox" class="homework-cb-card" data-id="${h.id}" ${h.status === 'done' ? 'checked' : ''} style="flex-shrink: 0; margin-top: 2px; width: 18px; height: 18px; accent-color: #8bca8b; cursor: pointer;">
+                            <div style="flex: 1; min-width: 0; text-align: left;">
+                                <div style="word-break: break-word; white-space: pre-wrap; font-size: 13.5px; line-height: 1.4; color: #fff; margin: 0;">${escapeHtml(h.text)}</div>${h.due_date ? `<div style="color: rgba(255,255,255,0.45); font-size: 11px; margin-top: 4px;">📅 до ${h.due_date.split('T')[0]}</div>` : ''}
                             </div>
                         </div>
                     `).join('') : '<div class="glass-card" style="padding: 10px; font-size: 13px; color: var(--text-muted);">Нет заданий</div>'}
@@ -3407,15 +3405,15 @@ function renderUniversalClientCard(data) {
                 
                 <div id="dossierHwList" style="margin-bottom: 16px; display: flex; flex-direction: column; gap: 8px; width: 100%;">
                     ${homeworks.map(h => `
-                        <div style="display: flex; flex-direction: row; gap: 12px; align-items: flex-start; padding: 12px 14px; background: rgba(255,255,255,0.04); border-radius: 16px; border: 1px solid rgba(255,255,255,0.07); width: 100%; box-sizing: border-box; overflow: hidden;">
+                        <div style="display: flex; flex-direction: row; gap: 12px; align-items: flex-start; padding: 12px 14px; background: rgba(255,255,255,0.04); border-radius: 16px; border: 1px solid rgba(255,255,255,0.07); width: 100%; box-sizing: border-box;">
                             <input type="checkbox" ${h.status === 'done' ? 'checked' : ''} disabled style="flex-shrink: 0; margin-top: 2px; width: 18px; height: 18px; accent-color: #8bca8b;">
-                            <div style="flex: 1; min-width: 0; word-break: break-all; overflow-wrap: break-word; white-space: pre-wrap; font-size: 13.5px; line-height: 1.4; color: #fff;">
-                                ${escapeHtml(h.text)}
-                                ${h.due_date ? `<div style="color: rgba(255,255,255,0.45); font-size: 11px; margin-top: 4px;">до ${h.due_date.split('T')[0]}</div>` : ''}
+                            <div style="flex: 1; min-width: 0; text-align: left;">
+                                <div style="word-break: break-word; white-space: pre-wrap; font-size: 13.5px; line-height: 1.4; color: #fff; margin: 0;">${escapeHtml(h.text)}</div>${h.due_date ? `<div style="color: rgba(255,255,255,0.45); font-size: 11px; margin-top: 4px;">до ${h.due_date.split('T')[0]}</div>` : ''}
                             </div>
                         </div>
                     `).join('') || '<div style="font-size:12px; color:rgba(255,255,255,0.45);">Нет заданий</div>'}
                 </div>
+
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
                     <h4 style="margin: 0;"><i class="fas fa-sticky-note"></i> Заметки</h4>
                     <button class="btn-sm btn-outline" style="padding: 4px 8px;" onclick="openAddClientNoteModal('${client.id}', '${escapeHtml(client.fullName).replace(/'/g, "\\'")}')"><i class="fas fa-plus"></i></button>
