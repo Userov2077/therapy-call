@@ -377,24 +377,57 @@
     background: transparent !important;
 }
 
-/* Исправление скрытия нижней навигации при открытии клавиатуры в чате */
-body.chat-opened #bottomNav {
-    display: none !important;
-}
+/* --- НОВЫЙ, ИСПРАВЛЕННЫЙ CSS ДЛЯ МОБИЛЬНЫХ --- */
 
-/* Стили для ссылок на файлы в заметках досье */
-.note-attachment-link {
-    color: var(--blue, #3b82f6);
-    text-decoration: underline;
-    font-size: 11px;
-    margin-top: 4px;
-    display: inline-block;
-    word-break: break-all;
-}
-.note-attachment-link:hover {
-    color: #fff;
-    text-decoration: none;
-}
+        /* Глобальное исправление для реальной высоты на мобильных */
+        :root {
+            --vh: 1vh; /* Значение по умолчанию, будет обновляться через JS */
+        }
+
+        /* Применяем dynamic height к основным контейнерам звонка и чата */
+        .call-container, .chat-page {
+            height: 100vh; /* Фоллбэк */
+            height: calc(var(--vh, 1vh) * 100) !important;
+            overflow: hidden;
+        }
+
+        /* Модальное окно досье тоже должно учитывать высоту, чтобы не выходить за рамки */
+        .modal-content {
+            max-height: calc(var(--vh, 1vh) * 90) !important; /* Не выше 90% видимой области */
+        }
+
+        /* Скрытие нижней навигации, когда открыта клавиатура */
+        body.chat-opened .bottom-nav {
+            display: none !important;
+        }
+
+        /* --- ЧИНИМ ЗАМЕТКИ (КРАСИВАЯ КНОПКА ФАЙЛА) --- */
+        .note-attachment-button {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            width: 100%;
+            padding: 12px;
+            background: rgba(59, 130, 246, 0.1); /* Легкий синий фон */
+            border: 1px solid rgba(59, 130, 246, 0.2);
+            border-radius: var(--radius-md);
+            color: #3b82f6;
+            text-decoration: none;
+            font-size: 13px;
+            font-weight: 500;
+            margin-top: 12px;
+            box-sizing: border-box;
+            transition: all 0.2s ease;
+        }
+
+        .note-attachment-button:hover {
+            background: rgba(59, 130, 246, 0.2);
+            color: #fff;
+        }
+
+        .note-attachment-button i {
+            font-size: 14px;
+        }
     </style>
 </head>
 <body>
@@ -472,21 +505,30 @@ body.chat-opened #bottomNav {
 
     <script src="/socket.io/socket.io.js"></script>
     <script>
-        // 1. Вставьте это в начало блока <script>
-const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
-// Используем делегирование, чтобы код работал даже когда чат создается заново
-document.addEventListener('focusin', (e) => {
-    if (isMobile && (e.target.id === 'chatMessageInput' || e.target.id === 'chatInputCall')) {
-        document.body.classList.add('chat-opened');
-    }
-});
+        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
-document.addEventListener('focusout', (e) => {
-    if (isMobile && (e.target.id === 'chatMessageInput' || e.target.id === 'chatInputCall')) {
-        document.body.classList.remove('chat-opened');
-    }
-});
+        function updateVh() {
+            let vh = window.innerHeight * 0.01;
+            document.documentElement.style.setProperty('--vh', `${vh}px`);
+        }
+
+        updateVh();
+        window.addEventListener('resize', updateVh);
+
+        document.addEventListener('focusin', (e) => {
+            if (isMobile && (e.target.id === 'chatMessageInput' || e.target.id === 'chatInputCall' || e.target.id === 'chatInput')) {
+                document.body.classList.add('chat-opened');
+                setTimeout(updateVh, 100); 
+            }
+        });
+
+        document.addEventListener('focusout', (e) => {
+            if (isMobile && (e.target.id === 'chatMessageInput' || e.target.id === 'chatInputCall' || e.target.id === 'chatInput')) {
+                document.body.classList.remove('chat-opened');
+                setTimeout(updateVh, 100);
+            }
+        });
         // ======================= ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ =======================
         let currentUser = null;
         let currentTab = 'feed';
@@ -3397,8 +3439,7 @@ async function openClientDossier(clientId) {
     renderUniversalClientCard(data);
 }
 
-// Вспомогательная функция отрисовки досье (полностью изолированная верстка заданий)
-// Вспомогательная функция отрисовки досье
+// Вспомогательная функция отрисовки досье (чиним Заметки от дублей)
 function renderUniversalClientCard(data) {
     const { client, profile, notes, homeworks, progress } = data;
     
@@ -3416,7 +3457,7 @@ function renderUniversalClientCard(data) {
 
     const html = `
         <div class="modal" id="${modalId}">
-            <div class="modal-content" style="max-width: 500px; max-height: 85vh; overflow-y: auto; overflow-x: hidden;">
+            <div class="modal-content" style="max-width: 500px; overflow-y: auto; overflow-x: hidden;">
                 <div class="modal-handle"></div>
                 <div style="display:flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px;">
                     <h3 style="margin:0; word-break: break-word;">📁 Досье: ${escapeHtml(client.fullName)}</h3>
@@ -3439,46 +3480,61 @@ function renderUniversalClientCard(data) {
                 
                 <div id="dossierHwList" style="margin-bottom: 16px; display: flex; flex-direction: column; gap: 8px; width: 100%;">
                     ${homeworks.map(h => `
-                        <div style="display: flex; flex-direction: row; gap: 12px; align-items: flex-start; padding: 12px 14px; background: rgba(255,255,255,0.04); border-radius: 16px; border: 1px solid rgba(255,255,255,0.07); width: 100%; box-sizing: border-box;">
-                            <input type="checkbox" ${h.status === 'done' ? 'checked' : ''} disabled style="flex-shrink: 0; margin-top: 2px; width: 18px; height: 18px; accent-color: #8bca8b;">
-                            <div style="flex: 1; min-width: 0; text-align: left;">
-                                <div style="word-break: break-word; white-space: pre-wrap; font-size: 13.5px; line-height: 1.4; color: #fff; margin: 0;">${escapeHtml(h.text)}</div>${h.due_date ? `<div style="color: rgba(255,255,255,0.45); font-size: 11px; margin-top: 4px;">до ${h.due_date.split('T')[0]}</div>` : ''}
+                        <div style="display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; background: rgba(255,255,255,0.04); border-radius: 16px; border: 1px solid rgba(255,255,255,0.07); width: 100%; box-sizing: border-box;">
+                            <input type="checkbox" ${h.status === 'done' ? 'checked' : ''} disabled style="flex-shrink: 0; margin-top: 2px;">
+                            <div style="flex: 1; min-width: 0; text-align: left; word-break: break-all; overflow-wrap: break-word;">
+                                <div style="white-space: pre-wrap; font-size: 13.5px; line-height: 1.4; color: #fff; margin: 0;">${escapeHtml(h.text)}</div>
+                                ${h.due_date ? `<div style="color: rgba(255,255,255,0.45); font-size: 11px; margin-top: 4px;">до ${h.due_date.split('T')[0]}</div>` : ''}
                             </div>
                         </div>
-                    `).join('') || '<div style="font-size:12px; color:rgba(255,255,255,0.45);">Нет заданий</div>'}
+                    `).join('') || '<div style="font-size:12px; color:var(--text-muted);">Нет заданий</div>'}
                 </div>
 
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
                     <h4 style="margin: 0;"><i class="fas fa-sticky-note"></i> Заметки</h4>
                     <button class="btn-sm btn-outline" style="padding: 4px 8px;" onclick="openAddClientNoteModal('${client.id}', '${escapeHtml(client.fullName).replace(/'/g, "\\'")}')"><i class="fas fa-plus"></i></button>
                 </div>
+                
                 <div id="dossierNotesList" style="margin-bottom: 16px;">
-                    ${notes.map(n => `
-                        <div class="glass-card" style="padding: 10px; margin-bottom: 8px; font-size: 13px; overflow-wrap: break-word; word-break: break-word; white-space: pre-wrap; line-height: 1.4;">
-                            <div style="display: flex; flex-direction: column; gap: 2px; margin-bottom: 4px;">
-                                <div style="font-weight: 600; color: #fff; font-size: 14px;">${escapeHtml(n.note.split('\n')[0])}</div>
-                                <small style="color: rgba(255,255,255,0.6); font-size: 10.5px;">${new Date(n.created_at).toLocaleDateString()}</small>
+                    ${notes.map(n => {
+                        // Регулярное выражение для поиска строки с файлом
+                        const attachmentRegex = /\[Прикреплен файл\]:\s*(https?:\/\/[^\s]+)/;
+                        const match = n.note.match(attachmentRegex);
+                        const fileUrl = match ? match[1] : null;
+
+                        // Очищаем основной текст заметки от технической строки "[Прикреплен файл]: ..."
+                        // чтобы она не дублировалась (как на image_11.png)
+                        const cleanedNoteText = n.note.replace(attachmentRegex, '').trim();
+
+                        return `
+                            <div class="glass-card" style="padding: 12px; margin-bottom: 10px; font-size: 13px;">
+                                <small style="color: rgba(255,255,255,0.45); font-size: 10.5px; display: block; margin-bottom: 6px;">
+                                    ${new Date(n.created_at).toLocaleDateString()}
+                                </small>
+                                <div style="overflow-wrap: break-word; word-break: break-word; white-space: pre-wrap; line-height: 1.4; color: #fff;">
+                                    ${escapeHtml(cleanedNoteText)}
+                                </div>
+                                ${fileUrl ? `
+                                    <a href="${escapeHtml(fileUrl)}" target="_blank" class="note-attachment-button">
+                                        <i class="fas fa-paperclip"></i> Просмотреть прикрепленный файл
+                                    </a>
+                                ` : ''}
                             </div>
-                            ${escapeHtml(n.note.split('\n').slice(1).join('\n')).trim()}
-                            ${n.note.includes('[Прикреплен файл]: ') ? `
-                                <a href="${escapeHtml(n.note.match(/\[Прикреплен файл\]: (https?:\/\/[^\s]+)/)[1])}" target="_blank" class="note-attachment-link">
-                                    <i class="fas fa-paperclip"></i> Просмотреть прикрепленный файл
-                                </a>
-                            ` : ''}
-                        </div>
-                    `).join('') || '<div style="font-size:12px; color:var(--text-muted);">Нет заметок</div>'}
+                        `;
+                    }).join('') || '<div style="font-size:12px; color:var(--text-muted); text-align:center; padding:10px;">Нет заметок</div>'}
                 </div>
+
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
                     <h4 style="margin: 0;"><i class="fas fa-chart-line"></i> Прогресс</h4>
                     <button class="btn-sm btn-outline" style="padding: 4px 8px;" onclick="openAddClientProgressModal('${client.id}')"><i class="fas fa-plus"></i></button>
                 </div>
                 <div id="dossierProgressList">
                     ${progress.map(p => `
-                        <div style="font-size:12px; margin-bottom:6px; padding:8px; background:rgba(139,202,139,0.05); border-radius:8px; overflow-wrap: break-word; word-break: break-word;">
-                            <strong>${p.date.split('T')[0]}</strong> — Состояние: ${p.value}/10
-                            <div style="color:rgba(255,255,255,0.6); margin-top:2px;">${escapeHtml(p.notes || '')}</div>
+                        <div style="font-size:12px; margin-bottom:6px; padding:10px; background:rgba(255,255,255,0.03); border-radius:8px; overflow-wrap: break-word; word-break: break-word;">
+                            <strong style="color:#fff;">${p.date.split('T')[0]}</strong> — Состояние: ${p.value}/10
+                            <div style="color:rgba(255,255,255,0.6); margin-top:4px; line-height:1.4;">${escapeHtml(p.notes || '')}</div>
                         </div>
-                    `).join('') || '<div style="font-size:12px; color:var(--text-muted);">Данных нет</div>'}
+                    `).join('') || '<div style="font-size:12px; color:var(--text-muted); text-align:center; padding:10px;">Данных нет</div>'}
                 </div>
 
                 <div class="modal-buttons" style="margin-top:24px;">
