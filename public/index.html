@@ -3367,6 +3367,7 @@ async function openClientDossier(clientId) {
 }
 
 // Вспомогательная функция отрисовки (вынесем из звонка в общий доступ)
+// Вспомогательная функция отрисовки (исправленная верстка)
 function renderUniversalClientCard(data) {
     const { client, profile, notes, homeworks, progress } = data;
     
@@ -3384,19 +3385,19 @@ function renderUniversalClientCard(data) {
 
     const html = `
         <div class="modal" id="${modalId}">
-            <div class="modal-content" style="max-width: 500px; max-height: 85vh; overflow-y: auto;">
+            <div class="modal-content" style="max-width: 500px; max-height: 85vh; overflow-y: auto; overflow-x: hidden;">
                 <div class="modal-handle"></div>
                 <div style="display:flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px;">
                     <h3 style="margin:0; word-break: break-word;">📁 Досье: ${escapeHtml(client.fullName)}</h3>
                     <button class="back-btn" onclick="closeModal('${modalId}')"><i class="fas fa-times"></i></button>
                 </div>
 
-                <div class="info-row"><i class="fas fa-phone"></i> <div><strong>Тел:</strong> ${escapeHtml(client.phone || '—')}</div></div>
-                <div class="info-row"><i class="fas fa-calendar-alt"></i> <div><strong>ДР:</strong> ${birthDateDisplay}</div></div>
-                <div class="info-row"><i class="fas fa-exclamation-triangle"></i> <div><strong>SOS:</strong> ${emergencyHtml}</div></div>
-                <div class="info-row" style="flex-direction:column; align-items:flex-start;">
-                    <strong><i class="fas fa-frown"></i> Жалобы:</strong>
-                    <div style="font-size:13px; color:rgba(255,255,255,0.8); margin-top:4px; white-space:pre-wrap;">${escapeHtml(profile?.complaints || '—')}</div>
+                <div class="info-row" style="align-items: flex-start;"><i class="fas fa-phone" style="margin-top: 3px;"></i> <div style="flex:1; word-break: break-word;"><strong>Тел:</strong> ${escapeHtml(client.phone || '—')}</div></div>
+                <div class="info-row" style="align-items: flex-start;"><i class="fas fa-calendar-alt" style="margin-top: 3px;"></i> <div style="flex:1; word-break: break-word;"><strong>ДР:</strong> ${birthDateDisplay}</div></div>
+                <div class="info-row" style="align-items: flex-start;"><i class="fas fa-exclamation-triangle" style="margin-top: 3px;"></i> <div style="flex:1; word-break: break-word;"><strong>SOS:</strong> ${emergencyHtml}</div></div>
+                <div class="info-row" style="align-items:flex-start;">
+                    <i class="fas fa-frown" style="margin-top: 3px;"></i> 
+                    <div style="flex:1; word-break: break-word; white-space: pre-wrap;"><strong>Жалобы:</strong><br><span style="color:rgba(255,255,255,0.8);">${escapeHtml(profile?.complaints || '—')}</span></div>
                 </div>
 
                 <hr style="margin: 16px 0; border-color: var(--border);">
@@ -3404,11 +3405,14 @@ function renderUniversalClientCard(data) {
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
                     <h4 style="margin: 0;"><i class="fas fa-tasks"></i> Задания</h4>
                 </div>
-                <div id="dossierHwList" style="margin-bottom: 16px;">
+                <div id="dossierHwList" style="margin-bottom: 16px; display: flex; flex-direction: column; gap: 8px;">
                     ${homeworks.map(h => `
-                        <div class="task-item" style="background:rgba(255,255,255,0.03); margin-bottom:6px; padding:10px;">
-                            <input type="checkbox" ${h.status === 'done' ? 'checked' : ''} disabled>
-                            <div style="flex:1; font-size:13px; margin-left:10px;">${escapeHtml(h.text)}</div>
+                        <div style="display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; background: rgba(255,255,255,0.04); border-radius: var(--radius-md); border: 1px solid var(--border); width: 100%; box-sizing: border-box;">
+                            <input type="checkbox" ${h.status === 'done' ? 'checked' : ''} disabled style="flex-shrink: 0; margin-top: 2px;">
+                            <div style="flex: 1 1 100%; min-width: 0; overflow-wrap: break-word; word-break: break-word; white-space: normal; line-height: 1.4; font-size: 13px;">
+                                ${escapeHtml(h.text)}
+                                ${h.due_date ? `<div style="color:var(--text-muted); font-size: 11px; margin-top: 4px;">до ${h.due_date.split('T')[0]}</div>` : ''}
+                            </div>
                         </div>
                     `).join('') || '<div style="font-size:12px; color:var(--text-muted);">Нет заданий</div>'}
                 </div>
@@ -3419,7 +3423,7 @@ function renderUniversalClientCard(data) {
                 </div>
                 <div id="dossierNotesList" style="margin-bottom: 16px;">
                     ${notes.map(n => `
-                        <div class="glass-card" style="padding: 10px; margin-bottom: 8px; font-size: 13px;">
+                        <div class="glass-card" style="padding: 10px; margin-bottom: 8px; font-size: 13px; overflow-wrap: break-word; word-break: break-word; white-space: pre-wrap; line-height: 1.4;">
                             <small style="color: var(--green);">${new Date(n.created_at).toLocaleDateString()}</small><br>${escapeHtml(n.note)}
                         </div>
                     `).join('') || '<div style="font-size:12px; color:var(--text-muted);">Нет заметок</div>'}
@@ -3431,7 +3435,7 @@ function renderUniversalClientCard(data) {
                 </div>
                 <div id="dossierProgressList">
                     ${progress.map(p => `
-                        <div style="font-size:12px; margin-bottom:6px; padding:8px; background:rgba(139,202,139,0.05); border-radius:8px;">
+                        <div style="font-size:12px; margin-bottom:6px; padding:8px; background:rgba(139,202,139,0.05); border-radius:8px; overflow-wrap: break-word; word-break: break-word;">
                             <strong>${p.date.split('T')[0]}</strong> — Состояние: ${p.value}/10
                             <div style="color:rgba(255,255,255,0.6); margin-top:2px;">${escapeHtml(p.notes || '')}</div>
                         </div>
