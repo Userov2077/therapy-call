@@ -1,23 +1,35 @@
-const CACHE_NAME = 'therapy-call-v1';
-const urlsToCache = [
-  '/',
-  '/index.html',
-  '/call.html',
-  '/manifest.json',
-  '/styles.css', // если у вас есть внешний CSS
-  '/socket.io/socket.io.js'  // (опционально)
-];
+self.addEventListener('push', function(event) {
+    if (!event.data) return;
 
-self.addEventListener('install', event => {
-  event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then(cache => cache.addAll(urlsToCache))
-  );
+    const data = event.data.json();
+    const options = {
+        body: data.body,
+        // icon: '/icon.png', <-- раскомментируй и укажи путь, если у тебя есть иконка PWA
+        vibrate: [200, 100, 200], // Вибрация для Android
+        data: { url: data.url || '/' },
+        requireInteraction: true // Чтобы уведомление не исчезало само
+    };
+
+    event.waitUntil(
+        self.registration.showNotification(data.title, options)
+    );
 });
 
-self.addEventListener('fetch', event => {
-  event.respondWith(
-    caches.match(event.request)
-      .then(response => response || fetch(event.request))
-  );
+self.addEventListener('notificationclick', function(event) {
+    event.notification.close();
+    const urlToOpen = event.notification.data.url;
+
+    event.waitUntil(
+        clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function(clientList) {
+            for (let i = 0; i < clientList.length; i++) {
+                const client = clientList[i];
+                if (client.url.indexOf(self.location.origin) !== -1 && 'focus' in client) {
+                    return client.focus();
+                }
+            }
+            if (clients.openWindow) {
+                return clients.openWindow(urlToOpen);
+            }
+        })
+    );
 });

@@ -13,6 +13,16 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const rateLimit = require('express-rate-limit');
 const helmet = require('helmet');
+const webpush = require('web-push');
+
+// Настройка Web Push
+if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
+    webpush.setVapidDetails(
+        process.env.VAPID_SUBJECT || 'mailto:test@test.com',
+        process.env.VAPID_PUBLIC_KEY,
+        process.env.VAPID_PRIVATE_KEY
+    );
+}
 require('dotenv').config();
 
 const app = express();
@@ -209,6 +219,7 @@ async function initDatabase() {
             notifications JSONB DEFAULT '[]',
             emergency_contacts JSONB DEFAULT '[]',
             created_at TIMESTAMP DEFAULT NOW()
+            
         )`,
         `CREATE TABLE IF NOT EXISTS user_unreads (
             user_id VARCHAR(50) REFERENCES users(id) ON DELETE CASCADE,
@@ -401,7 +412,8 @@ async function initDatabase() {
         `CREATE INDEX IF NOT EXISTS idx_client_progress_client ON client_progress(client_id)`,
         `CREATE INDEX IF NOT EXISTS idx_answers_client ON answers(client_id)`,
         `CREATE INDEX IF NOT EXISTS idx_subscriptions_follower_following ON subscriptions(follower_id, following_id)`,
-        `CREATE INDEX IF NOT EXISTS idx_appointments_date ON appointments(date)`
+        `CREATE INDEX IF NOT EXISTS idx_appointments_date ON appointments(date)`,
+        `ALTER TABLE users ADD COLUMN IF NOT EXISTS push_subscriptions JSONB DEFAULT '[]'`
     ];
     
     for (const q of queries) {
@@ -497,6 +509,47 @@ async function updateUser(user) {
             JSON.stringify(user.emergencyContacts || [])
         ]
     );
+}
+
+// Эндпоинт для сохранения подписки клиента
+app.post('/api/push/subscribe', authenticateToken, async (req, res) => {
+    try {
+        const subscription = req.body;
+        const user = await getUser(req.user.userId);
+        if (!user) return res.json({ success: false });
+
+        let subs = user.pushSubscriptions || [];
+        // Проверяем, нет ли уже этой подписки
+        if (!subs.some(s => s.endpoint === subscription.endpoint)) {
+            subs.push(subscription);
+            await pool.query('UPDATE users SET push_subscriptions=$1 WHERE id=$2', [JSON.stringify(subs), user.id]);
+        }
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Push subscribe error:', err);
+        res.json({ success: false });
+    }
+});
+
+// Функция для отправки пушей подписчикам психолога
+async function sendPushToFollowers(psychologistId, title, body, url = '/') {
+    try {
+        const followersRes = await pool.query('SELECT follower_id FROM subscriptions WHERE following_id=$1', [psychologistId]);
+        const followerIds = followersRes.rows.map(r => r.follower_id);
+        if (followerIds.length === 0) return;
+
+        const usersRes = await pool.query('SELECT push_subscriptions FROM users WHERE id = ANY($1::text[])', [followerIds]);
+        const payload = JSON.stringify({ title, body, url });
+
+        usersRes.rows.forEach(row => {
+            const subs = safeJSONParse(row.push_subscriptions, []);
+            subs.forEach(sub => {
+                webpush.sendNotification(sub, payload).catch(err => {
+                    if (err.statusCode === 410 || err.statusCode === 404) console.log('Подписка устарела');
+                });
+            });
+        });
+    } catch (err) { console.error('Send push error:', err); }
 }
 
 // ========== РЕГИСТРАЦИЯ / ЛОГИН ==========
@@ -816,6 +869,7 @@ app.post('/api/posts', authenticateToken, requirePsychologist, async (req, res) 
         const newPost = { id: nanoid(12), author_id: authorId, text, image: image || null, video: video || null, created_at: new Date().toISOString() };
         await pool.query(`INSERT INTO posts (id,author_id,text,image,video,created_at) VALUES ($1,$2,$3,$4,$5,$6)`, [newPost.id, newPost.author_id, newPost.text, newPost.image, newPost.video, newPost.created_at]);
         io.emit('post_created', newPost);
+        sendPushToFollowers(authorId, 'Новый пост', `${author.fullName} опубликовал(а) новый пост.`, '/');
         res.json({ success: true, post: newPost });
     } catch (err) { console.error('Create post error:', err); res.json({ success: false }); }
 });
@@ -1476,6 +1530,10 @@ app.post('/api/questionnaires/publish/:id', authenticateToken, requirePsychologi
             return res.status(403).json({ success: false, error: 'Нет прав' });
         }
         await pool.query(`UPDATE questionnaires SET is_published=$1, updated_at=NOW() WHERE id=$2`, [is_published, id]);
+        if (is_published) {
+    const user = await getUser(req.user.userId);
+    sendPushToFollowers(req.user.userId, 'Новая анкета', `${user.fullName} добавил(а) новый опросник.`, '/');
+}
         res.json({ success: true });
     } catch (err) { console.error('Publish questionnaire error:', err); res.json({ success: false }); }
 });
