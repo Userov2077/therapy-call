@@ -376,6 +376,25 @@
     color: var(--green) !important;
     background: transparent !important;
 }
+
+/* Исправление скрытия нижней навигации при открытии клавиатуры в чате */
+body.chat-opened #bottomNav {
+    display: none !important;
+}
+
+/* Стили для ссылок на файлы в заметках досье */
+.note-attachment-link {
+    color: var(--blue, #3b82f6);
+    text-decoration: underline;
+    font-size: 11px;
+    margin-top: 4px;
+    display: inline-block;
+    word-break: break-all;
+}
+.note-attachment-link:hover {
+    color: #fff;
+    text-decoration: none;
+}
     </style>
 </head>
 <body>
@@ -453,6 +472,21 @@
 
     <script src="/socket.io/socket.io.js"></script>
     <script>
+        // 1. Вставьте это в начало блока <script>
+const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
+// Используем делегирование, чтобы код работал даже когда чат создается заново
+document.addEventListener('focusin', (e) => {
+    if (isMobile && (e.target.id === 'chatMessageInput' || e.target.id === 'chatInputCall')) {
+        document.body.classList.add('chat-opened');
+    }
+});
+
+document.addEventListener('focusout', (e) => {
+    if (isMobile && (e.target.id === 'chatMessageInput' || e.target.id === 'chatInputCall')) {
+        document.body.classList.remove('chat-opened');
+    }
+});
         // ======================= ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ =======================
         let currentUser = null;
         let currentTab = 'feed';
@@ -3365,6 +3399,7 @@ async function openClientDossier(clientId) {
 }
 
 // Вспомогательная функция отрисовки досье (полностью изолированная верстка заданий)
+// Вспомогательная функция отрисовки досье
 function renderUniversalClientCard(data) {
     const { client, profile, notes, homeworks, progress } = data;
     
@@ -3421,11 +3456,19 @@ function renderUniversalClientCard(data) {
                 <div id="dossierNotesList" style="margin-bottom: 16px;">
                     ${notes.map(n => `
                         <div class="glass-card" style="padding: 10px; margin-bottom: 8px; font-size: 13px; overflow-wrap: break-word; word-break: break-word; white-space: pre-wrap; line-height: 1.4;">
-                            <small style="color: var(--green);">${new Date(n.created_at).toLocaleDateString()}</small><br>${escapeHtml(n.note)}
+                            <div style="display: flex; flex-direction: column; gap: 2px; margin-bottom: 4px;">
+                                <div style="font-weight: 600; color: #fff; font-size: 14px;">${escapeHtml(n.note.split('\n')[0])}</div>
+                                <small style="color: rgba(255,255,255,0.6); font-size: 10.5px;">${new Date(n.created_at).toLocaleDateString()}</small>
+                            </div>
+                            ${escapeHtml(n.note.split('\n').slice(1).join('\n')).trim()}
+                            ${n.note.includes('[Прикреплен файл]: ') ? `
+                                <a href="${escapeHtml(n.note.match(/\[Прикреплен файл\]: (https?:\/\/[^\s]+)/)[1])}" target="_blank" class="note-attachment-link">
+                                    <i class="fas fa-paperclip"></i> Просмотреть прикрепленный файл
+                                </a>
+                            ` : ''}
                         </div>
                     `).join('') || '<div style="font-size:12px; color:var(--text-muted);">Нет заметок</div>'}
                 </div>
-
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
                     <h4 style="margin: 0;"><i class="fas fa-chart-line"></i> Прогресс</h4>
                     <button class="btn-sm btn-outline" style="padding: 4px 8px;" onclick="openAddClientProgressModal('${client.id}')"><i class="fas fa-plus"></i></button>
