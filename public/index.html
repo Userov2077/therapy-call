@@ -978,7 +978,6 @@ document.addEventListener('focusout', (e) => {
             const token = localStorage.getItem('token');
             if (!token) return;
             socket = io({
-                transports: ['websocket', 'polling'],
                 query: { token },
                 reconnection: true,
                 reconnectionAttempts: Infinity,
@@ -3582,7 +3581,6 @@ function renderUniversalClientCard(data) {
                 .then(() => console.log('Service Worker registered'))
                 .catch(err => console.error('Service Worker registration failed:', err));
         }
-        
     </script>
 </body>
 </html>
