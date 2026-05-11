@@ -449,6 +449,29 @@
             .post-video { max-height: 240px; }
             .remote-video-wrapper.small, .local-video-wrapper.small { width: 100px; height: 130px; bottom: 80px; right: 10px; }
         }
+
+        /* --- ФИКС СЛОЕВ И КЛАВИАТУРЫ --- */
+/* Блокируем прокрутку и скачки фона, когда открыта модалка */
+html:has(.modal.active), body:has(.modal.active) {
+    overflow: hidden !important;
+    height: 100% !important;
+}
+
+/* Фикс для чата (чтобы не просвечивал фон под ним при клавиатуре) */
+body.chat-opened {
+    overflow: hidden !important;
+    position: fixed !important;
+    width: 100% !important;
+    height: 100dvh !important; /* dVH учитывает клавиатуру iOS/Android */
+}
+
+/* Жестко поднимаем все модалки поверх всего интерфейса */
+.modal {
+    z-index: 99999 !important; 
+}
+.modal-content {
+    z-index: 100000 !important; 
+}
     </style>
 </head>
 <body>
@@ -3689,7 +3712,8 @@ function renderUniversalClientCard(data) {
 
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
                     <h4 style="margin: 0;"><i class="fas fa-tasks"></i> Задания</h4>
-                </div>
+                    <button class="btn-sm btn-outline" style="padding: 4px 8px;" onclick="addHomeworkToClientInCall()"><i class="fas fa-plus"></i></button>
+                    </div>
                 
                 <div id="dossierHwList" style="margin-bottom: 16px; display: grid; gap: 8px; width: 100%;">
                     ${homeworks.length ? homeworks.map(h => `
@@ -3737,13 +3761,23 @@ function renderUniversalClientCard(data) {
                     <button class="btn-sm btn-outline" style="padding: 4px 8px;" onclick="openAddClientProgressModal('${client.id}')"><i class="fas fa-plus"></i></button>
                 </div>
                 <div id="dossierProgressList">
-                    ${progress.length ? progress.map(p => `
-                        <div style="font-size:12px; margin-bottom:6px; padding:10px; background:rgba(255,255,255,0.03); border-radius:8px; overflow-wrap: break-word; word-break: break-word;">
-                            <strong style="color:#fff;">${p.date.split('T')[0]}</strong> — Состояние: ${p.value}/10
-                            <div style="color:rgba(255,255,255,0.6); margin-top:4px; line-height:1.4;">${escapeHtml(p.notes || '')}</div>
-                        </div>
-                    `).join('') : '<div style="font-size:12px; color:var(--text-muted); text-align:center; padding:10px; background: rgba(255,255,255,0.02); border-radius: 8px;">Данных нет</div>'}
-                </div>
+    ${progress.length ? progress.map(p => {
+        let title = `Состояние: ${p.value}/10`;
+        let notesHtml = p.notes || '';
+        // Если это Бек, вытаскиваем название шкалы из сохраненного текста
+        if (notesHtml.includes('Шкала депрессии') || notesHtml.includes('Шкала тревоги')) {
+            const parts = notesHtml.split('. ');
+            title = parts[0]; // Название шкалы и балл
+            notesHtml = parts.slice(1).join('. '); // Остальной комментарий психолога
+        }
+        return `
+        <div style="font-size:12px; margin-bottom:6px; padding:10px; background:rgba(255,255,255,0.03); border-radius:8px; overflow-wrap: break-word; word-break: break-word;">
+            <strong style="color:#fff;">${p.date.split('T')[0]}</strong> — <span style="color:var(--green);font-weight:600;">${escapeHtml(title)}</span>
+            ${notesHtml ? `<div style="color:rgba(255,255,255,0.6); margin-top:4px; line-height:1.4;">${escapeHtml(notesHtml)}</div>` : ''}
+        </div>
+        `;
+    }).join('') : '<div style="font-size:12px; color:var(--text-muted); text-align:center; padding:10px; background: rgba(255,255,255,0.02); border-radius: 8px;">Данных нет</div>'}
+</div>
 
                 <div class="modal-buttons" style="margin-top:24px;">
                     <button class="btn-primary" style="width:100%;" onclick="closeModal('${modalId}')">Готово</button>

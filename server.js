@@ -93,7 +93,7 @@ app.use('/api/', apiLimiter);
 // Более строгий лимит для логина/регистрации
 const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 5,
+    max: 100,
     skipSuccessfulRequests: true,
     validate: false // <-- ОТКЛЮЧАЕМ ПРОВЕРКИ И ЗДЕСЬ ТОЖЕ
 });
@@ -119,12 +119,15 @@ cloudinary.config({
     api_secret: process.env.CLOUDINARY_API_SECRET
 });
 
+// ========== Cloudinary настройка ==========
+// ... тут твои конфиги cloudinary.config ...
+
 const cloudinaryStorage = new CloudinaryStorage({
     cloudinary: cloudinary,
     params: (req, file) => {
         let folder = 'therapy_call_general';
         let resource_type = 'auto';
-        const mime = file.mimetype;
+        let format = undefined; // По умолчанию формат определит сам Cloudinary
 
         if (file.fieldname === 'avatar') {
             folder = 'therapy_call_avatars';
@@ -138,33 +141,38 @@ const cloudinaryStorage = new CloudinaryStorage({
         } else if (file.fieldname === 'image' || file.fieldname === 'chat_image') {
             folder = 'therapy_call_images';
             resource_type = 'image';
-        } else if (file.fieldname === 'video') {
+        } else if (file.fieldname === 'video' || file.fieldname === 'recording') {
             folder = 'therapy_call_videos';
             resource_type = 'video';
-        } else if (file.fieldname === 'recording') {
-            folder = 'therapy_call_recordings';
-            resource_type = 'video';
         } else if (file.fieldname === 'file') {
-            return { error: 'Документы загружаются через /api/upload-doc' };
+            folder = 'therapy_call_documents';
+            resource_type = 'raw';
+            // КРИТИЧНО: Чтобы PDF и Word не были пустыми, жестко сохраняем их родное расширение!
+            format = file.originalname.split('.').pop().toLowerCase();
         }
-        return {
-            folder: folder,
-            resource_type: resource_type,
-            allowed_formats: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'mp4', 'mov', 'avi', 'webm', 'ogg', 'wav', 'mp3']
-        };
+
+        const params = { folder: folder, resource_type: resource_type };
+        if (format) params.format = format;
+        
+        // Лимитируем форматы только для картинок/видео, сырые файлы (документы) пропускаем как есть
+        if (resource_type !== 'raw') {
+            params.allowed_formats = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'mp4', 'mov', 'avi', 'webm', 'ogg', 'wav', 'mp3'];
+        }
+
+        return params;
     }
 });
-const uploadMedia = multer({ storage: cloudinaryStorage, limits: { fileSize: 40 * 1024 * 1024 } });
+const uploadMedia = multer({ storage: cloudinaryStorage, limits: { fileSize: 40 * 1024 * 1024 } }); // Оставили 40 МБ для видео, как ты и просил
 
-const docStorage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        const dir = 'public/uploads/documents';
-        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-        cb(null, dir);
-    },
-    filename: (req, file, cb) => { cb(null, nanoid(12) + path.extname(file.originalname)); }
+const docStorageCloudinary = new CloudinaryStorage({
+    cloudinary: cloudinary,
+    params: (req, file) => ({
+        folder: 'therapy_call_documents',
+        resource_type: 'raw',
+        format: file.originalname.split('.').pop().toLowerCase()
+    })
 });
-const uploadDoc = multer({ storage: docStorage, limits: { fileSize: 5 * 1024 * 1024 } });
+const uploadDoc = multer({ storage: docStorageCloudinary, limits: { fileSize: 10 * 1024 * 1024 } });
 
 // ========== Middleware аутентификации ==========
 function authenticateToken(req, res, next) {
