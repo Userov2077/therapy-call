@@ -48,9 +48,6 @@ app.use(express.static(path.join(__dirname, 'public')));
 // Безопасность
 app.use(helmet());
 
-// Rate limiting
-// Лимит запросов для API (защита от brute-force) – привязываем к userId, а не к IP
-// Rate limiting
 // Лимит запросов для API (защита от brute-force) – привязываем к userId, а не к IP
 const apiLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 минут

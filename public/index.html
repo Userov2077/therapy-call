@@ -786,16 +786,29 @@ body.chat-opened {
         }
 
         async function refreshUser() {
-            if (!currentUser) return;
-            const d = await fetchJSON(`/api/user/${currentUser.id}`);
-            if (d.success) {
-                currentUser = d.user;
-                if (!currentUser.unreadCounts) currentUser.unreadCounts = {};
-                if (!currentUser.following) currentUser.following = [];
-            } else if (d.unauthorized) {
-                logout();
+    if (!currentUser) return;
+    const d = await fetchJSON(`/api/user/${currentUser.id}`);
+    if (d.success) {
+        currentUser = d.user;
+        if (!currentUser.unreadCounts) currentUser.unreadCounts = {};
+        if (!currentUser.following) currentUser.following = [];
+        
+        // ФИКС КЭША: Принудительно обновляем UI списков при новых данных с сервера
+        if (currentTab === 'profile') {
+            if (currentUser.role === 'psychologist') {
+                const activeAptBtn = document.querySelector('.filter-appointments-btn.active');
+                if (activeAptBtn) renderAppointmentsList(activeAptBtn.dataset.filter);
+                const activeClientBtn = document.querySelector('.filter-clients-btn.active');
+                if (activeClientBtn) renderClientsList(activeClientBtn.dataset.filter);
+            } else {
+                const activeClientAptBtn = document.querySelector('.filter-client-appointments-btn.active');
+                if (activeClientAptBtn) renderClientAppointmentsList(activeClientAptBtn.dataset.filter);
             }
         }
+    } else if (d.unauthorized) {
+        logout();
+    }
+}
 
         async function toggleSubscription(psychologistId) {
     if (!currentUser) { showToast('Войдите в аккаунт', true); return; }
@@ -1191,10 +1204,12 @@ body.chat-opened {
                 }
             });
             socket.on('appointment_updated', (apt) => {
+                isProfileCacheValid = false;
                 if (currentTab === 'profile') renderProfile(true);
                 if (currentTab === 'notifications') renderNotifications(true);
             });
             socket.on('appointment_completed', (appointmentId) => {
+                isProfileCacheValid = false;
                 if (currentTab === 'profile') renderProfile(true);
                 if (currentTab === 'notifications') renderNotifications(true);
                 showFloatingNotification('Сеанс завершён', 'Запись отмечена как завершённая', 'info');
@@ -1897,6 +1912,7 @@ body.chat-opened {
             }
         }
 
+        // 1. Для Психолога
         function renderAppointmentsList(filter = 'upcoming') {
             const container = document.getElementById('appointmentsList');
             if (!container) return;
@@ -1906,7 +1922,8 @@ body.chat-opened {
             if (filter === 'upcoming') {
                 filtered = allAppointments.filter(a => a.status === 'confirmed' && new Date(a.date + 'T' + a.time) >= now);
             } else if (filter === 'past') {
-                filtered = allAppointments.filter(a => a.status === 'confirmed' && new Date(a.date + 'T' + a.time) < now);
+                // ИСПРАВЛЕНИЕ: Добавлен статус 'completed', теперь ничего не исчезает!
+                filtered = allAppointments.filter(a => a.status === 'completed' || (a.status === 'confirmed' && new Date(a.date + 'T' + a.time) < now));
             } else if (filter === 'pending') {
                 filtered = allAppointments.filter(a => a.status === 'pending');
             }
@@ -1944,6 +1961,8 @@ body.chat-opened {
             container.innerHTML = html;
         }
 
+        // 2. Для Клиента
+
         function renderClientAppointmentsList(filter = 'upcoming') {
             const container = document.getElementById('clientAppointmentsList');
             if (!container) return;
@@ -1953,7 +1972,7 @@ body.chat-opened {
             if (filter === 'upcoming') {
                 filtered = allAppointments.filter(a => a.status === 'confirmed' && new Date(a.date + 'T' + a.time) >= now);
             } else if (filter === 'past') {
-                filtered = allAppointments.filter(a => a.status === 'confirmed' && new Date(a.date + 'T' + a.time) < now);
+                filtered = allAppointments.filter(a => a.status === 'completed' || (a.status === 'confirmed' && new Date(a.date + 'T' + a.time) < now));
             } else if (filter === 'pending') {
                 filtered = allAppointments.filter(a => a.status === 'pending');
             }
@@ -3479,10 +3498,10 @@ function promptEndCall() {
                 <p style="color: var(--text-muted); font-size: 14px; margin-bottom: 20px;">
                     Вы хотите полностью завершить эту сессию (перейдет в "Прошедшие") или просто временно выйти из комнаты?
                 </p>
-                <div style="display: flex; flex-direction: column; gap: 10px;">
-                    <button class="btn-primary" onclick="executeLeaveCall(true, '${modalId}')">✅ Сессия завершена полностью</button>
-                    <button class="btn-sm btn-outline" onclick="executeLeaveCall(false, '${modalId}')">🚪 Временно выйти (вернуться позже)</button>
-                    <button class="btn-secondary" onclick="closeModal('${modalId}')">Отмена</button>
+                <div class="modal-buttons" style="flex-direction: column; gap: 10px; display: flex;">
+                    <button class="btn-primary" style="width: 100%; padding: 14px;" onclick="executeLeaveCall(true, '${modalId}')">✅ Сессия завершена полностью</button>
+                    <button class="btn-outline" style="width: 100%; padding: 14px; border-radius: 40px;" onclick="executeLeaveCall(false, '${modalId}')">🚪 Временно выйти</button>
+                    <button class="btn-secondary" style="width: 100%; padding: 14px;" onclick="closeModal('${modalId}')">Отмена</button>
                 </div>
             </div>
         </div>
@@ -3494,70 +3513,49 @@ function promptEndCall() {
 // 2. Сама логика выхода и ЖЕСТКОЙ зачистки кэша
 function executeLeaveCall(isComplete, modalId) {
     if (modalId) closeModal(modalId);
+    stopCallTimer(); stopCallRecording(); 
     
-    stopCallTimer(); 
-    stopCallRecording(); 
-    
-    // Сообщаем серверу, что мы делаем
     if (socket) {
-        if (isComplete) {
-            socket.emit('end-call'); // Полное завершение (меняет статус в БД)
-        } else {
-            socket.emit('leave-call'); // Временный выход (не трогает БД)
-        }
+        if (isComplete) socket.emit('end-call'); 
+        else socket.emit('leave-call'); 
     }
+    if (peerConnection) { peerConnection.close(); peerConnection = null; }
+    if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
+    if (screenStream) { screenStream.getTracks().forEach(t => t.stop()); screenStream = null; }
     
-    // Убиваем WebRTC соединение намертво
-    if (peerConnection) {
-        peerConnection.close(); 
-        peerConnection = null; 
-    }
-    
-    // Убиваем камеру и стрим экрана
-    if (localStream) {
-        localStream.getTracks().forEach(t => t.stop()); 
-        localStream = null; 
-    }
-    if (screenStream) {
-        screenStream.getTracks().forEach(t => t.stop()); 
-        screenStream = null; 
-    }
-    
-    // Прячем интерфейс
+    // ---> ФИКС СЛОЕНИЯ: ВОЗВРАЩАЕМ ФОН ПРИ ВЫХОДЕ <---
     document.getElementById('callContainer').style.display = 'none'; 
     document.getElementById('floatingCall').style.display = 'none'; 
+    document.getElementById('mainContent').style.display = 'block'; 
+    document.querySelector('.navbar').style.display = 'flex'; 
+    document.getElementById('bottomNav').style.display = 'flex'; 
     
-    // СТРОГАЯ ОЧИСТКА ЧАТА от прошлого клиента
     const chatContainer = document.getElementById('chatMessagesCall');
     if (chatContainer) chatContainer.innerHTML = '<div class="chat-empty">Сообщения появятся здесь</div>';
-    
     const chatPanel = document.getElementById('chatPanelCall');
     if (chatPanel) chatPanel.classList.remove('open');
     
-    // Обнуляем все переменные (предотвращаем склейку звонков)
-    isCallActive = false; 
-    currentCallRoomId = null; 
-    currentCallRole = null; 
-    currentCallPartnerUserId = null; 
-    currentClientIdInCall = null; 
-    callConnectionEstablished = false; 
-    callStartTime = null; 
+    isCallActive = false; currentCallRoomId = null; currentCallRole = null; 
+    currentCallPartnerUserId = null; currentClientIdInCall = null; 
+    callConnectionEstablished = false; callStartTime = null; 
 }
 
+// Функция переподключения
 function reconnectCall() { 
-    if (!currentCallRoomId) { 
-        showToast('Нет активного звонка', true); 
-        return; 
-    } 
-    if (peerConnection) { 
-        peerConnection.close(); 
-        peerConnection = null; 
-    } 
+    if (!currentCallRoomId) { showToast('Нет активного звонка', true); return; } 
+    if (peerConnection) { peerConnection.close(); peerConnection = null; } 
     callConnectionEstablished = false; 
     document.getElementById('waitingMessageCall').style.display = 'flex'; 
     
     if (socket && socket.connected) { 
         socket.emit('request-reconnect', { roomId: currentCallRoomId, role: currentCallRole }); 
+        
+        // ИСПРАВЛЕНИЕ: Отправитель запроса тоже должен пересоздать подключение!
+        setTimeout(() => {
+            if (localStream && currentCallPartnerUserId) {
+                initWebRTCCall(currentCallRole === 'psychologist');
+            }
+        }, 500);
     } else { 
         if (socket) socket.connect(); 
         socket.once('connect', () => { 
@@ -3585,12 +3583,15 @@ function minimizeCall() {
     document.getElementById('callContainer').style.display = 'none'; 
     document.getElementById('floatingCall').style.display = 'flex'; 
     
+    // ---> ФИКС СЛОЕНИЯ: ВОЗВРАЩАЕМ ФОН ДЛЯ МИНИ-РЕЖИМА <---
+    document.getElementById('mainContent').style.display = 'block'; 
+    document.querySelector('.navbar').style.display = 'flex'; 
+    document.getElementById('bottomNav').style.display = 'flex';
+
     const micEnabled = localStream?.getAudioTracks()[0]?.enabled ?? true; 
     const camEnabled = localStream?.getVideoTracks()[0]?.enabled ?? true; 
-    
     const floatingMicBtn = document.getElementById('floatingMicCallBtn'); 
     const floatingCamBtn = document.getElementById('floatingCamCallBtn'); 
-    
     if (floatingMicBtn) { 
         floatingMicBtn.innerHTML = micEnabled ? '<i class="fas fa-microphone"></i>' : '<i class="fas fa-microphone-slash"></i>'; 
         floatingMicBtn.classList.toggle('muted', !micEnabled); 
@@ -3604,6 +3605,11 @@ function minimizeCall() {
 function restoreCall() { 
     document.getElementById('callContainer').style.display = 'flex'; 
     document.getElementById('floatingCall').style.display = 'none'; 
+
+    // ---> ФИКС СЛОЕНИЯ: СНОВА ПРЯЧЕМ ФОН <---
+    document.getElementById('mainContent').style.display = 'none'; 
+    document.querySelector('.navbar').style.display = 'none'; 
+    document.getElementById('bottomNav').style.display = 'none';
 }
 
 // ==========================================
@@ -4091,49 +4097,38 @@ async function scheduleNextSessionInCall() {
     };
 }
 
-async function startCallInWindow(roomId, role, clientId = null) {
-    if (isCallActive) {
-        showToast('Звонок уже активен. Сначала завершите его.', true);
-        return;
-    }
+// 1. При начале звонка прячем задний фон
+async function startCallInWindow(roomId, role, clientId = null) { 
+    if (isCallActive) { showToast('Звонок уже активен. Сначала завершите его.', true); return; }
 
-    // [ОЧИСТКА ВСЕХ ПРЕДЫДУЩИХ ОБРАБОТЧИКОВ СВЯЗАННЫХ СО ЗВОНКОМ]
+    // [ОЧИСТКА ОБРАБОТЧИКОВ И ПЕРЕМЕННЫХ ЗВОНКА]
     if (socket) {
-        const callEvents = [
-            'room-joined', 'call-ready', 'offer', 'answer', 'ice-candidate',
-            'call-message', 'screen-share-started', 'screen-share-stopped',
-            'call-ended', 'partner-disconnected', 'request-reconnect'
-        ];
+        const callEvents = ['room-joined', 'call-ready', 'offer', 'answer', 'ice-candidate', 'call-message', 'screen-share-started', 'screen-share-stopped', 'call-ended', 'partner-disconnected', 'request-reconnect'];
         callEvents.forEach(event => socket.off(event));
     }
+    currentCallRoomId = roomId; currentCallRole = role; currentClientIdInCall = clientId; isCallActive = true; callPartnerSocketId = null; callConnectionEstablished = false;
 
-    // Сброс глобальных переменных звонка
-    currentCallRoomId = roomId;
-    currentCallRole = role;
-    currentClientIdInCall = clientId;
-    isCallActive = true;
-    callPartnerSocketId = null;
-    callConnectionEstablished = false;
-
+    // ---> ФИКС СЛОЕНИЯ: ПРЯЧЕМ ВЕСЬ ФОН <---
+    document.getElementById('mainContent').style.display = 'none';
+    document.querySelector('.navbar').style.display = 'none';
+    document.getElementById('bottomNav').style.display = 'none';
+    
     // Настройка UI
     document.getElementById('callContainer').style.display = 'flex';
     document.getElementById('floatingCall').style.display = 'none';
     document.getElementById('waitingMessageCall').style.display = 'flex';
     
+    const chatContainer = document.getElementById('chatMessagesCall');
+    if (chatContainer) chatContainer.innerHTML = '<div class="chat-empty">Сообщения появятся здесь</div>';
+
     const remoteWrapper = document.querySelector('.remote-video-wrapper');
     const localWrapper = document.querySelector('.local-video-wrapper');
-    if (remoteWrapper) {
-        remoteWrapper.classList.add('big');
-        remoteWrapper.classList.remove('small');
-    }
-    if (localWrapper) {
-        localWrapper.classList.add('small');
-        localWrapper.classList.remove('big');
-    }
+    if (remoteWrapper) { remoteWrapper.classList.add('big'); remoteWrapper.classList.remove('small'); }
+    if (localWrapper) { localWrapper.classList.add('small'); localWrapper.classList.remove('big'); }
 
-    // Инициализация медиа и сокетов
     await startLocalStreamCall();
     if (!socket) initSocket();
+
 
     if (socket) {
         socket.emit('join-call-room', roomId, currentUser.id, role);
@@ -4212,13 +4207,11 @@ async function startCallInWindow(roomId, role, clientId = null) {
         
         socket.on('request-reconnect', async () => {
             console.log('Получен запрос на переподключение');
-            if (peerConnection) {
-                peerConnection.close();
-                peerConnection = null;
-            }
+            if (peerConnection) { peerConnection.close(); peerConnection = null; }
             callConnectionEstablished = false;
             document.getElementById('waitingMessageCall').style.display = 'flex';
-            if (localStream && callPartnerSocketId) {
+            // ИСПРАВЛЕНИЕ: Используем правильную переменную currentCallPartnerUserId (ранее там была старая)
+            if (localStream && currentCallPartnerUserId) {
                 await initWebRTCCall(currentCallRole === 'psychologist');
             }
         });
