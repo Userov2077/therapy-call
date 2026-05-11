@@ -3175,7 +3175,14 @@ body.chat-opened {
         
         // ======================= ВИДЕОЗВОНОК =======================
         async function getIceServers() { return [ { urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }, { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' }, { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' } ]; }
-        async function createPeerConnectionCall() { if (peerConnection) peerConnection.close(); const config = { iceServers: await getIceServers(), iceTransportPolicy: 'all' }; peerConnection = new RTCPeerConnection(config); if (localStream) localStream.getTracks().forEach(t => peerConnection.addTrack(t, localStream)); peerConnection.ontrack = (event) => { const stream = event.streams[0]; document.getElementById('remoteVideo').srcObject = stream; document.getElementById('floatingRemoteVideo').srcObject = stream; document.getElementById('waitingMessageCall').style.display = 'none'; callConnectionEstablished = true; updateRemoteVideoMode(remoteScreenMode); if (!callStartTime) startCallTimer(); }; peerConnection.onicecandidate = (event) => { if (event.candidate && socket && callPartnerSocketId) socket.emit('ice-candidate', { targetUserId: currentCallPartnerUserId, candidate: event.candidate }); }; peerConnection.oniceconnectionstatechange = () => { if (!peerConnection) return; const state = peerConnection.iceConnectionState; if (state === 'connected') { callConnectionEstablished = true; document.getElementById('waitingMessageCall').style.display = 'none'; if (!callStartTime) startCallTimer(); } else if (state === 'failed' || state === 'disconnected') { callConnectionEstablished = false; document.getElementById('waitingMessageCall').style.display = 'flex'; setTimeout(() => { if (!callConnectionEstablished) reconnectCall(); }, 3000); } }; return peerConnection; }
+        async function createPeerConnectionCall() { if (peerConnection) peerConnection.close(); const config = { iceServers: await getIceServers(), iceTransportPolicy: 'all' }; peerConnection = new RTCPeerConnection(config); if (localStream) localStream.getTracks().forEach(t => peerConnection.addTrack(t, localStream)); peerConnection.ontrack = (event) => { const stream = event.streams[0]; document.getElementById('remoteVideo').srcObject = stream; document.getElementById('floatingRemoteVideo').srcObject = stream; document.getElementById('waitingMessageCall').style.display = 'none'; callConnectionEstablished = true; updateRemoteVideoMode(remoteScreenMode); if (!callStartTime) startCallTimer(); }; peerConnection.onicecandidate = (event) => {
+    if (event.candidate && socket && currentCallPartnerUserId) {
+        socket.emit('ice-candidate', { 
+            targetUserId: currentCallPartnerUserId, 
+            candidate: event.candidate 
+        });
+    }
+}; }; peerConnection.oniceconnectionstatechange = () => { if (!peerConnection) return; const state = peerConnection.iceConnectionState; if (state === 'connected') { callConnectionEstablished = true; document.getElementById('waitingMessageCall').style.display = 'none'; if (!callStartTime) startCallTimer(); } else if (state === 'failed' || state === 'disconnected') { callConnectionEstablished = false; document.getElementById('waitingMessageCall').style.display = 'flex'; setTimeout(() => { if (!callConnectionEstablished) reconnectCall(); }, 3000); } }; return peerConnection; }
         function startCallTimer() { if (callTimerInterval) clearInterval(callTimerInterval); callStartTime = Date.now(); const timerElement = document.getElementById('callTimer'); if (timerElement) timerElement.style.display = 'block'; callTimerInterval = setInterval(() => { if (!callStartTime) return; const elapsed = Math.floor((Date.now() - callStartTime) / 1000); const mins = Math.floor(elapsed / 60); const secs = elapsed % 60; document.getElementById('callTimer').textContent = `${mins.toString().padStart(2,'0')}:${secs.toString().padStart(2,'0')}`; }, 1000); }
         function stopCallTimer() { if (callTimerInterval) clearInterval(callTimerInterval); callTimerInterval = null; const timerElement = document.getElementById('callTimer'); if (timerElement) timerElement.style.display = 'none'; if (callStartTime && currentCallRoomId) { const duration = Math.floor((Date.now() - callStartTime) / 1000); fetch('/api/appointment/duration', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ roomId: currentCallRoomId, duration }) }).catch(console.error); callStartTime = null; } }
         async function startLocalStreamCall() { try { const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true }); localStream = stream; document.getElementById('localVideo').srcObject = localStream; cameraTrack = localStream.getVideoTracks()[0]; if (socket && callPartnerSocketId) await initWebRTCCall(currentCallRole === 'psychologist'); } catch (e) { showToast('Нет доступа к камере/микрофону', true); } }
@@ -3525,10 +3532,129 @@ async function submitClientProgress(clientId, modalId) {
     }
 }
         async function addHomeworkToClientInCall() { if (!currentClientIdInCall) { showToast('Клиент не определён', true); return; } const modalId = 'hwModal_' + Date.now(); const html = `<div class="modal" id="${modalId}"><div class="modal-content"><div class="modal-handle"></div><h3>Домашнее задание</h3><textarea id="hwText_${modalId}" rows="3" placeholder="Текст задания..." style="width:100%; margin-bottom:12px;"></textarea><label>Срок выполнения (необязательно)</label><input type="date" id="hwDueDate_${modalId}" style="width:100%; margin:12px 0;"><div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('${modalId}')">Отмена</button><button class="btn-primary" onclick="submitHomeworkWithDate('${modalId}')">Сохранить</button></div></div></div>`; document.body.insertAdjacentHTML('beforeend', html); setTimeout(() => document.getElementById(modalId).classList.add('active'), 10); }
-        async function submitHomeworkWithDate(modalId) { const text = document.getElementById(`hwText_${modalId}`).value.trim(); const dueDate = document.getElementById(`hwDueDate_${modalId}`).value; if (!text) { showToast('Введите текст задания', true); return; } const data = await fetchJSON('/api/homeworks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ psychologistId: currentUser.id, clientId: currentClientIdInCall, text, dueDate: dueDate || null }) }); if (data.success) { showToast('Домашнее задание добавлено'); closeModal(modalId); } else showToast('Ошибка', true); }
-        async function scheduleNextSessionInCall() { if (!currentClientIdInCall) { showToast('Клиент не определён', true); return; } const scheduleRes = await fetchJSON(`/api/schedule/${currentUser.id}`); const schedule = scheduleRes.schedule || {}; const dates = Object.keys(schedule).sort(); if (dates.length === 0) { showToast('Нет свободного времени в расписании', true); return; } let slotsHtml = ''; for (const d of dates) { slotsHtml += `<div style="margin-bottom:12px;"><div style="font-size:12px;color:var(--text-muted);margin-bottom:6px;">${d}</div><div style="display:flex;flex-wrap:wrap;gap:6px;">`; for (const t of schedule[d]) slotsHtml += `<button class="time-slot" data-date="${d}" data-time="${t}">${t}</button>`; slotsHtml += `</div></div>`; } const modalId = 'nextSessionModal_' + Date.now(); const html = `<div class="modal" id="${modalId}"><div class="modal-content"><div class="modal-handle"></div><h3>Запись на следующий сеанс</h3><div id="slotsNext_${modalId}" style="max-height:300px;overflow-y:auto;">${slotsHtml}</div><div id="selSlotNext_${modalId}" style="margin-top:10px;font-size:13px;color:var(--green);min-height:20px;"></div><div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('${modalId}')">Отмена</button><button class="btn-primary" id="confirmNextBtn_${modalId}" disabled onclick="window._confirmNextSession_${modalId}('${currentClientIdInCall}')">Записать</button></div></div></div>`; document.body.insertAdjacentHTML('beforeend', html); const modal = document.getElementById(modalId); setTimeout(() => modal.classList.add('active'), 10); let selectedDate = null, selectedTime = null; modal.querySelectorAll(`#slotsNext_${modalId} .time-slot`).forEach(b => { b.onclick = () => { modal.querySelectorAll(`#slotsNext_${modalId} .time-slot`).forEach(bb => bb.classList.remove('selected')); b.classList.add('selected'); modal.querySelector(`#selSlotNext_${modalId}`).textContent = `✅ Выбрано: ${b.dataset.date} в ${b.dataset.time}`; document.getElementById(`confirmNextBtn_${modalId}`).disabled = false; selectedDate = b.dataset.date; selectedTime = b.dataset.time; }; }); window[`_confirmNextSession_${modalId}`] = async (clientId) => { if (!selectedDate || !selectedTime) { showToast('Выберите время', true); return; } const data = await fetchJSON('/api/appointment', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ clientId, psychologistId: currentUser.id, date: selectedDate, time: selectedTime }) }); if (data.success) { showToast('Запись создана, ожидает подтверждения'); closeModal(modalId); } else showToast(data.error || 'Ошибка', true); }; }
-        async function startCallInWindow(roomId, role, clientId = null) { if (isCallActive) { showToast('Звонок уже активен. Сначала завершите его.', true); return; }
-            // [ОЧИСТКА ВСЕХ ПРЕДЫДУЩИХ ОБРАБОТЧИКОВ СВЯЗАННЫХ СО ЗВОНКОМ]
+        async function submitHomeworkWithDate(modalId) {
+    const text = document.getElementById(`hwText_${modalId}`).value.trim();
+    const dueDate = document.getElementById(`hwDueDate_${modalId}`).value;
+    
+    if (!text) {
+        showToast('Введите текст задания', true);
+        return;
+    }
+    
+    const data = await fetchJSON('/api/homeworks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            psychologistId: currentUser.id,
+            clientId: currentClientIdInCall,
+            text,
+            dueDate: dueDate || null
+        })
+    });
+    
+    if (data.success) {
+        showToast('Домашнее задание добавлено');
+        closeModal(modalId);
+    } else {
+        showToast('Ошибка', true);
+    }
+}
+
+async function scheduleNextSessionInCall() {
+    if (!currentClientIdInCall) {
+        showToast('Клиент не определён', true);
+        return;
+    }
+    
+    const scheduleRes = await fetchJSON(`/api/schedule/${currentUser.id}`);
+    const schedule = scheduleRes.schedule || {};
+    const dates = Object.keys(schedule).sort();
+    
+    if (dates.length === 0) {
+        showToast('Нет свободного времени в расписании', true);
+        return;
+    }
+    
+    let slotsHtml = '';
+    for (const d of dates) {
+        slotsHtml += `
+            <div style="margin-bottom:12px;">
+                <div style="font-size:12px;color:var(--text-muted);margin-bottom:6px;">${d}</div>
+                <div style="display:flex;flex-wrap:wrap;gap:6px;">
+        `;
+        for (const t of schedule[d]) {
+            slotsHtml += `<button class="time-slot" data-date="${d}" data-time="${t}">${t}</button>`;
+        }
+        slotsHtml += `</div></div>`;
+    }
+    
+    const modalId = 'nextSessionModal_' + Date.now();
+    const html = `
+        <div class="modal" id="${modalId}">
+            <div class="modal-content">
+                <div class="modal-handle"></div>
+                <h3>Запись на следующий сеанс</h3>
+                <div id="slotsNext_${modalId}" style="max-height:300px;overflow-y:auto;">
+                    ${slotsHtml}
+                </div>
+                <div id="selSlotNext_${modalId}" style="margin-top:10px;font-size:13px;color:var(--green);min-height:20px;"></div>
+                <div class="modal-buttons">
+                    <button class="btn-secondary" onclick="closeModal('${modalId}')">Отмена</button>
+                    <button class="btn-primary" id="confirmNextBtn_${modalId}" disabled onclick="window._confirmNextSession_${modalId}('${currentClientIdInCall}')">Записать</button>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    document.body.insertAdjacentHTML('beforeend', html);
+    const modal = document.getElementById(modalId);
+    setTimeout(() => modal.classList.add('active'), 10);
+    
+    let selectedDate = null, selectedTime = null;
+    modal.querySelectorAll(`#slotsNext_${modalId} .time-slot`).forEach(b => {
+        b.onclick = () => {
+            modal.querySelectorAll(`#slotsNext_${modalId} .time-slot`).forEach(bb => bb.classList.remove('selected'));
+            b.classList.add('selected');
+            modal.querySelector(`#selSlotNext_${modalId}`).textContent = `✅ Выбрано: ${b.dataset.date} в ${b.dataset.time}`;
+            document.getElementById(`confirmNextBtn_${modalId}`).disabled = false;
+            selectedDate = b.dataset.date;
+            selectedTime = b.dataset.time;
+        };
+    });
+    
+    window[`_confirmNextSession_${modalId}`] = async (clientId) => {
+        if (!selectedDate || !selectedTime) {
+            showToast('Выберите время', true);
+            return;
+        }
+        
+        const data = await fetchJSON('/api/appointment', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                clientId,
+                psychologistId: currentUser.id,
+                date: selectedDate,
+                time: selectedTime
+            })
+        });
+        
+        if (data.success) {
+            showToast('Запись создана, ожидает подтверждения');
+            closeModal(modalId);
+        } else {
+            showToast(data.error || 'Ошибка', true);
+        }
+    };
+}
+
+async function startCallInWindow(roomId, role, clientId = null) {
+    if (isCallActive) {
+        showToast('Звонок уже активен. Сначала завершите его.', true);
+        return;
+    }
+
+    // [ОЧИСТКА ВСЕХ ПРЕДЫДУЩИХ ОБРАБОТЧИКОВ СВЯЗАННЫХ СО ЗВОНКОМ]
     if (socket) {
         const callEvents = [
             'room-joined', 'call-ready', 'offer', 'answer', 'ice-candidate',
@@ -3536,29 +3662,276 @@ async function submitClientProgress(clientId, modalId) {
             'call-ended', 'partner-disconnected', 'request-reconnect'
         ];
         callEvents.forEach(event => socket.off(event));
-    } currentCallRoomId = roomId; currentCallRole = role; currentClientIdInCall = clientId; isCallActive = true; document.getElementById('callContainer').style.display = 'flex'; document.getElementById('floatingCall').style.display = 'none'; callPartnerSocketId = null; callConnectionEstablished = false; document.getElementById('waitingMessageCall').style.display = 'flex'; const remoteWrapper = document.querySelector('.remote-video-wrapper'); const localWrapper = document.querySelector('.local-video-wrapper'); if (remoteWrapper) { remoteWrapper.classList.add('big'); remoteWrapper.classList.remove('small'); } if (localWrapper) { localWrapper.classList.add('small'); localWrapper.classList.remove('big'); } await startLocalStreamCall(); if (!socket) initSocket(); if (socket) { socket.emit('join-call-room', roomId, currentUser.id, role); socket.off('room-joined'); socket.off('call-ready'); socket.off('offer'); socket.off('answer'); socket.off('ice-candidate'); socket.off('call-message'); socket.off('screen-share-started'); socket.off('screen-share-stopped'); socket.off('call-ended'); socket.off('partner-disconnected'); socket.on('room-joined', () => { document.getElementById('waitingMessageCall').style.display = 'flex'; callConnectionEstablished = false; }); socket.on('call-ready', async (data) => { callPartnerSocketId = data.partnerId;
-    currentCallPartnerUserId = data.partnerUserId;  document.getElementById('waitingMessageCall').style.display = 'none'; if (localStream) await initWebRTCCall(role === 'psychologist'); else { const iv = setInterval(async () => { if (localStream) { clearInterval(iv); await initWebRTCCall(role === 'psychologist'); } }, 200); } }); socket.on('offer', async (data) => { callPartnerSocketId = data.from; if (!peerConnection) await createPeerConnectionCall(); await peerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp)); const answer = await peerConnection.createAnswer(); await peerConnection.setLocalDescription(answer); socket.emit('answer', { targetUserId: currentCallPartnerUserId, sdp: answer }); }); socket.on('answer', async (data) => { if (peerConnection) await peerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp)); }); socket.on('ice-candidate', async (data) => { if (peerConnection) { try { await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate)); } catch(e) {} } }); socket.on('call-message', (data) => addCallChatMessage(data.text, false, data.time)); socket.on('screen-share-started', () => { remoteScreenMode = true; updateRemoteVideoMode(true); }); socket.on('screen-share-stopped', () => { remoteScreenMode = false; updateRemoteVideoMode(false); }); socket.on('call-ended', () => { showToast('Сессия завершена'); endCall(); }); socket.on('partner-disconnected', () => { showToast('Собеседник отключился', true); document.getElementById('waitingMessageCall').style.display = 'flex'; callConnectionEstablished = false; }); socket.on('request-reconnect', async () => { console.log('Получен запрос на переподключение'); if (peerConnection) { peerConnection.close(); peerConnection = null; } callConnectionEstablished = false; document.getElementById('waitingMessageCall').style.display = 'flex'; if (localStream && callPartnerSocketId) { await initWebRTCCall(currentCallRole === 'psychologist'); } }); } document.getElementById('toggleMicCall').onclick = () => { if (localStream) { const t = localStream.getAudioTracks()[0]; if (t) { t.enabled = !t.enabled; document.getElementById('toggleMicCall').classList.toggle('muted'); document.getElementById('toggleMicCall').innerHTML = t.enabled ? '<i class="fas fa-microphone"></i>' : '<i class="fas fa-microphone-slash"></i>'; const fmic = document.getElementById('floatingMicCallBtn'); if (fmic) { fmic.innerHTML = t.enabled ? '<i class="fas fa-microphone"></i>' : '<i class="fas fa-microphone-slash"></i>'; fmic.classList.toggle('muted', !t.enabled); } } } }; document.getElementById('toggleCamCall').onclick = () => { if (localStream) { const t = localStream.getVideoTracks()[0]; if (t) { t.enabled = !t.enabled; document.getElementById('toggleCamCall').classList.toggle('muted'); document.getElementById('toggleCamCall').innerHTML = t.enabled ? '<i class="fas fa-video"></i>' : '<i class="fas fa-video-slash"></i>'; const fcam = document.getElementById('floatingCamCallBtn'); if (fcam) { fcam.innerHTML = t.enabled ? '<i class="fas fa-video"></i>' : '<i class="fas fa-video-slash"></i>'; fcam.classList.toggle('muted', !t.enabled); } } } }; document.getElementById('shareScreenCallBtn').onclick = toggleScreenShareCall; document.getElementById('recordCallBtn').onclick = toggleCallRecording; document.getElementById('reconnectCallBtn').onclick = reconnectCall; document.getElementById('endCallBtnMain').onclick = endCall; document.getElementById('chatToggleCallBtn').onclick = () => document.getElementById('chatPanelCall').classList.toggle('open'); document.getElementById('closeChatCallBtn').onclick = () => document.getElementById('chatPanelCall').classList.remove('open'); document.getElementById('sendChatCallBtn').onclick = sendCallChatMessage; document.getElementById('chatInputCall').onkeypress = (e) => { if (e.key === 'Enter') sendCallChatMessage(); }; document.getElementById('minimizeCallBtn').onclick = minimizeCall; document.getElementById('restoreCallBtn').onclick = restoreCall; document.getElementById('floatingMicCallBtn').onclick = () => { if (localStream) { const t = localStream.getAudioTracks()[0]; if (t) { t.enabled = !t.enabled; const mainMic = document.getElementById('toggleMicCall'); if (mainMic) { mainMic.classList.toggle('muted', !t.enabled); mainMic.innerHTML = t.enabled ? '<i class="fas fa-microphone"></i>' : '<i class="fas fa-microphone-slash"></i>'; } document.getElementById('floatingMicCallBtn').innerHTML = t.enabled ? '<i class="fas fa-microphone"></i>' : '<i class="fas fa-microphone-slash"></i>'; document.getElementById('floatingMicCallBtn').classList.toggle('muted', !t.enabled); } } }; document.getElementById('floatingCamCallBtn').onclick = () => { if (localStream) { const t = localStream.getVideoTracks()[0]; if (t) { t.enabled = !t.enabled; const mainCam = document.getElementById('toggleCamCall'); if (mainCam) { mainCam.classList.toggle('muted', !t.enabled); mainCam.innerHTML = t.enabled ? '<i class="fas fa-video"></i>' : '<i class="fas fa-video-slash"></i>'; } document.getElementById('floatingCamCallBtn').innerHTML = t.enabled ? '<i class="fas fa-video"></i>' : '<i class="fas fa-video-slash"></i>'; document.getElementById('floatingCamCallBtn').classList.toggle('muted', !t.enabled); } } }; document.getElementById('floatingEndCallBtn').onclick = endCall; 
-    document.getElementById('sosCallBtn').onclick = () => {
-    if (currentCallRole === 'psychologist' && currentClientIdInCall) {
-        // загрузить контакты клиента
-        fetchJSON(`/api/client-card/${currentClientIdInCall}?psychologistId=${currentUser.id}`)
-            .then(data => {
-                if (data.success && data.profile && data.profile.emergency_phone) {
-                    let contacts = [];
-                    try {
-                        contacts = JSON.parse(data.profile.emergency_phone);
-                    } catch(e) { contacts = []; }
-                    showEmergencyContacts(contacts);
-                } else {
-                    showEmergencyContacts();
-                }
-            })
-            .catch(() => showEmergencyContacts());
-    } else {
-        showEmergencyContacts();
     }
-};
-    document.getElementById('toolsCallBtn').onclick = () => { showCallTools(); }; document.getElementById('goHomeCallBtn').onclick = () => { window.open('/', '_blank'); }; const menuBtn = document.getElementById('menuCallBtn'); const extraMenu = document.getElementById('extraMenuCall'); if (menuBtn && extraMenu) { menuBtn.onclick = (e) => { e.stopPropagation(); extraMenu.style.display = extraMenu.style.display === 'flex' ? 'none' : 'flex'; }; document.addEventListener('click', (e) => { if (!menuBtn.contains(e.target) && !extraMenu.contains(e.target)) extraMenu.style.display = 'none'; }); } if (!navigator.mediaDevices?.getDisplayMedia) document.getElementById('shareScreenCallBtn').style.display = 'none'; updateRemoteVideoMode(false); function swapVideoRoles() { if (!remoteWrapper || !localWrapper) return; const isLocalBig = localWrapper.classList.contains('big'); if (!isLocalBig) { localWrapper.classList.remove('small'); localWrapper.classList.add('big'); remoteWrapper.classList.remove('big'); remoteWrapper.classList.add('small'); } else { localWrapper.classList.remove('big'); localWrapper.classList.add('small'); remoteWrapper.classList.remove('small'); remoteWrapper.classList.add('big'); } updateLocalVideoMode(isScreenSharing); } if (localWrapper) localWrapper.onclick = swapVideoRoles; }
+
+    // Сброс глобальных переменных звонка
+    currentCallRoomId = roomId;
+    currentCallRole = role;
+    currentClientIdInCall = clientId;
+    isCallActive = true;
+    callPartnerSocketId = null;
+    callConnectionEstablished = false;
+
+    // Настройка UI
+    document.getElementById('callContainer').style.display = 'flex';
+    document.getElementById('floatingCall').style.display = 'none';
+    document.getElementById('waitingMessageCall').style.display = 'flex';
+    
+    const remoteWrapper = document.querySelector('.remote-video-wrapper');
+    const localWrapper = document.querySelector('.local-video-wrapper');
+    if (remoteWrapper) {
+        remoteWrapper.classList.add('big');
+        remoteWrapper.classList.remove('small');
+    }
+    if (localWrapper) {
+        localWrapper.classList.add('small');
+        localWrapper.classList.remove('big');
+    }
+
+    // Инициализация медиа и сокетов
+    await startLocalStreamCall();
+    if (!socket) initSocket();
+
+    if (socket) {
+        socket.emit('join-call-room', roomId, currentUser.id, role);
+
+        socket.on('room-joined', () => {
+            document.getElementById('waitingMessageCall').style.display = 'flex';
+            callConnectionEstablished = false;
+        });
+
+        socket.on('call-ready', async (data) => {
+            callPartnerSocketId = data.partnerId;
+            currentCallPartnerUserId = data.partnerUserId;
+            document.getElementById('waitingMessageCall').style.display = 'none';
+            
+            if (localStream) {
+                await initWebRTCCall(role === 'psychologist');
+            } else {
+                const iv = setInterval(async () => {
+                    if (localStream) {
+                        clearInterval(iv);
+                        await initWebRTCCall(role === 'psychologist');
+                    }
+                }, 200);
+            }
+        });
+
+        socket.on('offer', async (data) => {
+            // Принимаем ID партнера из корректного поля fromUserId
+            if (data.fromUserId) currentCallPartnerUserId = data.fromUserId;
+            
+            if (!peerConnection) await createPeerConnectionCall();
+            await peerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp));
+            const answer = await peerConnection.createAnswer();
+            await peerConnection.setLocalDescription(answer);
+            socket.emit('answer', { targetUserId: currentCallPartnerUserId, sdp: answer });
+        });
+
+        socket.on('answer', async (data) => {
+            // ИСПРАВЛЕНО: добавляем сохранение ID при ответе
+            if (data.fromUserId) currentCallPartnerUserId = data.fromUserId;
+            if (peerConnection) await peerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp));
+        });
+
+        socket.on('ice-candidate', async (data) => {
+            if (peerConnection) {
+                try {
+                    await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
+                } catch(e) {
+                    console.warn('Ошибка добавления ICE кандидата', e);
+                }
+            }
+        });
+
+        socket.on('call-message', (data) => addCallChatMessage(data.text, false, data.time));
+        
+        socket.on('screen-share-started', () => {
+            remoteScreenMode = true;
+            updateRemoteVideoMode(true);
+        });
+        
+        socket.on('screen-share-stopped', () => {
+            remoteScreenMode = false;
+            updateRemoteVideoMode(false);
+        });
+        
+        socket.on('call-ended', () => {
+            showToast('Сессия завершена');
+            endCall();
+        });
+        
+        socket.on('partner-disconnected', () => {
+            showToast('Собеседник отключился', true);
+            document.getElementById('waitingMessageCall').style.display = 'flex';
+            callConnectionEstablished = false;
+        });
+        
+        socket.on('request-reconnect', async () => {
+            console.log('Получен запрос на переподключение');
+            if (peerConnection) {
+                peerConnection.close();
+                peerConnection = null;
+            }
+            callConnectionEstablished = false;
+            document.getElementById('waitingMessageCall').style.display = 'flex';
+            if (localStream && callPartnerSocketId) {
+                await initWebRTCCall(currentCallRole === 'psychologist');
+            }
+        });
+    }
+
+    // === ПРИВЯЗКА КНОПОК ИНТЕРФЕЙСА ЗВОНКА ===
+    
+    document.getElementById('toggleMicCall').onclick = () => {
+        if (localStream) {
+            const t = localStream.getAudioTracks()[0];
+            if (t) {
+                t.enabled = !t.enabled;
+                const micBtn = document.getElementById('toggleMicCall');
+                micBtn.classList.toggle('muted');
+                micBtn.innerHTML = t.enabled ? '<i class="fas fa-microphone"></i>' : '<i class="fas fa-microphone-slash"></i>';
+                
+                const fmic = document.getElementById('floatingMicCallBtn');
+                if (fmic) {
+                    fmic.innerHTML = t.enabled ? '<i class="fas fa-microphone"></i>' : '<i class="fas fa-microphone-slash"></i>';
+                    fmic.classList.toggle('muted', !t.enabled);
+                }
+            }
+        }
+    };
+
+    document.getElementById('toggleCamCall').onclick = () => {
+        if (localStream) {
+            const t = localStream.getVideoTracks()[0];
+            if (t) {
+                t.enabled = !t.enabled;
+                const camBtn = document.getElementById('toggleCamCall');
+                camBtn.classList.toggle('muted');
+                camBtn.innerHTML = t.enabled ? '<i class="fas fa-video"></i>' : '<i class="fas fa-video-slash"></i>';
+                
+                const fcam = document.getElementById('floatingCamCallBtn');
+                if (fcam) {
+                    fcam.innerHTML = t.enabled ? '<i class="fas fa-video"></i>' : '<i class="fas fa-video-slash"></i>';
+                    fcam.classList.toggle('muted', !t.enabled);
+                }
+            }
+        }
+    };
+
+    document.getElementById('shareScreenCallBtn').onclick = toggleScreenShareCall;
+    document.getElementById('recordCallBtn').onclick = toggleCallRecording;
+    document.getElementById('reconnectCallBtn').onclick = reconnectCall;
+    document.getElementById('endCallBtnMain').onclick = endCall;
+    
+    document.getElementById('chatToggleCallBtn').onclick = () => document.getElementById('chatPanelCall').classList.toggle('open');
+    document.getElementById('closeChatCallBtn').onclick = () => document.getElementById('chatPanelCall').classList.remove('open');
+    
+    document.getElementById('sendChatCallBtn').onclick = sendCallChatMessage;
+    document.getElementById('chatInputCall').onkeypress = (e) => { if (e.key === 'Enter') sendCallChatMessage(); };
+    
+    document.getElementById('minimizeCallBtn').onclick = minimizeCall;
+    document.getElementById('restoreCallBtn').onclick = restoreCall;
+    
+    document.getElementById('floatingMicCallBtn').onclick = () => {
+        if (localStream) {
+            const t = localStream.getAudioTracks()[0];
+            if (t) {
+                t.enabled = !t.enabled;
+                const mainMic = document.getElementById('toggleMicCall');
+                if (mainMic) {
+                    mainMic.classList.toggle('muted', !t.enabled);
+                    mainMic.innerHTML = t.enabled ? '<i class="fas fa-microphone"></i>' : '<i class="fas fa-microphone-slash"></i>';
+                }
+                const floatMic = document.getElementById('floatingMicCallBtn');
+                floatMic.innerHTML = t.enabled ? '<i class="fas fa-microphone"></i>' : '<i class="fas fa-microphone-slash"></i>';
+                floatMic.classList.toggle('muted', !t.enabled);
+            }
+        }
+    };
+
+    document.getElementById('floatingCamCallBtn').onclick = () => {
+        if (localStream) {
+            const t = localStream.getVideoTracks()[0];
+            if (t) {
+                t.enabled = !t.enabled;
+                const mainCam = document.getElementById('toggleCamCall');
+                if (mainCam) {
+                    mainCam.classList.toggle('muted', !t.enabled);
+                    mainCam.innerHTML = t.enabled ? '<i class="fas fa-video"></i>' : '<i class="fas fa-video-slash"></i>';
+                }
+                const floatCam = document.getElementById('floatingCamCallBtn');
+                floatCam.innerHTML = t.enabled ? '<i class="fas fa-video"></i>' : '<i class="fas fa-video-slash"></i>';
+                floatCam.classList.toggle('muted', !t.enabled);
+            }
+        }
+    };
+
+    document.getElementById('floatingEndCallBtn').onclick = endCall;
+    
+    document.getElementById('sosCallBtn').onclick = () => {
+        if (currentCallRole === 'psychologist' && currentClientIdInCall) {
+            // загрузить контакты клиента
+            fetchJSON(`/api/client-card/${currentClientIdInCall}?psychologistId=${currentUser.id}`)
+                .then(data => {
+                    if (data.success && data.profile && data.profile.emergency_phone) {
+                        let contacts = [];
+                        try {
+                            contacts = JSON.parse(data.profile.emergency_phone);
+                        } catch(e) { contacts = []; }
+                        showEmergencyContacts(contacts);
+                    } else {
+                        showEmergencyContacts();
+                    }
+                })
+                .catch(() => showEmergencyContacts());
+        } else {
+            showEmergencyContacts();
+        }
+    };
+
+    document.getElementById('toolsCallBtn').onclick = () => { showCallTools(); };
+    document.getElementById('goHomeCallBtn').onclick = () => { window.open('/', '_blank'); };
+    
+    const menuBtn = document.getElementById('menuCallBtn');
+    const extraMenu = document.getElementById('extraMenuCall');
+    if (menuBtn && extraMenu) {
+        menuBtn.onclick = (e) => {
+            e.stopPropagation();
+            extraMenu.style.display = extraMenu.style.display === 'flex' ? 'none' : 'flex';
+        };
+        document.addEventListener('click', (e) => {
+            if (!menuBtn.contains(e.target) && !extraMenu.contains(e.target)) {
+                extraMenu.style.display = 'none';
+            }
+        });
+    }
+
+    if (!navigator.mediaDevices?.getDisplayMedia) {
+        document.getElementById('shareScreenCallBtn').style.display = 'none';
+    }
+    
+    updateRemoteVideoMode(false);
+
+    function swapVideoRoles() {
+        if (!remoteWrapper || !localWrapper) return;
+        const isLocalBig = localWrapper.classList.contains('big');
+        if (!isLocalBig) {
+            localWrapper.classList.remove('small');
+            localWrapper.classList.add('big');
+            remoteWrapper.classList.remove('big');
+            remoteWrapper.classList.add('small');
+        } else {
+            localWrapper.classList.remove('big');
+            localWrapper.classList.add('small');
+            remoteWrapper.classList.remove('small');
+            remoteWrapper.classList.add('big');
+        }
+        updateLocalVideoMode(isScreenSharing);
+    }
+    
+    if (localWrapper) localWrapper.onclick = swapVideoRoles;
+}
         
         // ======================= НАВИГАЦИЯ =======================
         function switchTab(tab, forceRefresh = false) { 
