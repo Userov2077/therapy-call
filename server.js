@@ -154,7 +154,7 @@ const cloudinaryStorage = new CloudinaryStorage({
         };
     }
 });
-const uploadMedia = multer({ storage: cloudinaryStorage, limits: { fileSize: 50 * 1024 * 1024 } });
+const uploadMedia = multer({ storage: cloudinaryStorage, limits: { fileSize: 40 * 1024 * 1024 } });
 
 const docStorage = multer.diskStorage({
     destination: (req, file, cb) => {
@@ -180,6 +180,15 @@ function authenticateToken(req, res, next) {
     } catch (err) {
         return res.status(403).json({ success: false, error: 'Недействительный токен' });
     }
+}
+
+function optionalAuth(req, res, next) {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+    if (token) {
+        try { req.user = jwt.verify(token, JWT_SECRET); } catch (err) {}
+    }
+    next();
 }
 
 function requirePsychologist(req, res, next) {
@@ -598,15 +607,17 @@ app.post('/api/login', async (req, res) => {
 });
 
 // ========== ПОЛЬЗОВАТЕЛИ (защищённые) ==========
-app.get('/api/user/:id', authenticateToken, async (req, res) => {
+app.get('/api/user/:id', optionalAuth, async (req, res) => {
     try {
-        // Разрешаем смотреть только свой профиль или публичную информацию (для других пользователей можно показывать ограниченно)
-        if (req.params.id !== req.user.userId && req.user.role !== 'psychologist') {
-            // Не психолог не может смотреть чужие профили (кроме публичных полей)
-            const publicUser = await pool.query('SELECT id, full_name, avatar, role, specialization, rating FROM users WHERE id=$1', [req.params.id]);
+        // Если это гость ИЛИ человек смотрит чужой профиль, отдаем только публичные данные
+        if (!req.user || (req.params.id !== req.user.userId && req.user.role !== 'psychologist')) {
+            const publicUser = await pool.query('SELECT id, full_name, avatar, role, specialization, rating, about, price, experience FROM users WHERE id=$1', [req.params.id]);
             if (publicUser.rows.length === 0) return res.json({ success: false });
-            return res.json({ success: true, user: publicUser.rows[0] });
+            const p = publicUser.rows[0];
+            return res.json({ success: true, user: { id: p.id, fullName: p.full_name, avatar: p.avatar, role: p.role, specialization: p.specialization, rating: p.rating, about: p.about, price: p.price, experience: p.experience } });
         }
+        
+        // Если это владелец профиля или психолог смотрит клиента
         const user = await getUser(req.params.id);
         if (!user) return res.json({ success: false, error: 'Пользователь не найден' });
         const { password, ...userData } = user;
@@ -874,11 +885,11 @@ app.post('/api/posts', authenticateToken, requirePsychologist, async (req, res) 
         res.json({ success: true, post: newPost });
     } catch (err) { console.error('Create post error:', err); res.json({ success: false }); }
 });
-app.get('/api/posts', authenticateToken, async (req, res) => {
+app.get('/api/posts', optionalAuth, async (req, res) => {
     try {
         const limit = Math.min(parseInt(req.query.limit) || 15, 50);
         const offset = parseInt(req.query.offset) || 0;
-        const userId = req.user.userId;
+        const userId = req.user ? req.user.userId : null;
 
         const postsRes = await pool.query(
             `SELECT p.id, p.text, p.image, p.video, p.created_at,
@@ -924,7 +935,7 @@ app.get('/api/posts', authenticateToken, async (req, res) => {
         res.status(500).json({ success: false, error: 'Ошибка загрузки постов' });
     }
 });
-app.get('/api/posts/:id/comments', authenticateToken, async (req, res) => {
+app.get('/api/posts/:id/comments', optionalAuth, async (req, res) => {
     try {
         const result = await pool.query(`SELECT c.id, c.text, c.created_at, u.id AS author_id, u.full_name AS author_name, u.avatar AS author_avatar FROM comments c JOIN users u ON c.author_id = u.id WHERE c.post_id = $1 ORDER BY c.created_at ASC`, [req.params.id]);
         const comments = result.rows.map(c => ({ id: c.id, text: c.text, created_at: c.created_at, author_id: c.author_id, author_name: c.author_name, author_avatar: c.author_avatar }));
@@ -934,17 +945,37 @@ app.get('/api/posts/:id/comments', authenticateToken, async (req, res) => {
 app.put('/api/posts/:id', authenticateToken, async (req, res) => {
     try {
         const postId = req.params.id;
-        const { authorId, text } = req.body;
-        if (req.user.userId !== authorId) {
-            return res.status(403).json({ success: false, error: 'Нет прав' });
+        const { text } = req.body;
+        const userId = req.user.userId; // Берем ID строго из проверенного токена!
+
+        // 1. Защита от "пустых" постов в обход фронтенда
+        if (!text || !text.trim()) {
+            return res.json({ success: false, error: 'Текст не может быть пустым' });
         }
-        const postRes = await pool.query('SELECT * FROM posts WHERE id=$1', [postId]);
-        if (postRes.rows.length === 0) return res.json({ success: false, error: 'Пост не найден' });
-        if (postRes.rows[0].author_id !== authorId) return res.json({ success: false, error: 'Нет прав' });
-        await pool.query('UPDATE posts SET text=$1 WHERE id=$2', [text, postId]);
-        io.emit('post_updated', { id: postId, text });
+
+        // 2. Ищем пост (запрашиваем только нужное поле author_id для экономии памяти)
+        const postRes = await pool.query('SELECT author_id FROM posts WHERE id=$1', [postId]);
+        
+        if (postRes.rows.length === 0) {
+            return res.json({ success: false, error: 'Пост не найден' });
+        }
+        
+        // 3. Проверяем: совпадает ли владелец токена с автором поста?
+        if (postRes.rows[0].author_id !== userId) {
+            return res.status(403).json({ success: false, error: 'Нет прав на редактирование этого поста' });
+        }
+
+        // 4. Обновляем текст в БД
+        await pool.query('UPDATE posts SET text=$1 WHERE id=$2', [text.trim(), postId]);
+        
+        // 5. Оповещаем всех (сокеты)
+        io.emit('post_updated', { id: postId, text: text.trim() });
         res.json({ success: true });
-    } catch (err) { console.error('Update post error:', err); res.json({ success: false }); }
+        
+    } catch (err) { 
+        console.error('Update post error:', err); 
+        res.status(500).json({ success: false, error: 'Ошибка сервера' }); 
+    }
 });
 app.delete('/api/posts/:id', authenticateToken, async (req, res) => {
     try {

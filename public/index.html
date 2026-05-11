@@ -1443,7 +1443,7 @@
             const likeBtn = postElement.querySelector('.like-btn');
             if (likeBtn) {
                 likeBtn.onclick = async () => {
-                    if (isLoading || !currentUser) { showToast('Войдите в аккаунт', true); return; }
+                    if (isLoading || !currentUser) { openLoginModal(); return; }
                     isLoading = true;
                     const postId = likeBtn.dataset.id;
                     const data = await fetchJSON(`/api/posts/${postId}/like`, {
@@ -1559,7 +1559,7 @@
         }
 
         async function addComment(postId) {
-            if (!currentUser) { showToast('Войдите в аккаунт', true); return; }
+            if (!currentUser) { openLoginModal(); return; }
             const input = document.getElementById(`comment-input-${postId}`);
             const text = input?.value.trim();
             if (!text) return;
@@ -1574,13 +1574,7 @@
                 });
                 if (data.success) {
                     input.value = '';
-                    const commentSpan = document.querySelector(`.comment-toggle[data-id="${postId}"] span`);
-                    if (commentSpan) commentSpan.textContent = (parseInt(commentSpan.textContent) || 0) + 1;
-                    const post = feedPosts.find(p => p.id === postId);
-                    if (post) post.commentsCount = (post.commentsCount || 0) + 1;
-                    showToast('Комментарий добавлен');
-                } else {
-                    showToast(data.error || 'Ошибка', true);
+                    
                 }
             } catch (err) {
                 showToast('Ошибка соединения', true);
@@ -2416,12 +2410,22 @@
             mediaInput.onchange = async () => {
                 const file = mediaInput.files[0];
                 if (!file) return;
+
+                // 1. ПРОВЕРКА ВЕСА (40 МБ)
+                if (file.size > 40 * 1024 * 1024) {
+                    showToast('Файл слишком большой (максимум 40 МБ)', true);
+                    mediaInput.value = '';
+                    selectedFile = null;
+                    return;
+                }
+
                 selectedFile = file;
                 if (file.type.startsWith('video/')) {
                     const video = document.createElement('video');
                     video.preload = 'metadata';
                     video.onloadedmetadata = () => {
                         URL.revokeObjectURL(video.src);
+                        // 2. ПРОВЕРКА ДЛИНЫ (60 секунд)
                         if (video.duration > 60) {
                             showToast('Видео не должно превышать 60 секунд', true);
                             mediaInput.value = '';
@@ -2441,7 +2445,11 @@
                         previewDiv.style.display = 'block';
                     };
                     reader.readAsDataURL(file);
-                } else { showToast('Неподдерживаемый формат', true); mediaInput.value = ''; selectedFile = null; }
+                } else { 
+                    showToast('Неподдерживаемый формат', true); 
+                    mediaInput.value = ''; 
+                    selectedFile = null; 
+                }
             };
             publishBtn.onclick = async () => {
                 if (isPosting) { showToast('Пост уже публикуется, подождите...', true); return; }
@@ -2852,7 +2860,7 @@
         }
         
         function startChatWith(userId, name) {
-            if (!currentUser) { showToast('Войдите в аккаунт', true); return; }
+            if (isLoading || !currentUser) { openLoginModal(); return; } // Вместо showToast вызываем модалку входа!
             currentTab = 'chats';
             document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
             const chatNav = document.querySelector('.nav-item[data-tab="chats"]');
@@ -3837,6 +3845,55 @@ function renderUniversalClientCard(data) {
                 .then(() => console.log('Service Worker registered'))
                 .catch(err => console.error('Service Worker registration failed:', err));
         }
+
+        // ======================= PWA INSTALL PROMPT =======================
+        let deferredPrompt;
+        
+        // Перехватываем системное событие установки (Android / Chrome)
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredPrompt = e;
+            setTimeout(showInstallPrompt, 2000); // Показываем через 2 секунды после захода
+        });
+
+        function showInstallPrompt() {
+            // Если уже установлено или пользователь закрывал баннер — не спамим
+            if (window.matchMedia('(display-mode: standalone)').matches) return;
+            if (localStorage.getItem('pwa_prompt_dismissed')) return;
+
+            const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+            const modalId = 'pwaPrompt';
+            
+            const content = isIOS 
+                ? `Чтобы установить <b>Therapy Call</b> на iPhone, нажмите кнопку <b>Поделиться</b> <i class="fas fa-external-link-alt" style="color:var(--green);"></i> внизу браузера и выберите <b>«На экран Домой»</b>.`
+                : `Установите приложение <b>Therapy Call</b> на свой телефон для быстрой работы, кэширования постов и получения уведомлений!`;
+            
+            const btnHtml = isIOS 
+                ? `<button class="btn-primary" onclick="closeModal('${modalId}'); localStorage.setItem('pwa_prompt_dismissed', '1')">Понятно</button>`
+                : `<button class="btn-primary" onclick="installPWA('${modalId}')">Установить</button><button class="btn-secondary" onclick="closeModal('${modalId}'); localStorage.setItem('pwa_prompt_dismissed', '1')">Позже</button>`;
+
+            const html = `<div class="modal" id="${modalId}" style="z-index: 5000;"><div class="modal-content"><div class="modal-handle"></div><h3 style="margin-bottom:10px;"><i class="fas fa-download" style="color:var(--green);"></i> Установить приложение</h3><p style="font-size:14px; color:rgba(255,255,255,0.8); line-height:1.5; margin-bottom:20px;">${content}</p><div class="modal-buttons">${btnHtml}</div></div></div>`;
+            
+            document.body.insertAdjacentHTML('beforeend', html);
+            setTimeout(() => document.getElementById(modalId).classList.add('active'), 10);
+        }
+
+        window.installPWA = async (modalId) => {
+            closeModal(modalId);
+            localStorage.setItem('pwa_prompt_dismissed', '1');
+            if (deferredPrompt) {
+                deferredPrompt.prompt();
+                const { outcome } = await deferredPrompt.userChoice;
+                deferredPrompt = null;
+            }
+        };
+        
+        // Для iOS системное событие не срабатывает, проверяем вручную при загрузке
+        window.addEventListener('load', () => {
+            if (isMobile && !window.matchMedia('(display-mode: standalone)').matches && /iPhone|iPad|iPod/.test(navigator.userAgent)) {
+                 setTimeout(showInstallPrompt, 3000);
+            }
+        });
     </script>
 </body>
 </html>
