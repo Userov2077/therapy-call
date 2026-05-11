@@ -3468,22 +3468,78 @@ function toggleCallRecording() {
 // ЗАВЕРШЕНИЕ ЗВОНКА И ИНТЕРФЕЙС
 // ==========================================
 
-function endCall() { 
+// 1. Показываем вопрос перед выходом
+function promptEndCall() {
+    const modalId = 'endCallPromptModal_' + Date.now();
+    const html = `
+        <div class="modal" id="${modalId}" style="z-index: 3000;">
+            <div class="modal-content">
+                <div class="modal-handle"></div>
+                <h3>Завершение звонка</h3>
+                <p style="color: var(--text-muted); font-size: 14px; margin-bottom: 20px;">
+                    Вы хотите полностью завершить эту сессию (перейдет в "Прошедшие") или просто временно выйти из комнаты?
+                </p>
+                <div style="display: flex; flex-direction: column; gap: 10px;">
+                    <button class="btn-primary" onclick="executeLeaveCall(true, '${modalId}')">✅ Сессия завершена полностью</button>
+                    <button class="btn-sm btn-outline" onclick="executeLeaveCall(false, '${modalId}')">🚪 Временно выйти (вернуться позже)</button>
+                    <button class="btn-secondary" onclick="closeModal('${modalId}')">Отмена</button>
+                </div>
+            </div>
+        </div>
+    `;
+    document.body.insertAdjacentHTML('beforeend', html);
+    setTimeout(() => document.getElementById(modalId).classList.add('active'), 10);
+}
+
+// 2. Сама логика выхода и ЖЕСТКОЙ зачистки кэша
+function executeLeaveCall(isComplete, modalId) {
+    if (modalId) closeModal(modalId);
+    
     stopCallTimer(); 
-    if (socket) socket.emit('end-call'); 
     stopCallRecording(); 
     
-    if (peerConnection) peerConnection.close(); 
-    if (localStream) localStream.getTracks().forEach(t => t.stop()); 
-    if (screenStream) screenStream.getTracks().forEach(t => t.stop()); 
+    // Сообщаем серверу, что мы делаем
+    if (socket) {
+        if (isComplete) {
+            socket.emit('end-call'); // Полное завершение (меняет статус в БД)
+        } else {
+            socket.emit('leave-call'); // Временный выход (не трогает БД)
+        }
+    }
     
+    // Убиваем WebRTC соединение намертво
+    if (peerConnection) {
+        peerConnection.close(); 
+        peerConnection = null; 
+    }
+    
+    // Убиваем камеру и стрим экрана
+    if (localStream) {
+        localStream.getTracks().forEach(t => t.stop()); 
+        localStream = null; 
+    }
+    if (screenStream) {
+        screenStream.getTracks().forEach(t => t.stop()); 
+        screenStream = null; 
+    }
+    
+    // Прячем интерфейс
     document.getElementById('callContainer').style.display = 'none'; 
     document.getElementById('floatingCall').style.display = 'none'; 
     
+    // СТРОГАЯ ОЧИСТКА ЧАТА от прошлого клиента
+    const chatContainer = document.getElementById('chatMessagesCall');
+    if (chatContainer) chatContainer.innerHTML = '<div class="chat-empty">Сообщения появятся здесь</div>';
+    
+    const chatPanel = document.getElementById('chatPanelCall');
+    if (chatPanel) chatPanel.classList.remove('open');
+    
+    // Обнуляем все переменные (предотвращаем склейку звонков)
     isCallActive = false; 
     currentCallRoomId = null; 
     currentCallRole = null; 
     currentCallPartnerUserId = null; 
+    currentClientIdInCall = null; 
     callConnectionEstablished = false; 
     callStartTime = null; 
 }
@@ -4144,8 +4200,8 @@ async function startCallInWindow(roomId, role, clientId = null) {
         });
         
         socket.on('call-ended', () => {
-            showToast('Сессия завершена');
-            endCall();
+            showToast('Сессия завершена собеседником');
+            executeLeaveCall(false, null);
         });
         
         socket.on('partner-disconnected', () => {
@@ -4209,7 +4265,7 @@ async function startCallInWindow(roomId, role, clientId = null) {
     document.getElementById('shareScreenCallBtn').onclick = toggleScreenShareCall;
     document.getElementById('recordCallBtn').onclick = toggleCallRecording;
     document.getElementById('reconnectCallBtn').onclick = reconnectCall;
-    document.getElementById('endCallBtnMain').onclick = endCall;
+    document.getElementById('endCallBtnMain').onclick = promptEndCall;
     
     document.getElementById('chatToggleCallBtn').onclick = () => document.getElementById('chatPanelCall').classList.toggle('open');
     document.getElementById('closeChatCallBtn').onclick = () => document.getElementById('chatPanelCall').classList.remove('open');
@@ -4254,7 +4310,7 @@ async function startCallInWindow(roomId, role, clientId = null) {
         }
     };
 
-    document.getElementById('floatingEndCallBtn').onclick = endCall;
+    document.getElementById('floatingEndCallBtn').onclick = promptEndCall;
     
     document.getElementById('sosCallBtn').onclick = () => {
         if (currentCallRole === 'psychologist' && currentClientIdInCall) {
