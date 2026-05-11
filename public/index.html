@@ -3174,67 +3174,454 @@ body.chat-opened {
 }
         
         // ======================= ВИДЕОЗВОНОК =======================
-        async function getIceServers() { return [ { urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }, { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' }, { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' } ]; }
-        async function createPeerConnectionCall() { if (peerConnection) peerConnection.close(); const config = { iceServers: await getIceServers(), iceTransportPolicy: 'all' }; peerConnection = new RTCPeerConnection(config); if (localStream) localStream.getTracks().forEach(t => peerConnection.addTrack(t, localStream)); peerConnection.ontrack = (event) => { const stream = event.streams[0]; document.getElementById('remoteVideo').srcObject = stream; document.getElementById('floatingRemoteVideo').srcObject = stream; document.getElementById('waitingMessageCall').style.display = 'none'; callConnectionEstablished = true; updateRemoteVideoMode(remoteScreenMode); if (!callStartTime) startCallTimer(); }; peerConnection.onicecandidate = (event) => {
-    if (event.candidate && socket && currentCallPartnerUserId) {
-        socket.emit('ice-candidate', { 
-            targetUserId: currentCallPartnerUserId, 
-            candidate: event.candidate 
-        });
+        // ==========================================
+// НАСТРОЙКИ СЕТИ И WEBRTC
+// ==========================================
+
+async function getIceServers() { 
+    return [ 
+        { urls: 'stun:stun.l.google.com:19302' }, 
+        { urls: 'stun:stun1.l.google.com:19302' }, 
+        { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' }, 
+        { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' } 
+    ]; 
+}
+
+async function createPeerConnectionCall() { 
+    if (peerConnection) peerConnection.close(); 
+    
+    const config = { 
+        iceServers: await getIceServers(), 
+        iceTransportPolicy: 'all' 
+    }; 
+    
+    peerConnection = new RTCPeerConnection(config); 
+    
+    if (localStream) {
+        localStream.getTracks().forEach(t => peerConnection.addTrack(t, localStream)); 
     }
-}; }; peerConnection.oniceconnectionstatechange = () => { if (!peerConnection) return; const state = peerConnection.iceConnectionState; if (state === 'connected') { callConnectionEstablished = true; document.getElementById('waitingMessageCall').style.display = 'none'; if (!callStartTime) startCallTimer(); } else if (state === 'failed' || state === 'disconnected') { callConnectionEstablished = false; document.getElementById('waitingMessageCall').style.display = 'flex'; setTimeout(() => { if (!callConnectionEstablished) reconnectCall(); }, 3000); } }; return peerConnection; }
-        function startCallTimer() { if (callTimerInterval) clearInterval(callTimerInterval); callStartTime = Date.now(); const timerElement = document.getElementById('callTimer'); if (timerElement) timerElement.style.display = 'block'; callTimerInterval = setInterval(() => { if (!callStartTime) return; const elapsed = Math.floor((Date.now() - callStartTime) / 1000); const mins = Math.floor(elapsed / 60); const secs = elapsed % 60; document.getElementById('callTimer').textContent = `${mins.toString().padStart(2,'0')}:${secs.toString().padStart(2,'0')}`; }, 1000); }
-        function stopCallTimer() { if (callTimerInterval) clearInterval(callTimerInterval); callTimerInterval = null; const timerElement = document.getElementById('callTimer'); if (timerElement) timerElement.style.display = 'none'; if (callStartTime && currentCallRoomId) { const duration = Math.floor((Date.now() - callStartTime) / 1000); fetch('/api/appointment/duration', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ roomId: currentCallRoomId, duration }) }).catch(console.error); callStartTime = null; } }
-        async function startLocalStreamCall() { try { const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true }); localStream = stream; document.getElementById('localVideo').srcObject = localStream; cameraTrack = localStream.getVideoTracks()[0]; if (socket && callPartnerSocketId) await initWebRTCCall(currentCallRole === 'psychologist'); } catch (e) { showToast('Нет доступа к камере/микрофону', true); } }
-        async function initWebRTCCall(createOffer = true) { if (!localStream) return; await createPeerConnectionCall(); if (createOffer && socket && callPartnerSocketId) { const offer = await peerConnection.createOffer(); await peerConnection.setLocalDescription(offer); socket.emit('offer', { targetUserId: currentCallPartnerUserId, sdp: offer }); } }
-        async function replaceVideoTrackCall(newTrack) { if (!peerConnection) return; const sender = peerConnection.getSenders().find(s => s.track?.kind === 'video'); if (sender) await sender.replaceTrack(newTrack); else if (newTrack) peerConnection.addTrack(newTrack, localStream); if (newTrack) { const newStream = new MediaStream(); newStream.addTrack(newTrack); if (localStream.getAudioTracks()[0]) newStream.addTrack(localStream.getAudioTracks()[0]); document.getElementById('localVideo').srcObject = newStream; } }
-        async function startScreenShareCall() { if (isScreenSharing || !navigator.mediaDevices?.getDisplayMedia) return showToast('Не поддерживается', true); try { const screen = await navigator.mediaDevices.getDisplayMedia({ video: true }); screenStream = screen; const track = screen.getVideoTracks()[0]; if (cameraTrack) cameraTrack.enabled = false; await replaceVideoTrackCall(track); updateLocalVideoMode(true); isScreenSharing = true; if (socket) socket.emit('call-message', { text: 'Начал трансляцию экрана' }); if (socket) socket.emit('screen-share-started', { roomId: currentCallRoomId }); track.onended = () => stopScreenShareCall(); } catch(e) { showToast('Ошибка трансляции', true); } }
-        async function stopScreenShareCall() { if (!isScreenSharing) return; if (screenStream) screenStream.getTracks().forEach(t => t.stop()); screenStream = null; if (cameraTrack) { cameraTrack.enabled = true; await replaceVideoTrackCall(cameraTrack); } else await replaceVideoTrackCall(null); updateLocalVideoMode(false); isScreenSharing = false; if (socket) socket.emit('call-message', { text: 'Остановил трансляцию экрана' }); if (socket) socket.emit('screen-share-stopped', { roomId: currentCallRoomId }); }
-        function toggleScreenShareCall() { isScreenSharing ? stopScreenShareCall() : startScreenShareCall(); }
-        function addCallChatMessage(text, isOutgoing = false, time = null) { const container = document.getElementById('chatMessagesCall'); if (!container) return; const empty = container.querySelector('.chat-empty'); if (empty) empty.remove(); const div = document.createElement('div'); div.className = 'chat-message-call ' + (isOutgoing ? 'outgoing' : 'incoming'); const t = time ? new Date(time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); div.innerHTML = `<div>${escapeHtml(text)}</div><div class="chat-message-time">${t}</div>`; container.appendChild(div); container.scrollTop = container.scrollHeight; }
-        function sendCallChatMessage() { 
+
+    // Обработка входящего видео
+    peerConnection.ontrack = (event) => { 
+        const stream = event.streams[0]; 
+        document.getElementById('remoteVideo').srcObject = stream; 
+        document.getElementById('floatingRemoteVideo').srcObject = stream; 
+        document.getElementById('waitingMessageCall').style.display = 'none'; 
+        callConnectionEstablished = true; 
+        updateRemoteVideoMode(remoteScreenMode); 
+        
+        if (!callStartTime) startCallTimer(); 
+    }; 
+
+    // Отправка ICE-кандидатов собеседнику
+    peerConnection.onicecandidate = (event) => {
+        if (event.candidate && socket && currentCallPartnerUserId) {
+            socket.emit('ice-candidate', { 
+                targetUserId: currentCallPartnerUserId, 
+                candidate: event.candidate 
+            });
+        }
+    }; 
+
+    // Обработка статуса соединения (переподключение при обрыве)
+    peerConnection.oniceconnectionstatechange = () => { 
+        if (!peerConnection) return; 
+        
+        const state = peerConnection.iceConnectionState; 
+        if (state === 'connected') { 
+            callConnectionEstablished = true; 
+            document.getElementById('waitingMessageCall').style.display = 'none'; 
+            if (!callStartTime) startCallTimer(); 
+        } else if (state === 'failed' || state === 'disconnected') { 
+            callConnectionEstablished = false; 
+            document.getElementById('waitingMessageCall').style.display = 'flex'; 
+            setTimeout(() => { 
+                if (!callConnectionEstablished) reconnectCall(); 
+            }, 3000); 
+        } 
+    }; 
+    
+    return peerConnection; 
+}
+
+// ==========================================
+// УПРАВЛЕНИЕ ЗВОНКОМ И ТАЙМЕРАМИ
+// ==========================================
+
+function startCallTimer() { 
+    if (callTimerInterval) clearInterval(callTimerInterval); 
+    callStartTime = Date.now(); 
+    
+    const timerElement = document.getElementById('callTimer'); 
+    if (timerElement) timerElement.style.display = 'block'; 
+    
+    callTimerInterval = setInterval(() => { 
+        if (!callStartTime) return; 
+        const elapsed = Math.floor((Date.now() - callStartTime) / 1000); 
+        const mins = Math.floor(elapsed / 60); 
+        const secs = elapsed % 60; 
+        document.getElementById('callTimer').textContent = `${mins.toString().padStart(2,'0')}:${secs.toString().padStart(2,'0')}`; 
+    }, 1000); 
+}
+
+function stopCallTimer() { 
+    if (callTimerInterval) clearInterval(callTimerInterval); 
+    callTimerInterval = null; 
+    
+    const timerElement = document.getElementById('callTimer'); 
+    if (timerElement) timerElement.style.display = 'none'; 
+    
+    if (callStartTime && currentCallRoomId) { 
+        const duration = Math.floor((Date.now() - callStartTime) / 1000); 
+        fetch('/api/appointment/duration', { 
+            method: 'POST', 
+            headers: { 'Content-Type': 'application/json' }, 
+            body: JSON.stringify({ roomId: currentCallRoomId, duration }) 
+        }).catch(console.error); 
+        callStartTime = null; 
+    } 
+}
+
+async function startLocalStreamCall() { 
+    try { 
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true }); 
+        localStream = stream; 
+        document.getElementById('localVideo').srcObject = localStream; 
+        cameraTrack = localStream.getVideoTracks()[0]; 
+        
+        // ИСПРАВЛЕНО: Заменили callPartnerSocketId на currentCallPartnerUserId
+        if (socket && currentCallPartnerUserId) {
+            await initWebRTCCall(currentCallRole === 'psychologist'); 
+        }
+    } catch (e) { 
+        showToast('Нет доступа к камере/микрофону', true); 
+    } 
+}
+
+async function initWebRTCCall(createOffer = true) { 
+    if (!localStream) return; 
+    await createPeerConnectionCall(); 
+    
+    // ИСПРАВЛЕНО: Заменили callPartnerSocketId на currentCallPartnerUserId
+    if (createOffer && socket && currentCallPartnerUserId) { 
+        const offer = await peerConnection.createOffer(); 
+        await peerConnection.setLocalDescription(offer); 
+        socket.emit('offer', { targetUserId: currentCallPartnerUserId, sdp: offer }); 
+    } 
+}
+
+// ==========================================
+// ДЕМОНСТРАЦИЯ ЭКРАНА
+// ==========================================
+
+async function replaceVideoTrackCall(newTrack) { 
+    if (!peerConnection) return; 
+    const sender = peerConnection.getSenders().find(s => s.track?.kind === 'video'); 
+    
+    if (sender) {
+        await sender.replaceTrack(newTrack); 
+    } else if (newTrack) {
+        peerConnection.addTrack(newTrack, localStream); 
+    }
+    
+    if (newTrack) { 
+        const newStream = new MediaStream(); 
+        newStream.addTrack(newTrack); 
+        if (localStream.getAudioTracks()[0]) newStream.addTrack(localStream.getAudioTracks()[0]); 
+        document.getElementById('localVideo').srcObject = newStream; 
+    } 
+}
+
+async function startScreenShareCall() { 
+    if (isScreenSharing || !navigator.mediaDevices?.getDisplayMedia) {
+        return showToast('Не поддерживается', true); 
+    }
+    try { 
+        const screen = await navigator.mediaDevices.getDisplayMedia({ video: true }); 
+        screenStream = screen; 
+        const track = screen.getVideoTracks()[0]; 
+        if (cameraTrack) cameraTrack.enabled = false; 
+        
+        await replaceVideoTrackCall(track); 
+        updateLocalVideoMode(true); 
+        isScreenSharing = true; 
+        
+        if (socket) socket.emit('call-message', { text: 'Начал трансляцию экрана' }); 
+        if (socket) socket.emit('screen-share-started', { roomId: currentCallRoomId }); 
+        
+        track.onended = () => stopScreenShareCall(); 
+    } catch(e) { 
+        showToast('Ошибка трансляции', true); 
+    } 
+}
+
+async function stopScreenShareCall() { 
+    if (!isScreenSharing) return; 
+    if (screenStream) screenStream.getTracks().forEach(t => t.stop()); 
+    screenStream = null; 
+    
+    if (cameraTrack) { 
+        cameraTrack.enabled = true; 
+        await replaceVideoTrackCall(cameraTrack); 
+    } else {
+        await replaceVideoTrackCall(null); 
+    }
+    
+    updateLocalVideoMode(false); 
+    isScreenSharing = false; 
+    
+    if (socket) socket.emit('call-message', { text: 'Остановил трансляцию экрана' }); 
+    if (socket) socket.emit('screen-share-stopped', { roomId: currentCallRoomId }); 
+}
+
+function toggleScreenShareCall() { 
+    isScreenSharing ? stopScreenShareCall() : startScreenShareCall(); 
+}
+
+// ==========================================
+// ЧАТ И ЗАПИСЬ ВО ВРЕМЯ ЗВОНКА
+// ==========================================
+
+function addCallChatMessage(text, isOutgoing = false, time = null) { 
+    const container = document.getElementById('chatMessagesCall'); 
+    if (!container) return; 
+    
+    const empty = container.querySelector('.chat-empty'); 
+    if (empty) empty.remove(); 
+    
+    const div = document.createElement('div'); 
+    div.className = 'chat-message-call ' + (isOutgoing ? 'outgoing' : 'incoming'); 
+    
+    const t = time ? new Date(time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); 
+    div.innerHTML = `<div>${escapeHtml(text)}</div><div class="chat-message-time">${t}</div>`; 
+    
+    container.appendChild(div); 
+    container.scrollTop = container.scrollHeight; 
+}
+
+function sendCallChatMessage() { 
     const input = document.getElementById('chatInputCall'); 
     if (!input) return; 
     const text = input.value.trim(); 
     
-    // Убрали проблемную зависимость от callPartnerSocketId
     if (text && socket) { 
         addCallChatMessage(text, true); 
         socket.emit('call-message', { text }); 
         input.value = ''; 
     } 
 }
-        function startCallRecording() { if (!localStream) return; recordedChunks = []; const stream = new MediaStream([localStream.getAudioTracks()[0]]); mediaRecorderCall = new MediaRecorder(stream, { mimeType: 'audio/webm' }); mediaRecorderCall.ondataavailable = e => { if (e.data.size) recordedChunks.push(e.data); }; mediaRecorderCall.onstop = async () => { const blob = new Blob(recordedChunks, { type: 'audio/webm' }); const fd = new FormData(); fd.append('recording', blob, `call_${Date.now()}.webm`); fd.append('from', currentUser.id); fd.append('to', callPartnerSocketId || 'unknown'); fd.append('roomId', currentCallRoomId); try { await authFetch('/api/upload-recording', { method: 'POST', body: fd }); showToast('Запись сохранена'); } catch(e) {} }; mediaRecorderCall.start(1000); isRecordingCall = true; const recordBtn = document.getElementById('recordCallBtn'); if (recordBtn) { recordBtn.classList.add('recording-active'); recordBtn.innerHTML = '<span class="rec-dot"></span> Запись ...'; } }
-        function stopCallRecording() { if (mediaRecorderCall?.state === 'recording') { mediaRecorderCall.stop(); isRecordingCall = false; const recordBtn = document.getElementById('recordCallBtn'); if (recordBtn) { recordBtn.classList.remove('recording-active'); recordBtn.innerHTML = '<i class="fas fa-circle"></i> Запись'; } } }
-        function toggleCallRecording() { isRecordingCall ? stopCallRecording() : startCallRecording(); }
-        function endCall() { stopCallTimer(); if (socket) socket.emit('end-call'); stopCallRecording(); if (peerConnection) peerConnection.close(); if (localStream) localStream.getTracks().forEach(t => t.stop()); if (screenStream) screenStream.getTracks().forEach(t => t.stop()); document.getElementById('callContainer').style.display = 'none'; document.getElementById('floatingCall').style.display = 'none'; isCallActive = false; currentCallRoomId = null; currentCallRole = null; callPartnerSocketId = null; callConnectionEstablished = false; callStartTime = null; }
-        function reconnectCall() { if (!currentCallRoomId) { showToast('Нет активного звонка', true); return; } if (peerConnection) { peerConnection.close(); peerConnection = null; } callConnectionEstablished = false; document.getElementById('waitingMessageCall').style.display = 'flex'; if (socket && socket.connected) { socket.emit('request-reconnect', { roomId: currentCallRoomId, role: currentCallRole }); } else { if (socket) socket.connect(); socket.once('connect', () => { socket.emit('join-call-room', currentCallRoomId, currentUser.id, currentCallRole); }); } }
-        function updateRemoteVideoMode(isScreen) { const remoteVideoElem = document.getElementById('remoteVideo'); if (!remoteVideoElem) return; if (isScreen) remoteVideoElem.classList.add('screen-mode'); else remoteVideoElem.classList.remove('screen-mode'); }
-        function updateLocalVideoMode(isScreen) { const localVideo = document.getElementById('localVideo'); if (!localVideo) return; if (isScreen) localVideo.classList.add('screen-mode'); else localVideo.classList.remove('screen-mode'); }
-        function minimizeCall() { if (!isCallActive) return; document.getElementById('callContainer').style.display = 'none'; document.getElementById('floatingCall').style.display = 'flex'; const micEnabled = localStream?.getAudioTracks()[0]?.enabled ?? true; const camEnabled = localStream?.getVideoTracks()[0]?.enabled ?? true; const floatingMicBtn = document.getElementById('floatingMicCallBtn'); const floatingCamBtn = document.getElementById('floatingCamCallBtn'); if (floatingMicBtn) { floatingMicBtn.innerHTML = micEnabled ? '<i class="fas fa-microphone"></i>' : '<i class="fas fa-microphone-slash"></i>'; floatingMicBtn.classList.toggle('muted', !micEnabled); } if (floatingCamBtn) { floatingCamBtn.innerHTML = camEnabled ? '<i class="fas fa-video"></i>' : '<i class="fas fa-video-slash"></i>'; floatingCamBtn.classList.toggle('muted', !camEnabled); } }
-        function restoreCall() { document.getElementById('callContainer').style.display = 'flex'; document.getElementById('floatingCall').style.display = 'none'; }
-        function showEmergencyContacts(clientContacts = null) {
+
+function startCallRecording() { 
+    if (!localStream) return; 
+    recordedChunks = []; 
+    const stream = new MediaStream([localStream.getAudioTracks()[0]]); 
+    mediaRecorderCall = new MediaRecorder(stream, { mimeType: 'audio/webm' }); 
+    
+    mediaRecorderCall.ondataavailable = e => { 
+        if (e.data.size) recordedChunks.push(e.data); 
+    }; 
+    
+    mediaRecorderCall.onstop = async () => { 
+        const blob = new Blob(recordedChunks, { type: 'audio/webm' }); 
+        const fd = new FormData(); 
+        fd.append('recording', blob, `call_${Date.now()}.webm`); 
+        fd.append('from', currentUser.id); 
+        // Здесь оставляем callPartnerSocketId (или currentCallPartnerUserId), для метаданных не критично
+        fd.append('to', currentCallPartnerUserId || 'unknown'); 
+        fd.append('roomId', currentCallRoomId); 
+        
+        try { 
+            await authFetch('/api/upload-recording', { method: 'POST', body: fd }); 
+            showToast('Запись сохранена'); 
+        } catch(e) {
+            console.error('Ошибка сохранения записи', e);
+        } 
+    }; 
+    
+    mediaRecorderCall.start(1000); 
+    isRecordingCall = true; 
+    
+    const recordBtn = document.getElementById('recordCallBtn'); 
+    if (recordBtn) { 
+        recordBtn.classList.add('recording-active'); 
+        recordBtn.innerHTML = '<span class="rec-dot"></span> Запись ...'; 
+    } 
+}
+
+function stopCallRecording() { 
+    if (mediaRecorderCall?.state === 'recording') { 
+        mediaRecorderCall.stop(); 
+        isRecordingCall = false; 
+        const recordBtn = document.getElementById('recordCallBtn'); 
+        if (recordBtn) { 
+            recordBtn.classList.remove('recording-active'); 
+            recordBtn.innerHTML = '<i class="fas fa-circle"></i> Запись'; 
+        } 
+    } 
+}
+
+function toggleCallRecording() { 
+    isRecordingCall ? stopCallRecording() : startCallRecording(); 
+}
+
+// ==========================================
+// ЗАВЕРШЕНИЕ ЗВОНКА И ИНТЕРФЕЙС
+// ==========================================
+
+function endCall() { 
+    stopCallTimer(); 
+    if (socket) socket.emit('end-call'); 
+    stopCallRecording(); 
+    
+    if (peerConnection) peerConnection.close(); 
+    if (localStream) localStream.getTracks().forEach(t => t.stop()); 
+    if (screenStream) screenStream.getTracks().forEach(t => t.stop()); 
+    
+    document.getElementById('callContainer').style.display = 'none'; 
+    document.getElementById('floatingCall').style.display = 'none'; 
+    
+    isCallActive = false; 
+    currentCallRoomId = null; 
+    currentCallRole = null; 
+    currentCallPartnerUserId = null; 
+    callConnectionEstablished = false; 
+    callStartTime = null; 
+}
+
+function reconnectCall() { 
+    if (!currentCallRoomId) { 
+        showToast('Нет активного звонка', true); 
+        return; 
+    } 
+    if (peerConnection) { 
+        peerConnection.close(); 
+        peerConnection = null; 
+    } 
+    callConnectionEstablished = false; 
+    document.getElementById('waitingMessageCall').style.display = 'flex'; 
+    
+    if (socket && socket.connected) { 
+        socket.emit('request-reconnect', { roomId: currentCallRoomId, role: currentCallRole }); 
+    } else { 
+        if (socket) socket.connect(); 
+        socket.once('connect', () => { 
+            socket.emit('join-call-room', currentCallRoomId, currentUser.id, currentCallRole); 
+        }); 
+    } 
+}
+
+function updateRemoteVideoMode(isScreen) { 
+    const remoteVideoElem = document.getElementById('remoteVideo'); 
+    if (!remoteVideoElem) return; 
+    if (isScreen) remoteVideoElem.classList.add('screen-mode'); 
+    else remoteVideoElem.classList.remove('screen-mode'); 
+}
+
+function updateLocalVideoMode(isScreen) { 
+    const localVideo = document.getElementById('localVideo'); 
+    if (!localVideo) return; 
+    if (isScreen) localVideo.classList.add('screen-mode'); 
+    else localVideo.classList.remove('screen-mode'); 
+}
+
+function minimizeCall() { 
+    if (!isCallActive) return; 
+    document.getElementById('callContainer').style.display = 'none'; 
+    document.getElementById('floatingCall').style.display = 'flex'; 
+    
+    const micEnabled = localStream?.getAudioTracks()[0]?.enabled ?? true; 
+    const camEnabled = localStream?.getVideoTracks()[0]?.enabled ?? true; 
+    
+    const floatingMicBtn = document.getElementById('floatingMicCallBtn'); 
+    const floatingCamBtn = document.getElementById('floatingCamCallBtn'); 
+    
+    if (floatingMicBtn) { 
+        floatingMicBtn.innerHTML = micEnabled ? '<i class="fas fa-microphone"></i>' : '<i class="fas fa-microphone-slash"></i>'; 
+        floatingMicBtn.classList.toggle('muted', !micEnabled); 
+    } 
+    if (floatingCamBtn) { 
+        floatingCamBtn.innerHTML = camEnabled ? '<i class="fas fa-video"></i>' : '<i class="fas fa-video-slash"></i>'; 
+        floatingCamBtn.classList.toggle('muted', !camEnabled); 
+    } 
+}
+
+function restoreCall() { 
+    document.getElementById('callContainer').style.display = 'flex'; 
+    document.getElementById('floatingCall').style.display = 'none'; 
+}
+
+// ==========================================
+// ИНСТРУМЕНТЫ ПСИХОЛОГА
+// ==========================================
+
+function showEmergencyContacts(clientContacts = null) {
     let emergencyNumbers = [];
     if (clientContacts) {
         emergencyNumbers = clientContacts;
     } else if (currentUser && currentUser.emergencyContacts) {
         emergencyNumbers = currentUser.emergencyContacts;
     }
+    
     const defaultSOS = [
         { name: 'Кризисная линия доверия', phone: '8-800-2000-122' },
         { name: 'Скорая помощь', phone: '103' }
     ];
+    
     const allNumbers = emergencyNumbers.concat(defaultSOS);
     let listHtml = '';
+    
     allNumbers.forEach(c => {
         listHtml += `<div style="margin-bottom:10px;"><strong>${escapeHtml(c.name)}</strong><br><a href="tel:${c.phone}" style="color:var(--green);font-size:16px;">${c.phone}</a></div>`;
     });
+    
     const modalId = 'sosModal_' + Date.now();
-    const html = `<div class="modal" id="${modalId}"><div class="modal-content"><div class="modal-handle"></div><h3>⚠️ Экстренная помощь</h3><div style="margin-bottom:20px;">Если вам нужна немедленная поддержка, свяжитесь по этим номерам:</div>${listHtml}<div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('${modalId}')">Закрыть</button></div></div></div>`;
+    const html = `
+        <div class="modal" id="${modalId}">
+            <div class="modal-content">
+                <div class="modal-handle"></div>
+                <h3>⚠️ Экстренная помощь</h3>
+                <div style="margin-bottom:20px;">Если вам нужна немедленная поддержка, свяжитесь по этим номерам:</div>
+                ${listHtml}
+                <div class="modal-buttons">
+                    <button class="btn-secondary" onclick="closeModal('${modalId}')">Закрыть</button>
+                </div>
+            </div>
+        </div>`;
+        
     document.body.insertAdjacentHTML('beforeend', html);
     setTimeout(() => document.getElementById(modalId).classList.add('active'), 10);
 }
-        function showCallTools() { if (currentUser.role !== 'psychologist') { showToast('Только для психологов', true); return; } const modalId = 'callToolsModal_' + Date.now(); const html = `<div class="modal" id="${modalId}"><div class="modal-content"><div class="modal-handle"></div><h3>Инструменты сессии</h3><button class="btn-sm btn-outline" style="width:100%; margin-bottom:12px;" onclick="openClientCardInCall(); closeModal('${modalId}');"><i class="fas fa-user"></i> Карта клиента</button><button class="btn-sm btn-outline" style="width:100%; margin-bottom:12px;" onclick="addHomeworkToClientInCall(); closeModal('${modalId}');"><i class="fas fa-tasks"></i> Домашнее задание</button><button class="btn-sm" style="width:100%;" onclick="scheduleNextSessionInCall(); closeModal('${modalId}');"><i class="fas fa-calendar-plus"></i> Запись на следующий сеанс</button><div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('${modalId}')">Закрыть</button></div></div></div>`; document.body.insertAdjacentHTML('beforeend', html); setTimeout(() => document.getElementById(modalId).classList.add('active'), 10); }
+
+function showCallTools() { 
+    if (currentUser.role !== 'psychologist') { 
+        showToast('Только для психологов', true); 
+        return; 
+    } 
+    
+    const modalId = 'callToolsModal_' + Date.now(); 
+    const html = `
+        <div class="modal" id="${modalId}">
+            <div class="modal-content">
+                <div class="modal-handle"></div>
+                <h3>Инструменты сессии</h3>
+                <button class="btn-sm btn-outline" style="width:100%; margin-bottom:12px;" onclick="openClientCardInCall(); closeModal('${modalId}');">
+                    <i class="fas fa-user"></i> Карта клиента
+                </button>
+                <button class="btn-sm btn-outline" style="width:100%; margin-bottom:12px;" onclick="addHomeworkToClientInCall(); closeModal('${modalId}');">
+                    <i class="fas fa-tasks"></i> Домашнее задание
+                </button>
+                <button class="btn-sm" style="width:100%;" onclick="scheduleNextSessionInCall(); closeModal('${modalId}');">
+                    <i class="fas fa-calendar-plus"></i> Запись на следующий сеанс
+                </button>
+                <div class="modal-buttons">
+                    <button class="btn-secondary" onclick="closeModal('${modalId}')">Закрыть</button>
+                </div>
+            </div>
+        </div>`; 
+        
+    document.body.insertAdjacentHTML('beforeend', html); 
+    setTimeout(() => document.getElementById(modalId).classList.add('active'), 10); 
+}
         // 1. ОБНОВЛЕННАЯ ФУНКЦИЯ КАРТЫ КЛИЕНТА
 async function openClientCardInCall() {
     if (!currentClientIdInCall) {
