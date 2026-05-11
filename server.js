@@ -54,7 +54,7 @@ app.use(helmet());
 // Лимит запросов для API (защита от brute-force) – привязываем к userId, а не к IP
 const apiLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 минут
-    max: 150, // чуть увеличим до 150, чтобы не мешать нормальной работе
+    max: 2000, // чуть увеличим до 2000, чтобы не мешать нормальной работе
     validate: false,
     message: { success: false, error: 'Слишком много запросов, попробуйте позже' },
     standardHeaders: true,
