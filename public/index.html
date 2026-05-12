@@ -620,6 +620,9 @@
         let currentUser = null;
         let currentTab = 'feed';
         let socket = null;
+        let currentAptFilter = 'upcoming';
+        let currentClientAptFilter = 'upcoming';
+        let currentClientsFilter = 'upcoming';
         let allPsychologists = [];
         let currentChatPartner = null;
         let currentCalendarDate = new Date();
@@ -1293,12 +1296,19 @@
                     renderFeed(true);
                 }
             });
-            socket.on('appointment_updated', (apt) => {
+            socket.on('appointment_created', async (data) => {
+                await refreshUser(); // Принудительно тянем свежие данные
+                isProfileCacheValid = false;
+                if (currentTab === 'profile') renderProfile(true);
+            });
+            socket.on('appointment_updated', async (apt) => {
+                await refreshUser(); 
                 isProfileCacheValid = false;
                 if (currentTab === 'profile') renderProfile(true);
                 if (currentTab === 'notifications') renderNotifications(true);
             });
-            socket.on('appointment_completed', (appointmentId) => {
+            socket.on('appointment_completed', async (appointmentId) => {
+                await refreshUser(); 
                 isProfileCacheValid = false;
                 if (currentTab === 'profile') renderProfile(true);
                 if (currentTab === 'notifications') renderNotifications(true);
@@ -1794,32 +1804,32 @@
             const totalLikesOnPosts = statsRes.success ? statsRes.totalLikes : 0;
             
             let appointmentsHtml = '';
-            if (!isPsych) {
-                appointmentsHtml = `
-                    <div class="profile-sections">
-                        <div class="collapsible-section open" id="sec-client-appointments">
-                            <div class="collapsible-header" onclick="toggleSection(this)">
-                                <div class="collapsible-header-left">
-                                    <div class="collapsible-icon">📅</div>
-                                    <div>
-                                        <div class="collapsible-title">Мои записи</div>
-                                        <div class="collapsible-subtitle" id="clientAppointmentsSubtitle"></div>
-                                    </div>
-                                </div>
-                                <i class="fas fa-chevron-down collapsible-chevron"></i>
-                            </div>
-                            <div class="collapsible-body">
-                                <div style="margin-bottom: 12px; display: flex; gap: 8px; flex-wrap: wrap;">
-                                    <button class="btn-sm btn-outline filter-client-appointments-btn active" data-filter="upcoming">Предстоящие</button>
-                                    <button class="btn-sm btn-outline filter-client-appointments-btn" data-filter="past">Прошедшие</button>
-                                    <button class="btn-sm btn-outline filter-client-appointments-btn" data-filter="pending">Ожидают</button>
-                                </div>
-                                <div id="clientAppointmentsList" style="max-height: 300px; overflow-y: auto; padding-right: 4px;"></div>
+    if (!isPsych) {
+        appointmentsHtml = `
+            <div class="profile-sections">
+                <div class="collapsible-section open" id="sec-client-appointments">
+                    <div class="collapsible-header" onclick="toggleSection(this)">
+                        <div class="collapsible-header-left">
+                            <div class="collapsible-icon">📅</div>
+                            <div>
+                                <div class="collapsible-title">Мои записи</div>
+                                <div class="collapsible-subtitle" id="clientAppointmentsSubtitle"></div>
                             </div>
                         </div>
+                        <i class="fas fa-chevron-down collapsible-chevron"></i>
                     </div>
-                `;
-            }
+                    <div class="collapsible-body">
+                        <div style="margin-bottom: 12px; display: flex; gap: 8px; flex-wrap: wrap;">
+                            <button class="btn-sm btn-outline filter-client-appointments-btn ${currentClientAptFilter === 'upcoming' ? 'active' : ''}" data-filter="upcoming">Предстоящие</button>
+                            <button class="btn-sm btn-outline filter-client-appointments-btn ${currentClientAptFilter === 'past' ? 'active' : ''}" data-filter="past">Прошедшие</button>
+                            <button class="btn-sm btn-outline filter-client-appointments-btn ${currentClientAptFilter === 'pending' ? 'active' : ''}" data-filter="pending">Ожидают</button>
+                        </div>
+                        <div id="clientAppointmentsList" style="max-height: 300px; overflow-y: auto; padding-right: 4px;"></div>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
             
             let homeworksHtml = '';
             if (!isPsych) {
@@ -1862,8 +1872,8 @@
                     <div class="profile-sections">
                         <div class="collapsible-section" id="sec-tasks"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">📋</div><div><div class="collapsible-title">Задачи</div><div class="collapsible-subtitle">${undoneTasks > 0 ? `${undoneTasks} не выполнено` : 'Все выполнены'}</div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body"><div id="tasksList">${tasks.map(t => `<div class="task-item"><input type="checkbox" class="task-checkbox task-cb" data-id="${t.id}" ${t.completed ? 'checked' : ''}><div style="flex:1"><div class="task-text ${t.completed ? 'task-completed' : ''}">${escapeHtml(t.text)}</div>${t.dueDate ? `<div class="task-due">📅 ${t.dueDate}</div>` : ''}</div><button class="task-delete" onclick="deleteTask('${t.id}')"><i class="fas fa-times"></i></button></div>`).join('')}</div>${tasks.length === 0 ? '<div class="empty-state" style="padding:16px;"><i class="fas fa-check-circle"></i><div>Нет задач</div></div>' : ''}<button class="section-add-btn" onclick="addTaskWithDate()"><i class="fas fa-plus"></i> Добавить задачу</button></div></div>
                         <div class="collapsible-section" id="sec-calendar"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">📅</div><div><div class="collapsible-title">Календарь</div><div class="collapsible-subtitle">События</div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body"><div id="profileCalendar"></div></div></div>
-                        <div class="collapsible-section" id="sec-appointments"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">📞</div><div><div class="collapsible-title">Записи клиентов</div><div class="collapsible-subtitle" id="appointmentsSubtitle"></div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body"><div style="margin-bottom:12px;display:flex;gap:8px;flex-wrap:wrap;"><button class="btn-sm btn-outline filter-appointments-btn active" data-filter="upcoming">Предстоящие</button><button class="btn-sm btn-outline filter-appointments-btn" data-filter="past">Прошедшие</button><button class="btn-sm btn-outline filter-appointments-btn" data-filter="pending">Ожидают</button></div><div id="appointmentsList"></div></div></div>
-                        <div class="collapsible-section" id="sec-clients"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">👥</div><div><div class="collapsible-title">Клиенты</div><div class="collapsible-subtitle" id="clientsSubtitle"></div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body"><div style="margin-bottom:12px;display:flex;gap:8px;"><button class="btn-sm btn-outline filter-clients-btn active" data-filter="upcoming">Предстоящие</button><button class="btn-sm btn-outline filter-clients-btn" data-filter="past">Прошедшие</button></div><div id="clientsList"></div></div></div>
+                        <div class="collapsible-section" id="sec-appointments"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">📞</div><div><div class="collapsible-title">Записи клиентов</div><div class="collapsible-subtitle" id="appointmentsSubtitle"></div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body"><div <div style="margin-bottom:12px;display:flex;gap:8px;flex-wrap:wrap;"><button class="btn-sm btn-outline filter-appointments-btn ${currentAptFilter === 'upcoming' ? 'active' : ''}" data-filter="upcoming">Предстоящие</button><button class="btn-sm btn-outline filter-appointments-btn ${currentAptFilter === 'past' ? 'active' : ''}" data-filter="past">Прошедшие</button><button class="btn-sm btn-outline filter-appointments-btn ${currentAptFilter === 'pending' ? 'active' : ''}" data-filter="pending">Ожидают</button></div><div id="appointmentsList"></div></div></div>
+                        <div class="collapsible-section" id="sec-clients"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">👥</div><div><div class="collapsible-title">Клиенты</div><div class="collapsible-subtitle" id="clientsSubtitle"></div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body"><div <div style="margin-bottom:12px;display:flex;gap:8px;"><button class="btn-sm btn-outline filter-clients-btn ${currentClientsFilter === 'upcoming' ? 'active' : ''}" data-filter="upcoming">Предстоящие</button><button class="btn-sm btn-outline filter-clients-btn ${currentClientsFilter === 'past' ? 'active' : ''}" data-filter="past">Прошедшие</button></div><div id="clientsList"></div></div></div>
                         <div class="collapsible-section" id="sec-notes"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">📝</div><div><div class="collapsible-title">Заметки</div><div class="collapsible-subtitle">${notes.length} заметок</div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body"><div class="notes-grid" id="notesGridProfile">${notes.map(n => `<div class="note-card" onclick="openNoteModal('${n.id}','${escapeHtml(n.title)}','${escapeHtml(n.content)}','${n.attachment || ''}')"><div class="note-title">${escapeHtml(n.title)}</div><div class="note-preview">${escapeHtml((n.content || '').substring(0, 70))}${(n.content || '').length > 70 ? '…' : ''}</div></div>`).join('')}${notes.length === 0 ? '<div class="empty-state" style="padding:16px;"><i class="fas fa-sticky-note"></i><div>Нет заметок</div></div>' : ''}</div><button class="section-add-btn" onclick="openAddNoteModal()"><i class="fas fa-plus"></i> Добавить заметку</button></div></div>
                         <div class="collapsible-section" id="sec-certs"><div class="collapsible-header" onclick="toggleSection(this)"><div class="collapsible-header-left"><div class="collapsible-icon">📜</div><div><div class="collapsible-title">Сертификаты и дипломы</div><div class="collapsible-subtitle">${certificates.length} документов</div></div></div><i class="fas fa-chevron-down collapsible-chevron"></i></div><div class="collapsible-body"><div class="certificates-grid" id="certsGridProfile">${certificates.map(c => `<div class="certificate-card"><img src="${escapeHtml(optimizeMedia(c.image, 'image'))}" onerror="this.src='https://placehold.co/100x80/1a2e1a/8bca8b?text=📜'"><div class="certificate-title">${escapeHtml(c.title)}</div><button class="delete-cert-btn" onclick="deleteCertificateProfile('${c.id}')"><i class="fas fa-times"></i></button></div>`).join('')}<div class="certificate-card add-cert-card" onclick="addCertificateProfile()"><i class="fas fa-plus"></i><span>Добавить</span></div></div></div></div>
                         
@@ -1960,6 +1970,8 @@
 
         function attachProfileEventHandlers() {
             const isPsych = currentUser?.role === 'psychologist';
+            
+            // Для клиента
             if (!isPsych && currentUser?.appointments && currentUser.appointments.length > 0) {
                 const filterBtns = document.querySelectorAll('.filter-client-appointments-btn');
                 if (filterBtns.length) {
@@ -1967,39 +1979,48 @@
                         btn.onclick = () => {
                             filterBtns.forEach(b => b.classList.remove('active'));
                             btn.classList.add('active');
-                            renderClientAppointmentsList(btn.dataset.filter);
+                            currentClientAptFilter = btn.dataset.filter; // Сохраняем выбор
+                            renderClientAppointmentsList(currentClientAptFilter);
                         };
                     });
-                    renderClientAppointmentsList('upcoming');
+                    renderClientAppointmentsList(currentClientAptFilter); // Рендерим сохраненную вкладку
                 }
             }
+            
+            // Для психолога
             if (isPsych) {
                 document.querySelectorAll('.profile-edit-post').forEach(b => { b.onclick = () => openEditPostModal(b.dataset.id, b.dataset.text); });
                 document.querySelectorAll('.profile-delete-post').forEach(b => { b.onclick = () => openConfirmModal('Удалить пост?', 'Это действие нельзя отменить.', async () => { await fetchJSON(`/api/posts/${b.dataset.id}`, { method:'DELETE', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ authorId: currentUser.id }) }); renderProfile(true); }); });
                 document.querySelectorAll('.task-cb').forEach(cb => { cb.onchange = async () => { await fetchJSON(`/api/tasks/${cb.dataset.id}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ completed: cb.checked }) }); const label = cb.closest('.task-item').querySelector('.task-text'); if (label) label.classList.toggle('task-completed', cb.checked); }; });
+                
                 const aptFilterBtns = document.querySelectorAll('.filter-appointments-btn');
                 if (aptFilterBtns.length) {
                     aptFilterBtns.forEach(btn => {
                         btn.onclick = () => {
                             aptFilterBtns.forEach(b => b.classList.remove('active'));
                             btn.classList.add('active');
-                            renderAppointmentsList(btn.dataset.filter);
+                            currentAptFilter = btn.dataset.filter; // Сохраняем выбор
+                            renderAppointmentsList(currentAptFilter);
                         };
                     });
-                    renderAppointmentsList('upcoming');
+                    renderAppointmentsList(currentAptFilter); // Рендерим сохраненную вкладку
                 }
+                
                 const clientFilterBtns = document.querySelectorAll('.filter-clients-btn');
                 if (clientFilterBtns.length) {
                     clientFilterBtns.forEach(btn => {
                         btn.onclick = () => {
                             clientFilterBtns.forEach(b => b.classList.remove('active'));
                             btn.classList.add('active');
-                            renderClientsList(btn.dataset.filter);
+                            currentClientsFilter = btn.dataset.filter; // Сохраняем выбор
+                            renderClientsList(currentClientsFilter);
                         };
                     });
-                    renderClientsList('upcoming');
+                    renderClientsList(currentClientsFilter); // Рендерим сохраненную вкладку
                 }
             }
+            
+            // Домашки
             if (!isPsych && currentUser && document.querySelectorAll('.homework-cb').length) {
                 document.querySelectorAll('.homework-cb').forEach(cb => {
                     cb.onchange = async () => {
@@ -3992,6 +4013,8 @@
 
                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
                             <h4 style="margin: 0;"><i class="fas fa-tasks"></i> Задания</h4>
+                            <!-- ВОТ ЭТА КНОПКА БЫЛА УТЕРЯНА, ТЕПЕРЬ ОНА НА МЕСТЕ -->
+                            <button class="btn-sm btn-outline" style="padding: 4px 8px;" onclick="addHomeworkToClientInCall()"><i class="fas fa-plus"></i></button>
                         </div>
                         
                         <div id="clientHomeworksList_${modalId}" style="margin-bottom: 16px; display: grid; gap: 8px; width: 100%;">
@@ -5133,7 +5156,7 @@
                 .catch(err => console.error('Service Worker registration failed:', err));
         }
 
-        
+
         // ======================= PWA INSTALL PROMPT =======================
         let deferredPrompt;
         
