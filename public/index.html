@@ -1543,7 +1543,6 @@
         }
 
         function renderSinglePost(post) {
-            // Защита от пустых данных (если сокет прислал кривой объект)
             const authorName = post.author?.fullName || 'Неизвестный';
             const authorAvatar = post.author?.avatar || '';
             const authorId = post.author?.id || '';
@@ -1563,7 +1562,7 @@
                     </div>
                     <div class="post-text">${escapeHtml(post.text)}</div>
                     ${post.image ? `<img class="post-image" src="${escapeHtml(optimizeMedia(post.image, 'image'))}" onclick="openImageModal('${escapeHtml(post.image)}')">` : ''}
-                    ${post.video ? `<video class="post-video" controls preload="metadata"><source src="${escapeHtml(post.video)}" type="video/mp4"></video>` : ''}
+                    ${post.video ? `<video class="post-video feed-video" muted playsinline disablePictureInPicture preload="metadata" onclick="this.currentTime=0; this.play();"><source src="${escapeHtml(post.video)}" type="video/mp4"></video>` : ''}
                     <div class="post-stats">
                         <button class="like-btn${post.userLiked ? ' liked' : ''}" data-id="${post.id}">
                             <i class="fa-${post.userLiked ? 'solid' : 'regular'} fa-heart"></i>
@@ -1944,7 +1943,7 @@
                                 <div class="post-card glass-card">
                                     <div class="post-text">${escapeHtml(p.text)}</div>
                                     ${p.image ? `<img class="post-image" src="${escapeHtml(optimizeMedia(p.image, 'image'))}" onclick="openImageModal('${escapeHtml(p.image)}')">` : ''}
-                                    ${p.video ? `<video class="post-video" controls preload="none" poster="${escapeHtml(optimizeMedia(p.video, 'poster'))}"><source src="${escapeHtml(optimizeMedia(p.video, 'video'))}" type="video/mp4"></video>` : ''}
+                                    ${p.video ? `<video class="post-video profile-video" controls playsinline disablePictureInPicture preload="none" poster="${escapeHtml(optimizeMedia(p.video, 'poster'))}"><source src="${escapeHtml(p.video)}" type="video/mp4"></video>` : ''}
                                     <div class="post-stats">
                                         <span style="color:var(--text-muted);font-size:13px;display:flex;gap:6px;align-items:center;"><i class="fa-regular fa-heart"></i> ${p.likesCount||0}</span>
                                         <span style="color:var(--text-muted);font-size:13px;display:flex;gap:6px;align-items:center;"><i class="fa-regular fa-comment"></i> ${p.commentsCount||0}</span>
@@ -2865,7 +2864,7 @@
                                 <div class="post-card glass-card">
                                     <div class="post-text">${escapeHtml(pst.text)}</div>
                                     ${pst.image ? `<img class="post-image" src="${escapeHtml(optimizeMedia(pst.image, 'image'))}" onclick="openImageModal('${escapeHtml(pst.image)}')">` : ''}
-                                    ${pst.video ? `<video class="post-video" controls preload="none" poster="${escapeHtml(optimizeMedia(pst.video, 'poster'))}"><source src="${escapeHtml(optimizeMedia(pst.video, 'video'))}" type="video/mp4"></video>` : ''}
+                                    ${pst.video ? `<video class="post-video profile-video" controls playsinline disablePictureInPicture preload="none" poster="${escapeHtml(optimizeMedia(pst.video, 'poster'))}"><source src="${escapeHtml(pst.video)}" type="video/mp4"></video>` : ''}
                                     <div class="post-stats">
                                         <span style="color:var(--text-muted);font-size:13px;display:flex;gap:6px;align-items:center;"><i class="fa-regular fa-heart"></i> ${pst.likesCount||0}</span>
                                         <span style="color:var(--text-muted);font-size:13px;display:flex;gap:6px;align-items:center;"><i class="fa-regular fa-comment"></i> ${pst.commentsCount||0}</span>
@@ -4675,19 +4674,32 @@
         // ======================= ВИДЕО НАБЛЮДАТЕЛЬ =======================
         function initVideoObservers() { 
             if (videoObserver) videoObserver.disconnect(); 
-            const videos = document.querySelectorAll('.post-video'); 
+            
+            // Ищем ТОЛЬКО видео в ленте (feed-video), профильные видео не трогаем
+            const videos = document.querySelectorAll('.feed-video'); 
             if (videos.length === 0) return; 
+            
             videoObserver = new IntersectionObserver((entries) => { 
                 entries.forEach(entry => { 
                     const video = entry.target; 
                     if (entry.isIntersecting) { 
-                        video.play().catch(e => console.log('Автовоспроизведение заблокировано', e)); 
+                        // Проигрываем автоматически только 1 раз
+                        if (video.dataset.played !== 'true') {
+                            video.play().then(() => {
+                                video.dataset.played = 'true'; // Отмечаем, что автоплей сработал
+                            }).catch(e => console.log('Автовоспроизведение заблокировано', e)); 
+                        }
                     } else { 
                         video.pause(); 
                     } 
                 }); 
             }, { threshold: 0.5 }); 
-            videos.forEach(video => videoObserver.observe(video)); 
+            
+            videos.forEach(video => {
+                videoObserver.observe(video);
+                // Когда видео заканчивается, убеждаемся, что оно на паузе
+                video.onended = () => { video.pause(); };
+            }); 
         }
         
         // ======================= ЗАПРОС УВЕДОМЛЕНИЙ =======================
