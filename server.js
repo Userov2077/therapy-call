@@ -1,4 +1,3 @@
-// server.js (полный, исправленный)
 const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
@@ -52,7 +51,6 @@ app.use(helmet());
 const apiLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 минут
     max: 2000, // чуть увеличим до 2000, чтобы не мешать нормальной работе
-    validate: false,
     message: { success: false, error: 'Слишком много запросов, попробуйте позже' },
     standardHeaders: true,
     legacyHeaders: false,
@@ -116,9 +114,6 @@ cloudinary.config({
     api_secret: process.env.CLOUDINARY_API_SECRET
 });
 
-// ========== Cloudinary настройка ==========
-// ... тут твои конфиги cloudinary.config ...
-
 const cloudinaryStorage = new CloudinaryStorage({
     cloudinary: cloudinary,
     params: (req, file) => {
@@ -159,7 +154,7 @@ const cloudinaryStorage = new CloudinaryStorage({
         return params;
     }
 });
-const uploadMedia = multer({ storage: cloudinaryStorage, limits: { fileSize: 40 * 1024 * 1024 } }); // Оставили 40 МБ для видео, как ты и просил
+const uploadMedia = multer({ storage: cloudinaryStorage, limits: { fileSize: 40 * 1024 * 1024 } }); // Оставили 40 МБ для видео
 
 const docStorageCloudinary = new CloudinaryStorage({
     cloudinary: cloudinary,
@@ -234,7 +229,6 @@ async function initDatabase() {
             notifications JSONB DEFAULT '[]',
             emergency_contacts JSONB DEFAULT '[]',
             created_at TIMESTAMP DEFAULT NOW()
-            
         )`,
         `CREATE TABLE IF NOT EXISTS user_unreads (
             user_id VARCHAR(50) REFERENCES users(id) ON DELETE CASCADE,
@@ -657,7 +651,6 @@ app.put('/api/user/profile', authenticateToken, uploadMedia.single('avatar'), as
         res.json({ success: false });
     }
 });
-
 // ========== РАСПИСАНИЕ ==========
 app.get('/api/schedule/:psychologistId', authenticateToken, async (req, res) => {
     try {
@@ -708,6 +701,7 @@ app.post('/api/appointment', authenticateToken, async (req, res) => {
         await client.query('BEGIN');
         const { clientId, psychologistId, date, time } = req.body;
         if (req.user.userId !== clientId) {
+            await client.query('ROLLBACK');
             return res.status(403).json({ success: false, error: 'Нет прав' });
         }
         const clientUser = await getUser(clientId);
@@ -890,6 +884,7 @@ app.post('/api/posts', authenticateToken, requirePsychologist, async (req, res) 
         res.json({ success: true, post: newPost });
     } catch (err) { console.error('Create post error:', err); res.json({ success: false }); }
 });
+
 app.get('/api/posts', optionalAuth, async (req, res) => {
     try {
         const limit = Math.min(parseInt(req.query.limit) || 15, 50);
@@ -940,6 +935,7 @@ app.get('/api/posts', optionalAuth, async (req, res) => {
         res.status(500).json({ success: false, error: 'Ошибка загрузки постов' });
     }
 });
+
 app.get('/api/posts/:id/comments', optionalAuth, async (req, res) => {
     try {
         const result = await pool.query(`SELECT c.id, c.text, c.created_at, u.id AS author_id, u.full_name AS author_name, u.avatar AS author_avatar FROM comments c JOIN users u ON c.author_id = u.id WHERE c.post_id = $1 ORDER BY c.created_at ASC`, [req.params.id]);
@@ -947,6 +943,7 @@ app.get('/api/posts/:id/comments', optionalAuth, async (req, res) => {
         res.json({ success: true, comments });
     } catch (err) { console.error('Get comments error:', err); res.json({ success: false }); }
 });
+
 app.put('/api/posts/:id', authenticateToken, async (req, res) => {
     try {
         const postId = req.params.id;
@@ -982,6 +979,7 @@ app.put('/api/posts/:id', authenticateToken, async (req, res) => {
         res.status(500).json({ success: false, error: 'Ошибка сервера' }); 
     }
 });
+
 app.delete('/api/posts/:id', authenticateToken, async (req, res) => {
     try {
         const postId = req.params.id;
@@ -999,6 +997,7 @@ app.delete('/api/posts/:id', authenticateToken, async (req, res) => {
         res.json({ success: true });
     } catch (err) { console.error('Delete post error:', err); res.json({ success: false }); }
 });
+
 app.post('/api/posts/:id/comment', authenticateToken, async (req, res) => {
     try {
         const postId = req.params.id;
@@ -1014,6 +1013,7 @@ app.post('/api/posts/:id/comment', authenticateToken, async (req, res) => {
         res.json({ success: true });
     } catch (err) { console.error('Add comment error:', err); res.json({ success: false }); }
 });
+
 app.put('/api/posts/:postId/comment/:commentId', authenticateToken, async (req, res) => {
     try {
         const { userId, text } = req.body;
@@ -1028,6 +1028,7 @@ app.put('/api/posts/:postId/comment/:commentId', authenticateToken, async (req, 
         res.json({ success: true });
     } catch (err) { console.error('Edit comment error:', err); res.json({ success: false }); }
 });
+
 app.delete('/api/posts/:postId/comment/:commentId', authenticateToken, async (req, res) => {
     try {
         const { userId } = req.body;
@@ -1043,6 +1044,7 @@ app.delete('/api/posts/:postId/comment/:commentId', authenticateToken, async (re
         res.json({ success: true });
     } catch (err) { console.error('Delete comment error:', err); res.json({ success: false }); }
 });
+
 app.post('/api/posts/:id/like', authenticateToken, async (req, res) => {
     try {
         const postId = req.params.id;
@@ -1077,6 +1079,7 @@ app.get('/api/tasks/:psychologistId', authenticateToken, async (req, res) => {
         res.json({ success: true, tasks });
     } catch (err) { console.error('Get tasks error:', err); res.json({ success: false }); }
 });
+
 app.post('/api/tasks', authenticateToken, requirePsychologist, async (req, res) => {
     try {
         const { psychologistId, text, dueDate } = req.body;
@@ -1088,6 +1091,7 @@ app.post('/api/tasks', authenticateToken, requirePsychologist, async (req, res) 
         res.json({ success: true, task: { ...newTask, dueDate: newTask.due_date, createdAt: newTask.created_at } });
     } catch (err) { console.error('Create task error:', err); res.json({ success: false }); }
 });
+
 app.put('/api/tasks/:taskId', authenticateToken, async (req, res) => {
     try {
         const { completed, text, dueDate } = req.body;
@@ -1101,6 +1105,7 @@ app.put('/api/tasks/:taskId', authenticateToken, async (req, res) => {
         res.json({ success: true });
     } catch (err) { console.error('Update task error:', err); res.json({ success: false }); }
 });
+
 app.delete('/api/tasks/:taskId', authenticateToken, async (req, res) => {
     try {
         const taskRes = await pool.query('SELECT psychologist_id FROM tasks WHERE id=$1', [req.params.taskId]);
@@ -1146,6 +1151,7 @@ app.get('/api/notes/:psychologistId', authenticateToken, async (req, res) => {
         res.json({ success: true, notes });
     } catch (err) { console.error('Get notes error:', err); res.json({ success: false }); }
 });
+
 app.post('/api/notes', authenticateToken, requirePsychologist, async (req, res) => {
     try {
         const { psychologistId, title, content, attachment, attachmentType } = req.body;
@@ -1157,6 +1163,7 @@ app.post('/api/notes', authenticateToken, requirePsychologist, async (req, res) 
         res.json({ success: true, note: newNote });
     } catch (err) { console.error('Create note error:', err); res.json({ success: false }); }
 });
+
 app.delete('/api/notes/:noteId', authenticateToken, async (req, res) => {
     try {
         const noteRes = await pool.query('SELECT psychologist_id FROM notes WHERE id=$1', [req.params.noteId]);
@@ -1193,6 +1200,7 @@ app.post('/api/reviews', authenticateToken, requireClient, async (req, res) => {
         res.json({ success: true, review: newReview, newRating: updatedPsychologist.rating });
     } catch (err) { await client.query('ROLLBACK'); console.error('Review error:', err); res.json({ success: false, error: 'Ошибка сервера' }); } finally { client.release(); }
 });
+
 app.put('/api/reviews/:reviewId', authenticateToken, async (req, res) => {
     try {
         const { reviewId } = req.params;
@@ -1209,6 +1217,7 @@ app.put('/api/reviews/:reviewId', authenticateToken, async (req, res) => {
         res.json({ success: true });
     } catch (err) { console.error('Update review error:', err); res.status(500).json({ success: false, error: err.message }); }
 });
+
 app.delete('/api/reviews/:reviewId', authenticateToken, async (req, res) => {
     try {
         const { reviewId } = req.params;
@@ -1225,6 +1234,7 @@ app.delete('/api/reviews/:reviewId', authenticateToken, async (req, res) => {
         res.json({ success: true });
     } catch (err) { console.error('Delete review error:', err); res.status(500).json({ success: false, error: err.message }); }
 });
+
 app.get('/api/reviews/:psychologistId', async (req, res) => {
     try {
         const result = await pool.query('SELECT * FROM reviews WHERE psychologist_id=$1 ORDER BY created_at DESC', [req.params.psychologistId]);
@@ -1232,6 +1242,7 @@ app.get('/api/reviews/:psychologistId', async (req, res) => {
         res.json({ success: true, reviews });
     } catch (err) { console.error('Get reviews error:', err); res.json({ success: false }); }
 });
+
 app.get('/api/can-review/:psychologistId/:clientId', authenticateToken, async (req, res) => {
     try {
         const { psychologistId, clientId } = req.params;
@@ -1242,6 +1253,7 @@ app.get('/api/can-review/:psychologistId/:clientId', authenticateToken, async (r
         res.json({ success: true, canReview: result.rows.length > 0, appointmentId: result.rows[0]?.id || null });
     } catch (err) { console.error('can-review error:', err); res.json({ success: false }); }
 });
+
 async function recalcPsychologistRating(psychologistId) {
     try {
         const thirtyDaysAgo = new Date();
@@ -1277,6 +1289,7 @@ app.post('/api/certificates', authenticateToken, requirePsychologist, uploadMedi
         res.json({ success: true, certificate: newCert, user: safeUser });
     } catch (err) { console.error('Certificate error:', err); res.json({ success: false }); }
 });
+
 app.delete('/api/certificates/:userId/:certId', authenticateToken, async (req, res) => {
     try {
         if (req.user.userId !== req.params.userId) {
@@ -1303,6 +1316,7 @@ app.get('/api/subscriptions/:userId', authenticateToken, async (req, res) => {
         res.json({ success: true, following: followingRes.rows.map(r => r.following_id), followers: followersRes.rows.map(r => r.follower_id) });
     } catch (err) { console.error('Subscriptions error:', err); res.json({ success: false }); }
 });
+
 app.post('/api/subscriptions', authenticateToken, async (req, res) => {
     try {
         const { followerId, followingId } = req.body;
@@ -1342,6 +1356,7 @@ app.get('/api/messages/:userId', authenticateToken, async (req, res) => {
         res.json({ success: true, messages, users });
     } catch (err) { console.error('Get messages error:', err); res.json({ success: false }); }
 });
+
 app.post('/api/messages', authenticateToken, async (req, res) => {
     const client = await pool.connect();
     try {
@@ -1364,6 +1379,7 @@ app.post('/api/messages', authenticateToken, async (req, res) => {
         res.json({ success: true });
     } catch (err) { await client.query('ROLLBACK'); console.error('Send message error:', err); res.json({ success: false, error: 'Ошибка сервера' }); } finally { client.release(); }
 });
+
 app.post('/api/messages/read', authenticateToken, async (req, res) => {
     const client = await pool.connect();
     try {
@@ -1388,6 +1404,7 @@ app.get('/api/psychologists', async (req, res) => {
         res.json({ success: true, psychologists: result.rows });
     } catch (err) { console.error('Get psychologists error:', err); res.json({ success: false }); }
 });
+
 app.get('/api/search/psychologists', async (req, res) => {
     try {
         const query = req.query.q?.toLowerCase() || '';
@@ -1442,6 +1459,7 @@ app.post('/api/homeworks', authenticateToken, requirePsychologist, async (req, r
         res.json({ success: true, homework: newHomework });
     } catch (err) { console.error('Create homework error:', err); res.json({ success: false, error: err.message }); }
 });
+
 app.put('/api/homeworks/:id', authenticateToken, async (req, res) => {
     try {
         const { id } = req.params;
@@ -1457,6 +1475,7 @@ app.put('/api/homeworks/:id', authenticateToken, async (req, res) => {
         res.json({ success: true });
     } catch (err) { console.error('Update homework error:', err); res.json({ success: false }); }
 });
+
 app.get('/api/client-homeworks/:clientId', authenticateToken, async (req, res) => {
     try {
         if (req.user.userId !== req.params.clientId && req.user.role !== 'psychologist') {
@@ -1515,6 +1534,7 @@ app.get('/api/questionnaires/available', async (req, res) => {
         res.json({ success: true, questionnaires: result.rows });
     } catch (err) { console.error('Get questionnaires error:', err); res.json({ success: false }); }
 });
+
 app.post('/api/questionnaires', authenticateToken, requirePsychologist, async (req, res) => {
     try {
         const { psychologistId, title, description, questions } = req.body;
@@ -1534,6 +1554,7 @@ app.post('/api/questionnaires', authenticateToken, requirePsychologist, async (r
         res.json({ success: true, questionnaireId: qId });
     } catch (err) { console.error('Create questionnaire error:', err); res.json({ success: false }); }
 });
+
 app.post('/api/questionnaires/:id/submit', authenticateToken, requireClient, async (req, res) => {
     try {
         const { clientId, answers } = req.body;
@@ -1547,6 +1568,7 @@ app.post('/api/questionnaires/:id/submit', authenticateToken, requireClient, asy
         res.json({ success: true });
     } catch (err) { console.error('Submit answers error:', err); res.json({ success: false }); }
 });
+
 app.get('/api/questionnaires/psychologist/:psychologistId', authenticateToken, async (req, res) => {
     try {
         if (req.user.userId !== req.params.psychologistId && req.user.role !== 'psychologist') {
@@ -1556,6 +1578,7 @@ app.get('/api/questionnaires/psychologist/:psychologistId', authenticateToken, a
         res.json({ success: true, questionnaires: result.rows });
     } catch (err) { console.error('Get psychologist questionnaires error:', err); res.json({ success: false }); }
 });
+
 app.post('/api/questionnaires/publish/:id', authenticateToken, requirePsychologist, async (req, res) => {
     try {
         const { id } = req.params;
@@ -1568,12 +1591,13 @@ app.post('/api/questionnaires/publish/:id', authenticateToken, requirePsychologi
         }
         await pool.query(`UPDATE questionnaires SET is_published=$1, updated_at=NOW() WHERE id=$2`, [is_published, id]);
         if (is_published) {
-    const user = await getUser(req.user.userId);
-    sendPushToFollowers(req.user.userId, 'Новая анкета', `${user.fullName} добавил(а) новый опросник.`, '/');
-}
+            const user = await getUser(req.user.userId);
+            sendPushToFollowers(req.user.userId, 'Новая анкета', `${user.fullName} добавил(а) новый опросник.`, '/');
+        }
         res.json({ success: true });
     } catch (err) { console.error('Publish questionnaire error:', err); res.json({ success: false }); }
 });
+
 app.get('/api/questionnaires/:id/questions', async (req, res) => {
     try {
         const result = await pool.query(`SELECT id, text, type, options, sort_order FROM questions WHERE questionnaire_id=$1 ORDER BY sort_order`, [req.params.id]);
@@ -1581,6 +1605,7 @@ app.get('/api/questionnaires/:id/questions', async (req, res) => {
         res.json({ success: true, questions });
     } catch (err) { console.error('Get questions error:', err); res.json({ success: false }); }
 });
+
 app.get('/api/questionnaires/:questionnaireId/responses', authenticateToken, requirePsychologist, async (req, res) => {
     try {
         const { questionnaireId } = req.params;
@@ -1680,15 +1705,21 @@ io.use((socket, next) => {
 
 io.on('connection', (socket) => {
     console.log('🔌 WebSocket connected:', socket.id);
+    
     socket.on('register_user', (userId) => {
-    socket.userId = userId || socket.user.userId;
-    if (socket.userId) {
-        // Сохраняем маппинг
-        userSockets.set(socket.userId, socket.id);
-        socket.join(socket.userId);
-    }
-    console.log(`User ${socket.userId} registered with socket ${socket.id}`);
-});
+        try {
+            socket.userId = userId || socket.user.userId;
+            if (socket.userId) {
+                // Сохраняем маппинг
+                userSockets.set(socket.userId, socket.id);
+                socket.join(socket.userId);
+            }
+            console.log(`User ${socket.userId} registered with socket ${socket.id}`);
+        } catch (e) {
+            console.error('register_user error:', e);
+        }
+    });
+
     socket.on('join-call-room', async (roomId, userId, userType) => {
         try {
             const aptRes = await pool.query(
@@ -1717,167 +1748,212 @@ io.on('connection', (socket) => {
                 }
                 socket.leave(socket.roomId);
             }
-        // --- далее ваш существующий код без изменений ---
-        if (!activeRooms.has(roomId)) activeRooms.set(roomId, { psychologist: null, client: null, users: new Map() });
-        const room = activeRooms.get(roomId);
-        if (userType === 'psychologist' && room.psychologist && room.psychologist !== socket.id) {
-            io.to(room.psychologist).emit('partner-disconnected');
-            const old = io.sockets.sockets.get(room.psychologist);
-            if (old) old.leave(roomId);
-            room.users.delete(room.psychologist);
-        } else if (userType === 'client' && room.client && room.client !== socket.id) {
-            io.to(room.client).emit('partner-disconnected');
-            const old = io.sockets.sockets.get(room.client);
-            if (old) old.leave(roomId);
-            room.users.delete(room.client);
-        }
-        room.users.set(socket.id, { userId, userType });
-        if (userType === 'psychologist') room.psychologist = socket.id;
-        else room.client = socket.id;
-        socket.join(roomId);
-        socket.roomId = roomId;
-        socket.userId = userId;
-        socket.userType = userType;
-        socket.emit('room-joined');
-        if (room.psychologist && room.client) {
+
+            if (!activeRooms.has(roomId)) activeRooms.set(roomId, { psychologist: null, client: null, users: new Map() });
+            const room = activeRooms.get(roomId);
+            
+            if (userType === 'psychologist' && room.psychologist && room.psychologist !== socket.id) {
+                io.to(room.psychologist).emit('partner-disconnected');
+                const old = io.sockets.sockets.get(room.psychologist);
+                if (old) old.leave(roomId);
+                room.users.delete(room.psychologist);
+            } else if (userType === 'client' && room.client && room.client !== socket.id) {
+                io.to(room.client).emit('partner-disconnected');
+                const old = io.sockets.sockets.get(room.client);
+                if (old) old.leave(roomId);
+                room.users.delete(room.client);
+            }
+            
+            room.users.set(socket.id, { userId, userType });
+            if (userType === 'psychologist') room.psychologist = socket.id;
+            else room.client = socket.id;
+            
+            socket.join(roomId);
+            socket.roomId = roomId;
+            socket.userId = userId;
+            socket.userType = userType;
+            socket.emit('room-joined');
+            
             if (room.psychologist && room.client) {
-    const partnerPsychId = room.users.get(room.psychologist)?.userId;
-    const partnerClientId = room.users.get(room.client)?.userId;
-    io.to(room.psychologist).emit('call-ready', { partnerId: room.client, partnerUserId: partnerClientId });
-    io.to(room.client).emit('call-ready', { partnerId: room.psychologist, partnerUserId: partnerPsychId });
-}
-        }
-    } catch (err) {
-        console.error('join-call-room error:', err);
-        socket.emit('error', 'Ошибка сервера');
-    }
-});
-    socket.on('call-message', (msgData) => {
-        const room = activeRooms.get(socket.roomId);
-        if (room) {
-            const targetId = socket.userType === 'psychologist' ? room.client : room.psychologist;
-            if (targetId) io.to(targetId).emit('call-message', { from: socket.userId, text: msgData.text, time: new Date().toISOString() });
+                const partnerPsychId = room.users.get(room.psychologist)?.userId;
+                const partnerClientId = room.users.get(room.client)?.userId;
+                io.to(room.psychologist).emit('call-ready', { partnerId: room.client, partnerUserId: partnerClientId });
+                io.to(room.client).emit('call-ready', { partnerId: room.psychologist, partnerUserId: partnerPsychId });
+            }
+        } catch (err) {
+            console.error('join-call-room error:', err);
+            socket.emit('error', 'Ошибка сервера');
         }
     });
-    socket.on('screen-share-started', ({ roomId }) => { socket.to(roomId).emit('screen-share-started'); });
-    socket.on('screen-share-stopped', ({ roomId }) => { socket.to(roomId).emit('screen-share-stopped'); });
-    socket.on('offer', async (data) => {
-    const { targetUserId, sdp } = data;
-    const targetSocketId = userSockets.get(targetUserId);
-    if (targetSocketId) {
-        io.to(targetSocketId).emit('offer', { sdp, fromUserId: socket.userId });
-    } else {
-        console.warn(`Offer: target user ${targetUserId} not connected`);
-    }
-});
 
-socket.on('answer', (data) => {
-    const { targetUserId, sdp } = data;
-    const targetSocketId = userSockets.get(targetUserId);
-    if (targetSocketId) {
-        io.to(targetSocketId).emit('answer', { sdp, fromUserId: socket.userId });
-    }
-});
-
-socket.on('ice-candidate', (data) => {
-    const { targetUserId, candidate } = data;
-    const targetSocketId = userSockets.get(targetUserId);
-    if (targetSocketId) {
-        io.to(targetSocketId).emit('ice-candidate', { candidate, fromUserId: socket.userId });
-    }
-});
-    // Событие: Временный выход (не завершает сессию)
-    socket.on('leave-call', () => {
-        if (socket.roomId) {
-            socket.to(socket.roomId).emit('partner-disconnected'); // Говорим собеседнику, что мы вышли
+    socket.on('call-message', (msgData) => {
+        try {
             const room = activeRooms.get(socket.roomId);
             if (room) {
-                room.users.delete(socket.id);
-                if (socket.userType === 'psychologist') room.psychologist = null;
-                else room.client = null;
+                const targetId = socket.userType === 'psychologist' ? room.client : room.psychologist;
+                if (targetId) io.to(targetId).emit('call-message', { from: socket.userId, text: msgData.text, time: new Date().toISOString() });
             }
-            socket.leave(socket.roomId);
-            socket.roomId = null; // Очищаем память сервера
+        } catch (e) {
+            console.error('call-message error:', e);
+        }
+    });
+
+    socket.on('screen-share-started', ({ roomId }) => { 
+        try { socket.to(roomId).emit('screen-share-started'); } catch(e) {} 
+    });
+    
+    socket.on('screen-share-stopped', ({ roomId }) => { 
+        try { socket.to(roomId).emit('screen-share-stopped'); } catch(e) {} 
+    });
+
+    socket.on('offer', async (data) => {
+        try {
+            const { targetUserId, sdp } = data;
+            const targetSocketId = userSockets.get(targetUserId);
+            if (targetSocketId) {
+                io.to(targetSocketId).emit('offer', { sdp, fromUserId: socket.userId });
+            } else {
+                console.warn(`Offer: target user ${targetUserId} not connected`);
+            }
+        } catch (e) {
+            console.error('offer error:', e);
+        }
+    });
+
+    socket.on('answer', (data) => {
+        try {
+            const { targetUserId, sdp } = data;
+            const targetSocketId = userSockets.get(targetUserId);
+            if (targetSocketId) {
+                io.to(targetSocketId).emit('answer', { sdp, fromUserId: socket.userId });
+            }
+        } catch (e) {
+            console.error('answer error:', e);
+        }
+    });
+
+    socket.on('ice-candidate', (data) => {
+        try {
+            const { targetUserId, candidate } = data;
+            const targetSocketId = userSockets.get(targetUserId);
+            if (targetSocketId) {
+                io.to(targetSocketId).emit('ice-candidate', { candidate, fromUserId: socket.userId });
+            }
+        } catch (e) {
+            console.error('ice-candidate error:', e);
+        }
+    });
+
+    // Событие: Временный выход (не завершает сессию)
+    socket.on('leave-call', () => {
+        try {
+            if (socket.roomId) {
+                socket.to(socket.roomId).emit('partner-disconnected'); // Говорим собеседнику, что мы вышли
+                const room = activeRooms.get(socket.roomId);
+                if (room) {
+                    room.users.delete(socket.id);
+                    if (socket.userType === 'psychologist') room.psychologist = null;
+                    else room.client = null;
+                }
+                socket.leave(socket.roomId);
+                socket.roomId = null; // Очищаем память сервера
+            }
+        } catch (e) {
+            console.error('leave-call error:', e);
         }
     });
 
     // Событие: Полное завершение (закрывает сессию в БД)
     socket.on('end-call', async () => {
-        if (socket.roomId) {
-            socket.to(socket.roomId).emit('call-ended');
-            
-            try {
-                // БЕЗУСЛОВНО завершаем звонок в БД (убрали багнутое ограничение room.users.size)
-                const result = await pool.query('SELECT * FROM appointments WHERE room_id=$1', [socket.roomId]);
-                if (result.rows.length > 0) {
-                    const apt = result.rows[0];
-                    if (apt && apt.status === 'confirmed') {
-                        await pool.query('UPDATE appointments SET status=$1 WHERE id=$2', ['completed', apt.id]);
-                        
-                        const psychologist = await getUser(apt.psychologist_id);
-                        const client = await getUser(apt.client_id);
-                        
-                        if (psychologist) {
-                            const c = (psychologist.clients || []).find(c => c.appointmentId === apt.id);
-                            if (c) c.status = 'completed';
-                            await updateUser(psychologist);
-                        }
-                        if (client) {
-                            const a = (client.appointments || []).find(a => a.id === apt.id);
-                            if (a) a.status = 'completed';
-                            await updateUser(client);
-                        }
-                        
-                        io.to(apt.psychologist_id).emit('appointment_completed', apt.id);
-                        io.to(apt.client_id).emit('appointment_completed', apt.id);
-                        
-                        if (psychologist && client) {
-                            const notif = { id: nanoid(12), type: 'request_review', title: 'Оцените сессию', message: `Как прошла сессия с ${psychologist.fullName}? Пожалуйста, оставьте отзыв.`, appointmentId: apt.id, psychologistId: apt.psychologist_id, psychologistName: psychologist.fullName, createdAt: new Date().toISOString() };
-                            if (!client.notifications) client.notifications = [];
-                            client.notifications.unshift(notif);
-                            await updateUser(client);
-                            io.to(apt.client_id).emit('notification', notif);
+        try {
+            if (socket.roomId) {
+                socket.to(socket.roomId).emit('call-ended');
+                
+                try {
+                    // БЕЗУСЛОВНО завершаем звонок в БД
+                    const result = await pool.query('SELECT * FROM appointments WHERE room_id=$1', [socket.roomId]);
+                    if (result.rows.length > 0) {
+                        const apt = result.rows[0];
+                        if (apt && apt.status === 'confirmed') {
+                            await pool.query('UPDATE appointments SET status=$1 WHERE id=$2', ['completed', apt.id]);
+                            
+                            const psychologist = await getUser(apt.psychologist_id);
+                            const client = await getUser(apt.client_id);
+                            
+                            if (psychologist) {
+                                const c = (psychologist.clients || []).find(c => c.appointmentId === apt.id);
+                                if (c) c.status = 'completed';
+                                await updateUser(psychologist);
+                            }
+                            if (client) {
+                                const a = (client.appointments || []).find(a => a.id === apt.id);
+                                if (a) a.status = 'completed';
+                                await updateUser(client);
+                            }
+                            
+                            io.to(apt.psychologist_id).emit('appointment_completed', apt.id);
+                            io.to(apt.client_id).emit('appointment_completed', apt.id);
+                            
+                            if (psychologist && client) {
+                                const notif = { id: nanoid(12), type: 'request_review', title: 'Оцените сессию', message: `Как прошла сессия с ${psychologist.fullName}? Пожалуйста, оставьте отзыв.`, appointmentId: apt.id, psychologistId: apt.psychologist_id, psychologistName: psychologist.fullName, createdAt: new Date().toISOString() };
+                                if (!client.notifications) client.notifications = [];
+                                client.notifications.unshift(notif);
+                                await updateUser(client);
+                                io.to(apt.client_id).emit('notification', notif);
+                            }
                         }
                     }
-                }
-            } catch (err) { console.error('end-call DB error:', err); }
+                } catch (err) { console.error('end-call DB error:', err); }
 
-            // Чистим серверный кэш комнат
-            const room = activeRooms.get(socket.roomId);
-            if (room) {
-                room.users.delete(socket.id);
-                if (socket.userType === 'psychologist') room.psychologist = null;
-                else room.client = null;
+                // Чистим серверный кэш комнат
+                const room = activeRooms.get(socket.roomId);
+                if (room) {
+                    room.users.delete(socket.id);
+                    if (socket.userType === 'psychologist') room.psychologist = null;
+                    else room.client = null;
+                }
+                socket.leave(socket.roomId);
+                socket.roomId = null; 
             }
-            socket.leave(socket.roomId);
-            socket.roomId = null; 
+        } catch (e) {
+            console.error('end-call error:', e);
         }
     });
+
     socket.on('disconnect', (reason) => {
-        if (socket.userId) {
-            // Удаляем сокет ТОЛЬКО если он не был перезаписан новым подключением
-            if (userSockets.get(socket.userId) === socket.id) {
-                userSockets.delete(socket.userId);
+        try {
+            if (socket.userId) {
+                // Удаляем сокет ТОЛЬКО если он не был перезаписан новым подключением
+                if (userSockets.get(socket.userId) === socket.id) {
+                    userSockets.delete(socket.userId);
+                }
             }
-        }
-        console.log('WebSocket disconnected:', socket.id, 'reason:', reason);
-        if (socket.roomId) {
-            socket.to(socket.roomId).emit('partner-disconnected');
-            const room = activeRooms.get(socket.roomId);
-            if (room) {
-                room.users.delete(socket.id);
-                if (socket.userType === 'psychologist') room.psychologist = null;
-                else room.client = null;
-                if (room.users.size === 0) setTimeout(() => { const r = activeRooms.get(socket.roomId); if (r && r.users.size === 0) activeRooms.delete(socket.roomId); }, 10000);
+            console.log('WebSocket disconnected:', socket.id, 'reason:', reason);
+            if (socket.roomId) {
+                socket.to(socket.roomId).emit('partner-disconnected');
+                const room = activeRooms.get(socket.roomId);
+                if (room) {
+                    room.users.delete(socket.id);
+                    if (socket.userType === 'psychologist') room.psychologist = null;
+                    else room.client = null;
+                    if (room.users.size === 0) setTimeout(() => { const r = activeRooms.get(socket.roomId); if (r && r.users.size === 0) activeRooms.delete(socket.roomId); }, 10000);
+                }
             }
+        } catch (e) {
+            console.error('disconnect error:', e);
         }
     });
+
     socket.on('request-reconnect', ({ roomId, role }) => {
-        const room = activeRooms.get(roomId);
-        if (!room) return;
-        const targetId = (role === 'psychologist') ? room.client : room.psychologist;
-        if (targetId) {
-            io.to(targetId).emit('request-reconnect');
+        try {
+            const room = activeRooms.get(roomId);
+            if (!room) return;
+            const targetId = (role === 'psychologist') ? room.client : room.psychologist;
+            if (targetId) {
+                io.to(targetId).emit('request-reconnect');
+            }
+        } catch (e) {
+            console.error('request-reconnect error:', e);
         }
     });
 });
@@ -1927,5 +2003,28 @@ async function startServer() {
         process.exit(1);
     }
 }
+
+// Graceful Shutdown для Railway
+process.on('SIGTERM', () => {
+    console.log('SIGTERM signal received: closing HTTP server');
+    server.close(() => {
+        console.log('HTTP server closed');
+        pool.end(() => {
+            console.log('Database pool closed');
+            process.exit(0);
+        });
+    });
+});
+
+process.on('SIGINT', () => {
+    console.log('SIGINT signal received: closing HTTP server');
+    server.close(() => {
+        console.log('HTTP server closed');
+        pool.end(() => {
+            console.log('Database pool closed');
+            process.exit(0);
+        });
+    });
+});
 
 startServer();
