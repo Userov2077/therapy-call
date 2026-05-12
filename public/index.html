@@ -585,13 +585,9 @@
             if (type === 'image') {
                 return `${parts[0]}/upload/c_limit,w_1080,q_auto,f_auto/${parts[1]}`;
             }
+            // ВИДЕО ОТДАЕМ КАК ЕСТЬ, чтобы избежать ошибки 423 Locked
             if (type === 'video') {
-                return `${parts[0]}/upload/q_auto,f_auto,vc_auto/${parts[1]}`;
-            }
-            if (type === 'poster') {
-                // Заменяем расширение на .jpg для генерации постера
-                const fileWithoutExt = parts[1].replace(/\.[^/.]+$/, "");
-                return `${parts[0]}/upload/w_800,q_auto,f_auto/${fileWithoutExt}.jpg`;
+                return url; 
             }
             return url;
         }
@@ -1537,21 +1533,27 @@
         }
 
         function renderSinglePost(post) {
+            // Защита от пустых данных (если сокет прислал кривой объект)
+            const authorName = post.author?.fullName || 'Неизвестный';
+            const authorAvatar = post.author?.avatar || '';
+            const authorId = post.author?.id || '';
+            const authorRating = post.author?.rating || 0;
+
             return `
                 <div class="post-card glass-card" data-post-id="${post.id}">
                     <div class="post-header">
-                        <img class="post-avatar" src="${escapeHtml(optimizeMedia(post.author.avatar, 'avatar'))}" onclick="viewPsychologistPage('${post.author.id}')">
+                        <img class="post-avatar" src="${escapeHtml(optimizeMedia(authorAvatar, 'avatar'))}" onclick="viewPsychologistPage('${authorId}')" onerror="this.src='https://ui-avatars.com/api/?name=U&background=8bca8b&color=fff'">
                         <div>
-                            <div class="post-author" onclick="viewPsychologistPage('${post.author.id}')">
-                                ${escapeHtml(post.author.fullName)}
-                                ${renderStars(post.author.rating || 0)}
+                            <div class="post-author" onclick="viewPsychologistPage('${authorId}')">
+                                ${escapeHtml(authorName)}
+                                ${renderStars(authorRating)}
                             </div>
                             <div class="post-time">${new Date(post.createdAt).toLocaleString()}</div>
                         </div>
                     </div>
                     <div class="post-text">${escapeHtml(post.text)}</div>
                     ${post.image ? `<img class="post-image" src="${escapeHtml(optimizeMedia(post.image, 'image'))}" onclick="openImageModal('${escapeHtml(post.image)}')">` : ''}
-                    ${post.video ? `<video class="post-video" loop muted playsinline disablePictureInPicture preload="none" poster="${escapeHtml(optimizeMedia(post.video, 'poster'))}"><source src="${escapeHtml(optimizeMedia(post.video, 'video'))}" type="video/mp4"></video>` : ''}
+                    ${post.video ? `<video class="post-video" controls preload="metadata"><source src="${escapeHtml(post.video)}" type="video/mp4"></video>` : ''}
                     <div class="post-stats">
                         <button class="like-btn${post.userLiked ? ' liked' : ''}" data-id="${post.id}">
                             <i class="fa-${post.userLiked ? 'solid' : 'regular'} fa-heart"></i>
@@ -1566,7 +1568,7 @@
                         <div class="comments-list"></div>
                         ${currentUser ? `<div class="new-comment"><input type="text" placeholder="Написать комментарий..." id="comment-input-${post.id}" onkeypress="if(event.key==='Enter')addComment('${post.id}')"><button class="btn-sm" onclick="addComment('${post.id}')"><i class="fas fa-paper-plane"></i></button></div>` : ''}
                     </div>
-                    ${currentUser && post.author.id === currentUser.id ? `
+                    ${currentUser && authorId === currentUser.id ? `
                     <div class="post-actions">
                         <button class="edit-post-btn" data-id="${post.id}"><i class="fas fa-pen"></i> Редактировать</button>
                         <button class="delete-post-btn" data-id="${post.id}"><i class="fas fa-trash-alt"></i> Удалить</button>

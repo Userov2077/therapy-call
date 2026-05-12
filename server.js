@@ -869,6 +869,7 @@ app.post('/api/upload-doc', authenticateToken, uploadDoc.single('file'), (req, r
 });
 
 // ========== ПОСТЫ ==========
+// ========== ПОСТЫ ==========
 app.post('/api/posts', authenticateToken, requirePsychologist, async (req, res) => {
     try {
         const { authorId, text, image, video } = req.body;
@@ -877,12 +878,36 @@ app.post('/api/posts', authenticateToken, requirePsychologist, async (req, res) 
         }
         const author = await getUser(authorId);
         if (!author || author.role !== 'psychologist') return res.json({ success: false, error: 'Только психологи могут создавать посты' });
+        
         const newPost = { id: nanoid(12), author_id: authorId, text, image: image || null, video: video || null, created_at: new Date().toISOString() };
         await pool.query(`INSERT INTO posts (id,author_id,text,image,video,created_at) VALUES ($1,$2,$3,$4,$5,$6)`, [newPost.id, newPost.author_id, newPost.text, newPost.image, newPost.video, newPost.created_at]);
-        io.emit('post_created', newPost);
+        
+        // ФОРМИРУЕМ ПРАВИЛЬНЫЙ ОБЪЕКТ ДЛЯ ФРОНТЕНДА (чтобы не было ошибки undefined is not an object)
+        const fullPostForClient = {
+            id: newPost.id,
+            text: newPost.text,
+            image: newPost.image,
+            video: newPost.video,
+            createdAt: newPost.created_at,
+            author: {
+                id: author.id,
+                fullName: author.fullName,
+                avatar: author.avatar,
+                rating: author.rating || 0
+            },
+            likesCount: 0,
+            commentsCount: 0,
+            userLiked: false
+        };
+
+        io.emit('post_created', fullPostForClient);
         sendPushToFollowers(authorId, 'Новый пост', `${author.fullName} опубликовал(а) новый пост.`, '/');
-        res.json({ success: true, post: newPost });
-    } catch (err) { console.error('Create post error:', err); res.json({ success: false }); }
+        
+        res.json({ success: true, post: fullPostForClient });
+    } catch (err) { 
+        console.error('Create post error:', err); 
+        res.json({ success: false }); 
+    }
 });
 
 app.get('/api/posts', optionalAuth, async (req, res) => {
