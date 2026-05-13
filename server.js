@@ -29,11 +29,10 @@ app.set('trust proxy', 1);
 const server = http.createServer(app);
 const io = socketIo(server, {
     cors: { origin: "*", methods: ["GET", "POST"], credentials: true },
-    // ЖЕСТКАЯ НАСТРОЙКА ДЛЯ RAILWAY
-    transports: ['websocket', 'polling'], 
-    allowUpgrades: false, // Отключаем попытки апгрейда, так как клиент сразу бьет по вебсокету
+    // УБРАЛИ ЖЕСТКИЕ ОГРАНИЧЕНИЯ ТРАНСПОРТА
+    // Теперь Socket.io сам решит, как лучше подключиться через прокси Railway
     pingTimeout: 60000,
-    pingInterval: 25000,  // Чуть увеличим интервал пинга, чтобы не спамить
+    pingInterval: 25000,
     perMessageDeflate: false
 });
 
