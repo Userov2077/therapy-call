@@ -1164,6 +1164,7 @@
             }
             const token = localStorage.getItem('token');
             if (!token) return;
+            
             socket = io({
                 query: { token },
                 reconnection: true,
@@ -1172,17 +1173,27 @@
                 reconnectionDelayMax: 5000,
                 timeout: 20000
             });
+            
             socket.on('connect', () => { 
                 if (currentUser) {
                     socket.emit('register_user', currentUser.id); 
-                    // Если мы переподключились (вышли из фона), сбрасываем кэш и запрашиваем свежие данные
+                    
+                    // ИСПРАВЛЕНИЕ: Автоматический возврат в комнату звонка при обрыве связи
+                    if (isCallActive && currentCallRoomId && currentCallRole) {
+                        console.log('Auto-rejoining call room after reconnect...');
+                        socket.emit('join-call-room', currentCallRoomId, currentUser.id, currentCallRole);
+                    }
+
                     isChatsCacheValid = false;
                     refreshUser().then(() => {
                         if (currentTab === 'chats') renderChats(true);
                     });
                 }
             });
-            socket.on('connect_error', (err) => { console.error('Socket connect error:', err.message); showToast('Ошибка соединения с сервером', true); });
+            
+            socket.on('connect_error', (err) => { 
+                console.error('Socket connect error:', err.message); 
+            });
             
             socket.on('post_created', (newPost) => {
                 feedPosts.unshift(newPost);
@@ -3709,7 +3720,8 @@
             
             if (text && socket) { 
                 addCallChatMessage(text, true); 
-                socket.emit('call-message', { text }); 
+                // ИСПРАВЛЕНИЕ: Обязательно передаем roomId, чтобы сервер нашел комнату
+                socket.emit('call-message', { roomId: currentCallRoomId, text }); 
                 input.value = ''; 
             } 
         }
@@ -4365,8 +4377,10 @@
                     return;
                 }
                 
+                // ИСПРАВЛЕНИЕ: Блокируем кнопку от двойного клика
                 const btn = document.getElementById(`confirmNextBtn_${modalId}`);
                 btn.disabled = true;
+                btn.innerHTML = 'Загрузка...';
 
                 const data = await fetchJSON('/api/appointment', {
                     method: 'POST',
@@ -4385,6 +4399,7 @@
                 } else {
                     showToast(data.error || 'Ошибка', true);
                     btn.disabled = false;
+                    btn.innerHTML = 'Записать';
                 }
             };
         }

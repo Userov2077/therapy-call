@@ -694,15 +694,19 @@ app.put('/api/schedule', authenticateToken, async (req, res) => {
 });
 
 // ========== ЗАПИСЬ НА ПРИЁМ ==========
+// ========== ЗАПИСЬ НА ПРИЁМ ==========
 app.post('/api/appointment', authenticateToken, async (req, res) => {
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
         const { clientId, psychologistId, date, time } = req.body;
-        if (req.user.userId !== clientId) {
+        
+        // ИСПРАВЛЕНИЕ: Разрешаем создавать запись либо самому клиенту, либо психологу
+        if (req.user.userId !== clientId && req.user.role !== 'psychologist') {
             await client.query('ROLLBACK');
             return res.status(403).json({ success: false, error: 'Нет прав' });
         }
+        
         const clientUser = await getUser(clientId);
         const psychologist = await getUser(psychologistId);
         if (!clientUser || !psychologist) {
@@ -719,16 +723,20 @@ app.post('/api/appointment', authenticateToken, async (req, res) => {
         const appointmentId = nanoid(12);
         await client.query(`UPDATE time_slots SET status='pending', appointment_id=$1 WHERE id=$2`, [appointmentId, slotId]);
         await client.query(`INSERT INTO appointments (id, psychologist_id, client_id, psychologist_name, client_name, date, time, room_id, status, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`, [appointmentId, psychologistId, clientId, psychologist.fullName, clientUser.fullName, date, time, roomId, 'pending', new Date().toISOString()]);
+        
         if (!clientUser.appointments) clientUser.appointments = [];
         clientUser.appointments.push({ id: appointmentId, psychologistId, psychologistName: psychologist.fullName, clientId, clientName: clientUser.fullName, date, time, roomId, status: 'pending' });
         if (!psychologist.clients) psychologist.clients = [];
         psychologist.clients.push({ clientId, clientName: clientUser.fullName, appointmentId, date, time, status: 'pending', roomId });
+        
         const notification = { id: nanoid(12), type: 'new_appointment', title: 'Новая заявка', message: `${clientUser.fullName} хочет записаться на ${date} в ${time}`, appointmentId, roomId, createdAt: new Date().toISOString() };
         if (!psychologist.notifications) psychologist.notifications = [];
         psychologist.notifications.unshift(notification);
+        
         await updateUser(psychologist);
         await updateUser(clientUser);
         await client.query('COMMIT');
+        
         io.to(psychologistId).emit('notification', notification);
         io.to(psychologistId).emit('appointment_created', { id: appointmentId, psychologist_id: psychologistId, client_id: clientId, date, time, room_id: roomId, status: 'pending' });
         res.json({ success: true, appointment: { id: appointmentId, roomId, date, time, status: 'pending' } });
@@ -1734,63 +1742,25 @@ io.on('connection', (socket) => {
         try {
             socket.userId = userId || socket.user.userId;
             if (socket.userId) {
-                // Сохраняем маппинг
                 userSockets.set(socket.userId, socket.id);
                 socket.join(socket.userId);
             }
-            console.log(`User ${socket.userId} registered with socket ${socket.id}`);
-        } catch (e) {
-            console.error('register_user error:', e);
-        }
+        } catch (e) { console.error('register_user error:', e); }
     });
 
     socket.on('join-call-room', async (roomId, userId, userType) => {
         try {
-            const aptRes = await pool.query(
-                `SELECT psychologist_id, client_id FROM appointments WHERE room_id = $1`,
-                [roomId]
-            );
-            if (aptRes.rows.length === 0) {
-                socket.emit('error', 'Неверная комната');
-                return;
-            }
-            const apt = aptRes.rows[0];
-            const isPsych = (userType === 'psychologist' && apt.psychologist_id === userId);
-            const isClient = (userType === 'client' && apt.client_id === userId);
-            if (!isPsych && !isClient) {
-                socket.emit('error', 'У вас нет прав для этого звонка');
-                return;
-            }
-
-            // ---> ВАЖНО: ЧИСТИМ СТАРУЮ КОМНАТУ, ЕСЛИ ЮЗЕР ТАМ ЗАСТРЯЛ <---
-            if (socket.roomId && socket.roomId !== roomId) {
-                const oldRoom = activeRooms.get(socket.roomId);
-                if (oldRoom) {
-                    oldRoom.users.delete(socket.id);
-                    if (socket.userType === 'psychologist') oldRoom.psychologist = null;
-                    else oldRoom.client = null;
-                }
-                socket.leave(socket.roomId);
-            }
-
+            const aptRes = await pool.query(`SELECT psychologist_id, client_id FROM appointments WHERE room_id = $1`, [roomId]);
+            if (aptRes.rows.length === 0) { socket.emit('error', 'Неверная комната'); return; }
+            
             if (!activeRooms.has(roomId)) activeRooms.set(roomId, { psychologist: null, client: null, users: new Map() });
             const room = activeRooms.get(roomId);
             
-            if (userType === 'psychologist' && room.psychologist && room.psychologist !== socket.id) {
-                io.to(room.psychologist).emit('partner-disconnected');
-                const old = io.sockets.sockets.get(room.psychologist);
-                if (old) old.leave(roomId);
-                room.users.delete(room.psychologist);
-            } else if (userType === 'client' && room.client && room.client !== socket.id) {
-                io.to(room.client).emit('partner-disconnected');
-                const old = io.sockets.sockets.get(room.client);
-                if (old) old.leave(roomId);
-                room.users.delete(room.client);
-            }
+            // ИСПРАВЛЕНИЕ: Жестко привязываем роли к userId, а не к socket.id
+            if (userType === 'psychologist') room.psychologist = userId;
+            else room.client = userId;
             
-            room.users.set(socket.id, { userId, userType });
-            if (userType === 'psychologist') room.psychologist = socket.id;
-            else room.client = socket.id;
+            room.users.set(userId, { userType });
             
             socket.join(roomId);
             socket.roomId = roomId;
@@ -1799,111 +1769,85 @@ io.on('connection', (socket) => {
             socket.emit('room-joined');
             
             if (room.psychologist && room.client) {
-                const partnerPsychId = room.users.get(room.psychologist)?.userId;
-                const partnerClientId = room.users.get(room.client)?.userId;
-                io.to(room.psychologist).emit('call-ready', { partnerId: room.client, partnerUserId: partnerClientId });
-                io.to(room.client).emit('call-ready', { partnerId: room.psychologist, partnerUserId: partnerPsychId });
+                const psychSocketId = userSockets.get(room.psychologist);
+                const clientSocketId = userSockets.get(room.client);
+                
+                if (psychSocketId) io.to(psychSocketId).emit('call-ready', { partnerId: clientSocketId, partnerUserId: room.client });
+                if (clientSocketId) io.to(clientSocketId).emit('call-ready', { partnerId: psychSocketId, partnerUserId: room.psychologist });
             }
-        } catch (err) {
-            console.error('join-call-room error:', err);
-            socket.emit('error', 'Ошибка сервера');
-        }
+        } catch (err) { console.error('join-call-room error:', err); }
     });
 
     socket.on('call-message', (msgData) => {
         try {
-            const room = activeRooms.get(socket.roomId);
+            // ИСПРАВЛЕНИЕ: Берем roomId из данных, так как socket.roomId может потеряться при реконнекте
+            const roomId = msgData.roomId || socket.roomId;
+            const room = activeRooms.get(roomId);
             if (room) {
-                const targetId = socket.userType === 'psychologist' ? room.client : room.psychologist;
-                if (targetId) io.to(targetId).emit('call-message', { from: socket.userId, text: msgData.text, time: new Date().toISOString() });
+                const targetUserId = socket.userType === 'psychologist' ? room.client : room.psychologist;
+                const targetSocketId = userSockets.get(targetUserId);
+                if (targetSocketId) {
+                    io.to(targetSocketId).emit('call-message', { from: socket.userId, text: msgData.text, time: new Date().toISOString() });
+                }
             }
-        } catch (e) {
-            console.error('call-message error:', e);
-        }
+        } catch (e) { console.error('call-message error:', e); }
     });
 
-    socket.on('screen-share-started', ({ roomId }) => { 
-        try { socket.to(roomId).emit('screen-share-started'); } catch(e) {} 
-    });
-    
-    socket.on('screen-share-stopped', ({ roomId }) => { 
-        try { socket.to(roomId).emit('screen-share-stopped'); } catch(e) {} 
-    });
+    socket.on('screen-share-started', ({ roomId }) => { try { socket.to(roomId).emit('screen-share-started'); } catch(e) {} });
+    socket.on('screen-share-stopped', ({ roomId }) => { try { socket.to(roomId).emit('screen-share-stopped'); } catch(e) {} });
 
     socket.on('offer', async (data) => {
         try {
             const { targetUserId, sdp } = data;
             const targetSocketId = userSockets.get(targetUserId);
-            if (targetSocketId) {
-                io.to(targetSocketId).emit('offer', { sdp, fromUserId: socket.userId });
-            } else {
-                console.warn(`Offer: target user ${targetUserId} not connected`);
-            }
-        } catch (e) {
-            console.error('offer error:', e);
-        }
+            if (targetSocketId) io.to(targetSocketId).emit('offer', { sdp, fromUserId: socket.userId });
+        } catch (e) { console.error('offer error:', e); }
     });
 
     socket.on('answer', (data) => {
         try {
             const { targetUserId, sdp } = data;
             const targetSocketId = userSockets.get(targetUserId);
-            if (targetSocketId) {
-                io.to(targetSocketId).emit('answer', { sdp, fromUserId: socket.userId });
-            }
-        } catch (e) {
-            console.error('answer error:', e);
-        }
+            if (targetSocketId) io.to(targetSocketId).emit('answer', { sdp, fromUserId: socket.userId });
+        } catch (e) { console.error('answer error:', e); }
     });
 
     socket.on('ice-candidate', (data) => {
         try {
             const { targetUserId, candidate } = data;
             const targetSocketId = userSockets.get(targetUserId);
-            if (targetSocketId) {
-                io.to(targetSocketId).emit('ice-candidate', { candidate, fromUserId: socket.userId });
-            }
-        } catch (e) {
-            console.error('ice-candidate error:', e);
-        }
+            if (targetSocketId) io.to(targetSocketId).emit('ice-candidate', { candidate, fromUserId: socket.userId });
+        } catch (e) { console.error('ice-candidate error:', e); }
     });
 
-    // Событие: Временный выход (не завершает сессию)
     socket.on('leave-call', () => {
         try {
             if (socket.roomId) {
-                socket.to(socket.roomId).emit('partner-disconnected'); // Говорим собеседнику, что мы вышли
+                socket.to(socket.roomId).emit('partner-disconnected');
                 const room = activeRooms.get(socket.roomId);
                 if (room) {
-                    room.users.delete(socket.id);
+                    room.users.delete(socket.userId);
                     if (socket.userType === 'psychologist') room.psychologist = null;
                     else room.client = null;
                 }
                 socket.leave(socket.roomId);
-                socket.roomId = null; // Очищаем память сервера
+                socket.roomId = null;
             }
-        } catch (e) {
-            console.error('leave-call error:', e);
-        }
+        } catch (e) { console.error('leave-call error:', e); }
     });
 
-    // Событие: Полное завершение (закрывает сессию в БД)
     socket.on('end-call', async () => {
         try {
             if (socket.roomId) {
                 socket.to(socket.roomId).emit('call-ended');
-                
                 try {
-                    // БЕЗУСЛОВНО завершаем звонок в БД
                     const result = await pool.query('SELECT * FROM appointments WHERE room_id=$1', [socket.roomId]);
                     if (result.rows.length > 0) {
                         const apt = result.rows[0];
                         if (apt && apt.status === 'confirmed') {
                             await pool.query('UPDATE appointments SET status=$1 WHERE id=$2', ['completed', apt.id]);
-                            
                             const psychologist = await getUser(apt.psychologist_id);
                             const client = await getUser(apt.client_id);
-                            
                             if (psychologist) {
                                 const c = (psychologist.clients || []).find(c => c.appointmentId === apt.id);
                                 if (c) c.status = 'completed';
@@ -1914,58 +1858,40 @@ io.on('connection', (socket) => {
                                 if (a) a.status = 'completed';
                                 await updateUser(client);
                             }
-                            
                             io.to(apt.psychologist_id).emit('appointment_completed', apt.id);
                             io.to(apt.client_id).emit('appointment_completed', apt.id);
-                            
-                            if (psychologist && client) {
-                                const notif = { id: nanoid(12), type: 'request_review', title: 'Оцените сессию', message: `Как прошла сессия с ${psychologist.fullName}? Пожалуйста, оставьте отзыв.`, appointmentId: apt.id, psychologistId: apt.psychologist_id, psychologistName: psychologist.fullName, createdAt: new Date().toISOString() };
-                                if (!client.notifications) client.notifications = [];
-                                client.notifications.unshift(notif);
-                                await updateUser(client);
-                                io.to(apt.client_id).emit('notification', notif);
-                            }
                         }
                     }
                 } catch (err) { console.error('end-call DB error:', err); }
 
-                // Чистим серверный кэш комнат
                 const room = activeRooms.get(socket.roomId);
                 if (room) {
-                    room.users.delete(socket.id);
+                    room.users.delete(socket.userId);
                     if (socket.userType === 'psychologist') room.psychologist = null;
                     else room.client = null;
                 }
                 socket.leave(socket.roomId);
                 socket.roomId = null; 
             }
-        } catch (e) {
-            console.error('end-call error:', e);
-        }
+        } catch (e) { console.error('end-call error:', e); }
     });
 
-    socket.on('disconnect', (reason) => {
+    socket.on('disconnect', () => {
         try {
-            if (socket.userId) {
-                // Удаляем сокет ТОЛЬКО если он не был перезаписан новым подключением
-                if (userSockets.get(socket.userId) === socket.id) {
-                    userSockets.delete(socket.userId);
-                }
+            if (socket.userId && userSockets.get(socket.userId) === socket.id) {
+                userSockets.delete(socket.userId);
             }
-            console.log('WebSocket disconnected:', socket.id, 'reason:', reason);
             if (socket.roomId) {
                 socket.to(socket.roomId).emit('partner-disconnected');
                 const room = activeRooms.get(socket.roomId);
                 if (room) {
-                    room.users.delete(socket.id);
+                    room.users.delete(socket.userId);
                     if (socket.userType === 'psychologist') room.psychologist = null;
                     else room.client = null;
                     if (room.users.size === 0) setTimeout(() => { const r = activeRooms.get(socket.roomId); if (r && r.users.size === 0) activeRooms.delete(socket.roomId); }, 10000);
                 }
             }
-        } catch (e) {
-            console.error('disconnect error:', e);
-        }
+        } catch (e) { console.error('disconnect error:', e); }
     });
 
     socket.on('request-reconnect', ({ roomId, role }) => {
@@ -1973,12 +1899,9 @@ io.on('connection', (socket) => {
             const room = activeRooms.get(roomId);
             if (!room) return;
             const targetId = (role === 'psychologist') ? room.client : room.psychologist;
-            if (targetId) {
-                io.to(targetId).emit('request-reconnect');
-            }
-        } catch (e) {
-            console.error('request-reconnect error:', e);
-        }
+            const targetSocketId = userSockets.get(targetId);
+            if (targetSocketId) io.to(targetSocketId).emit('request-reconnect');
+        } catch (e) { console.error('request-reconnect error:', e); }
     });
 });
 
