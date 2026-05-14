@@ -560,6 +560,25 @@ async function sendPushToFollowers(psychologistId, title, body, url = '/') {
     } catch (err) { console.error('Send push error:', err); }
 }
 
+// ИСПРАВЛЕНИЕ: НОВАЯ ФУНКЦИЯ ДЛЯ ЧАТА (Отправка личного Push-уведомления)
+async function sendDirectPush(userId, title, body, url = '/') {
+    try {
+        const userRes = await pool.query('SELECT push_subscriptions FROM users WHERE id = $1', [userId]);
+        if (userRes.rows.length === 0) return;
+
+        const subs = safeJSONParse(userRes.rows[0].push_subscriptions, []);
+        if (subs.length === 0) return;
+
+        const payload = JSON.stringify({ title, body, url });
+
+        subs.forEach(sub => {
+            webpush.sendNotification(sub, payload).catch(err => {
+                if (err.statusCode === 410 || err.statusCode === 404) console.log('Личная подписка устарела');
+            });
+        });
+    } catch (err) { console.error('Direct push error:', err); }
+}
+
 // ========== РЕГИСТРАЦИЯ / ЛОГИН ==========
 app.post('/api/register', async (req, res) => {
     try {
@@ -1488,22 +1507,48 @@ app.post('/api/messages', authenticateToken, async (req, res) => {
     try {
         await client.query('BEGIN');
         const { from, to, text, image, voice } = req.body;
+        
         if (req.user.userId !== from) {
             await client.query('ROLLBACK');
             return res.status(403).json({ success: false, error: 'Нет прав' });
         }
-        if (from === to) { await client.query('ROLLBACK'); return res.json({ success: false, error: 'Нельзя отправить сообщение самому себе' }); }
+        if (from === to) { 
+            await client.query('ROLLBACK'); 
+            return res.json({ success: false, error: 'Нельзя отправить сообщение самому себе' }); 
+        }
+        
         const newMsg = { id: nanoid(12), from_user: from, to_user: to, text: text || '', image: image || null, voice: voice || null, is_read: false, created_at: new Date().toISOString() };
+        
         await client.query(`INSERT INTO messages (id,from_user,to_user,text,image,voice,is_read,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, [newMsg.id, newMsg.from_user, newMsg.to_user, newMsg.text, newMsg.image, newMsg.voice, newMsg.is_read, newMsg.created_at]);
         await client.query(`INSERT INTO user_unreads (user_id, from_user_id, count) VALUES ($1, $2, 1) ON CONFLICT (user_id, from_user_id) DO UPDATE SET count = user_unreads.count + 1`, [to, from]);
+        
         const unreadRes = await client.query(`SELECT count FROM user_unreads WHERE user_id=$1 AND from_user_id=$2`, [to, from]);
         const newCount = unreadRes.rows[0]?.count || 1;
+        
         await client.query('COMMIT');
+        
+        // 1. Отправляем по сокетам (для тех, у кого открыто приложение)
         const msgForClient = { id: newMsg.id, from: newMsg.from_user, to: newMsg.to_user, text: newMsg.text, image: newMsg.image, voice: newMsg.voice, created_at: newMsg.created_at };
         io.to(to).emit('new_message', msgForClient);
         io.to(to).emit('unread_update', { from, count: newCount });
+
+        // 2. ИСПРАВЛЕНИЕ: Отправляем НАСТОЯЩИЙ WEB PUSH (для тех, у кого приложение свернуто)
+        // Получаем имя отправителя, чтобы красиво показать в уведомлении
+        const sender = await getUser(from);
+        const senderName = sender ? sender.fullName : 'Новое сообщение';
+        let previewText = text ? text.substring(0, 50) : (image ? '📷 Фото' : (voice ? '🎤 Голосовое' : 'Вложение'));
+        
+        // Отправляем системный пуш
+        sendDirectPush(to, senderName, previewText, '/');
+
         res.json({ success: true });
-    } catch (err) { await client.query('ROLLBACK'); console.error('Send message error:', err); res.json({ success: false, error: 'Ошибка сервера' }); } finally { client.release(); }
+    } catch (err) { 
+        await client.query('ROLLBACK'); 
+        console.error('Send message error:', err); 
+        res.json({ success: false, error: 'Ошибка сервера' }); 
+    } finally { 
+        client.release(); 
+    }
 });
 
 app.post('/api/messages/read', authenticateToken, async (req, res) => {
