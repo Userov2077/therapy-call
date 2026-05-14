@@ -1227,23 +1227,53 @@ app.post('/api/reviews', authenticateToken, requireClient, async (req, res) => {
     try {
         await client.query('BEGIN');
         const { psychologistId, clientId, rating, text, appointmentId } = req.body;
+        
         if (req.user.userId !== clientId) {
             await client.query('ROLLBACK');
             return res.status(403).json({ success: false, error: 'Нет прав' });
         }
+        
         const aptRes = await client.query(`SELECT id FROM appointments WHERE id = $1 AND client_id = $2 AND status = 'completed'`, [appointmentId, clientId]);
-        if (aptRes.rows.length === 0) { await client.query('ROLLBACK'); return res.json({ success: false, error: 'Нет завершённой сессии для этого отзыва' }); }
+        if (aptRes.rows.length === 0) { 
+            await client.query('ROLLBACK'); 
+            return res.json({ success: false, error: 'Нет завершённой сессии для этого отзыва' }); 
+        }
+        
         const existingReview = await client.query(`SELECT id FROM reviews WHERE appointment_id = $1`, [appointmentId]);
-        if (existingReview.rows.length > 0) { await client.query('ROLLBACK'); return res.json({ success: false, error: 'Вы уже оставили отзыв на эту сессию' }); }
+        if (existingReview.rows.length > 0) { 
+            await client.query('ROLLBACK'); 
+            return res.json({ success: false, error: 'Вы уже оставили отзыв на эту сессию' }); 
+        }
+        
         const clientUser = await getUser(clientId);
-        if (!clientUser) { await client.query('ROLLBACK'); return res.json({ success: false, error: 'Пользователь не найден' }); }
+        if (!clientUser) { 
+            await client.query('ROLLBACK'); 
+            return res.json({ success: false, error: 'Пользователь не найден' }); 
+        }
+        
         const newReview = { id: nanoid(12), psychologist_id: psychologistId, client_id: clientId, client_name: clientUser.fullName, rating: Math.min(5, Math.max(1, rating)), text, appointment_id: appointmentId, created_at: new Date().toISOString() };
+        
         await client.query(`INSERT INTO reviews (id, psychologist_id, client_id, client_name, rating, text, appointment_id, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, [newReview.id, newReview.psychologist_id, newReview.client_id, newReview.client_name, newReview.rating, newReview.text, newReview.appointment_id, newReview.created_at]);
+        
         await recalcPsychologistRating(psychologistId);
+        
+        // ИСПРАВЛЕНИЕ: Удаляем уведомление "Оцените сессию" у клиента, так как он уже оставил отзыв
+        if (clientUser.notifications) {
+            clientUser.notifications = clientUser.notifications.filter(n => !(n.type === 'request_review' && n.appointmentId === appointmentId));
+            await updateUser(clientUser);
+        }
+        
         await client.query('COMMIT');
+        
         const updatedPsychologist = await getUser(psychologistId);
         res.json({ success: true, review: newReview, newRating: updatedPsychologist.rating });
-    } catch (err) { await client.query('ROLLBACK'); console.error('Review error:', err); res.json({ success: false, error: 'Ошибка сервера' }); } finally { client.release(); }
+    } catch (err) { 
+        await client.query('ROLLBACK'); 
+        console.error('Review error:', err); 
+        res.json({ success: false, error: 'Ошибка сервера' }); 
+    } finally { 
+        client.release(); 
+    }
 });
 
 app.put('/api/reviews/:reviewId', authenticateToken, async (req, res) => {

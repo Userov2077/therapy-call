@@ -1382,7 +1382,7 @@
                 if (notif.type === 'request_review') {
                     showFloatingNotification(notif.title, notif.message, 'info');
                     
-                    // ИСПРАВЛЕНИЕ: Заменяем блокирующий confirm() на кастомную модалку
+                    // Показываем модалку после задержки, чтобы звонок успел закрыться
                     setTimeout(() => {
                         const modalId = 'reviewPromptModal_' + Date.now();
                         const html = `
@@ -1394,7 +1394,7 @@
                                         ${escapeHtml(notif.message)}
                                     </p>
                                     <div class="modal-buttons" style="flex-direction: column; gap: 10px; display: flex;">
-                                        <button class="btn-primary" style="width: 100%; padding: 14px;" onclick="closeModal('${modalId}'); viewPsychologistPage('${notif.psychologistId}'); setTimeout(() => openReviewModalWithAppointment('${notif.psychologistId}', '${escapeHtml(notif.psychologistName)}', '${notif.appointmentId}'), 500);">Оценить сейчас</button>
+                                        <button class="btn-primary" style="width: 100%; padding: 14px;" onclick="closeModal('${modalId}'); openReviewModalWithAppointment('${notif.psychologistId}', '${escapeHtml(notif.psychologistName)}', '${notif.appointmentId}');">Оценить сейчас</button>
                                         <button class="btn-secondary" style="width: 100%; padding: 14px;" onclick="closeModal('${modalId}')">Позже</button>
                                     </div>
                                 </div>
@@ -1402,11 +1402,13 @@
                         `;
                         document.body.insertAdjacentHTML('beforeend', html);
                         setTimeout(() => document.getElementById(modalId).classList.add('active'), 10);
-                    }, 1500); // Даем время интерфейсу прогрузиться после выхода из звонка
-                    return;
+                    }, 1500);
+                    
+                    // ВАЖНО: Мы убрали отсюда return; чтобы код пошел дальше и сохранил уведомление в список!
+                } else {
+                    showFloatingNotification(notif.title, notif.message);
                 }
                 
-                showFloatingNotification(notif.title, notif.message);
                 if (currentUser) refreshUser();
                 isNotificationsCacheValid = false;
                 if (currentTab === 'notifications') {
@@ -2825,7 +2827,7 @@
                 }, 300);
             };
         }
-        
+       
         // ======================= УВЕДОМЛЕНИЯ =======================
         async function renderNotifications(forceRefresh = false) {
             if (!forceRefresh && isNotificationsCacheValid && cachedNotificationsHtml) {
@@ -2835,18 +2837,29 @@
             if (!currentUser) { showToast('Войдите в аккаунт', true); return; }
             const notifs = currentUser.notifications || [];
             let html = `<div class="container"><div class="page-title">Уведомления</div><div class="notifications-list">`;
+            
             for (const n of notifs) {
                 const isAppointmentNotif = n.type === 'new_appointment' && currentUser.role === 'psychologist';
-                html += `<div class="notification-item glass-card">
-                            <div class="notif-title">${escapeHtml(n.title)}</div>
-                            <div class="notif-msg">${escapeHtml(n.message)}</div>
-                            <div class="notif-time">${new Date(n.createdAt).toLocaleString()}</div>
-                            ${isAppointmentNotif ? `<div style="margin-top:10px;"><button class="btn-sm" onclick="confirmAppointmentFromNotif('${n.appointmentId}')">✅ Подтвердить</button></div>` : ''}
-                            ${n.roomId && !isAppointmentNotif ? `<div style="margin-top:10px;"><button class="btn-sm" onclick="startCall('${n.roomId}', '${currentUser.role}')"><i class="fas fa-video"></i> Войти в звонок</button></div>` : ''}
-                        </div>`;
+                const isReviewNotif = n.type === 'request_review'; // Проверяем, является ли это запросом на отзыв
+                
+                html += `
+                    <div class="notification-item glass-card">
+                        <div class="notif-title">${escapeHtml(n.title)}</div>
+                        <div class="notif-msg">${escapeHtml(n.message)}</div>
+                        <div class="notif-time">${new Date(n.createdAt).toLocaleString()}</div>
+                        
+                        ${isAppointmentNotif ? `<div style="margin-top:10px;"><button class="btn-sm" onclick="confirmAppointmentFromNotif('${n.appointmentId}')">✅ Подтвердить</button></div>` : ''}
+                        
+                        ${n.roomId && !isAppointmentNotif && !isReviewNotif ? `<div style="margin-top:10px;"><button class="btn-sm" onclick="startCall('${n.roomId}', '${currentUser.role}')"><i class="fas fa-video"></i> Войти в звонок</button></div>` : ''}
+                        
+                        ${isReviewNotif ? `<div style="margin-top:10px;"><button class="btn-sm" onclick="openReviewModalWithAppointment('${n.psychologistId}', '${escapeHtml(n.psychologistName)}', '${n.appointmentId}')"><i class="fas fa-star"></i> Оценить сессию</button></div>` : ''}
+                    </div>
+                `;
             }
+            
             if (notifs.length === 0) html += '<div class="empty-state glass-card" style="padding:40px;"><i class="fas fa-bell-slash"></i><div>Нет уведомлений</div></div>';
             html += `</div></div>`;
+            
             cachedNotificationsHtml = html;
             isNotificationsCacheValid = true;
             document.getElementById('mainContent').innerHTML = html;
