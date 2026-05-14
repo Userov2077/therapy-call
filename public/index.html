@@ -1196,6 +1196,10 @@
             });
             
             socket.on('post_created', (newPost) => {
+                // ИСПРАВЛЕНИЕ: Жесткая защита от дубликатов. 
+                // Если пост с таким ID уже есть в ленте (мы его сами только что добавили) - игнорируем сокет.
+                if (feedPosts.some(p => p.id === newPost.id)) return;
+
                 feedPosts.unshift(newPost);
                 if (currentTab === 'feed') {
                     const container = document.getElementById('postsContainer');
@@ -2756,51 +2760,51 @@
                     const data = await fetchJSON('/api/posts', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ authorId: currentUser.id, text: txt, image: imageUrl, video: videoUrl }) });
                     clearInterval(interval);
                     progressBar.style.width = '100%';
+                    
                     if (data.success) {
-                        const fullPost = {
-                            id: data.post.id,
-                            text: txt,
-                            image: imageUrl,
-                            video: videoUrl,
-                            createdAt: new Date().toISOString(),
-                            author: {
-                                id: currentUser.id,
-                                fullName: currentUser.fullName,
-                                avatar: currentUser.avatar,
-                                rating: currentUser.rating || 0
-                            },
-                            likesCount: 0,
-                            commentsCount: 0,
-                            userLiked: false
-                        };
-                        feedPosts.unshift(fullPost);
-                        isFeedCacheValid = true;
-                        if (currentTab === 'feed') {
-                            const container = document.getElementById('postsContainer');
-                            if (container) {
-                                const newPostHtml = renderSinglePost(fullPost);
-                                container.insertAdjacentHTML('afterbegin', newPostHtml);
-                                const newPostElement = container.firstElementChild;
-                                attachEventsToPostElement(newPostElement);
-                                feedOffset++;
+                        // ИСПРАВЛЕНИЕ: Берем готовый, правильный пост прямо от сервера, а не собираем его вручную
+                        const fullPost = data.post;
+                        
+                        // Добавляем в ленту, только если сокет нас еще не опередил
+                        if (!feedPosts.some(p => p.id === fullPost.id)) {
+                            feedPosts.unshift(fullPost);
+                            isFeedCacheValid = true;
+                            
+                            if (currentTab === 'feed') {
+                                const container = document.getElementById('postsContainer');
+                                if (container) {
+                                    const newPostHtml = renderSinglePost(fullPost);
+                                    container.insertAdjacentHTML('afterbegin', newPostHtml);
+                                    const newPostElement = container.firstElementChild;
+                                    attachEventsToPostElement(newPostElement);
+                                    feedOffset++;
+                                }
                             }
-                            closeModal(modalId);
-                            showToast('Пост опубликован');
-                        } else if (currentTab === 'profile') {
-                            closeModal(modalId);
-                            showToast('Пост опубликован');
+                        }
+                        
+                        closeModal(modalId);
+                        showToast('Пост опубликован');
+                        
+                        // Обновляем UI в зависимости от текущей вкладки
+                        if (currentTab === 'profile') {
                             renderProfile(true);
-                        } else {
-                            closeModal(modalId);
-                            showToast('Пост опубликован');
+                        } else if (currentTab !== 'feed') {
                             renderFeed();
                         }
                     } else {
                         showToast(data.error || 'Ошибка публикации', true);
                         progressDiv.style.display = 'none';
                     }
-                } catch(err) { clearInterval(interval); showToast('Ошибка соединения', true); progressDiv.style.display = 'none'; }
-                finally { isPosting = false; publishBtn.disabled = false; publishBtn.innerHTML = 'Опубликовать'; setTimeout(() => { progressDiv.style.display = 'none'; progressBar.style.width = '0%'; }, 1000); }
+                } catch(err) { 
+                    clearInterval(interval); 
+                    showToast('Ошибка соединения', true); 
+                    progressDiv.style.display = 'none'; 
+                } finally { 
+                    isPosting = false; 
+                    publishBtn.disabled = false; 
+                    publishBtn.innerHTML = 'Опубликовать'; 
+                    setTimeout(() => { progressDiv.style.display = 'none'; progressBar.style.width = '0%'; }, 1000); 
+                }
             };
         }
         
