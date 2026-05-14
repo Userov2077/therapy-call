@@ -1178,7 +1178,6 @@
                 if (currentUser) {
                     socket.emit('register_user', currentUser.id); 
                     
-                    // ИСПРАВЛЕНИЕ: Автоматический возврат в комнату звонка при обрыве связи
                     if (isCallActive && currentCallRoomId && currentCallRole) {
                         console.log('Auto-rejoining call room after reconnect...');
                         socket.emit('join-call-room', currentCallRoomId, currentUser.id, currentCallRole);
@@ -1186,7 +1185,14 @@
 
                     isChatsCacheValid = false;
                     refreshUser().then(() => {
-                        if (currentTab === 'chats') renderChats(true);
+                        if (currentTab === 'chats') {
+                            // ИСПРАВЛЕНИЕ: Если мы уже внутри чата, не выкидываем пользователя в общий список!
+                            if (!currentChatPartner) {
+                                renderChats(true);
+                            } else {
+                                loadChatMessages(); // Просто тихо подгружаем новые сообщения
+                            }
+                        }
                     });
                 }
             });
@@ -3044,6 +3050,10 @@
         async function openChat(userId, userName) {
             currentChatPartner = { id: userId, name: userName };
             await fetchJSON('/api/messages/read', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: currentUser.id, fromUserId: userId }) });
+            
+            // ЗАЩИТА: Если пользователь успел уйти из чата во время запроса
+            if (!currentChatPartner || currentChatPartner.id !== userId) return;
+
             if (currentUser.unreadCounts && currentUser.unreadCounts[userId]) delete currentUser.unreadCounts[userId];
             if (currentTab === 'chats') {
                 const chatItems = document.querySelectorAll('.chat-contact');
@@ -3079,6 +3089,9 @@
                 </div>
             `;
             await new Promise(resolve => setTimeout(resolve, 10));
+            
+            if (!currentChatPartner || currentChatPartner.id !== userId) return;
+
             authFetch(`/api/user/${userId}`)
             .then(r => r.json())
             .then(d => {
@@ -3086,15 +3099,21 @@
                 if (av && d.success) av.src = optimizeMedia(d.user.avatar, 'avatar');
             })
             .catch(console.error);
+            
             await loadChatMessages();
+            
+            if (!currentChatPartner || currentChatPartner.id !== userId) return;
+
             scrollToBottom();
             const sendBtn = document.getElementById('sendMsgBtn');
             const chatInput = document.getElementById('chatMessageInput');
             const attachBtn = document.getElementById('attachImageBtn');
             const imageInput = document.getElementById('imageInput');
             const voiceBtn = document.getElementById('voiceRecordBtn');
+            
             if (sendBtn) sendBtn.onclick = sendChatMessage;
             if (chatInput) chatInput.onkeypress = (e) => { if (e.key === 'Enter') sendChatMessage(); };
+            
             if (attachBtn && imageInput) {
                 attachBtn.onclick = () => imageInput.click();
                 imageInput.onchange = async () => {
@@ -3105,6 +3124,7 @@
                     const res = await authFetch('/api/upload-chat-image', { method: 'POST', body: formData });
                     const data = await res.json();
                     if (data.success) {
+                        if (!currentChatPartner) return; // ЗАЩИТА
                         await fetchJSON('/api/messages', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ from: currentUser.id, to: currentChatPartner.id, text: '', image: data.imageUrl }) });
                         await loadChatMessages();
                         scrollToBottom();
@@ -3127,6 +3147,7 @@
                                 const res = await authFetch('/api/upload-voice', { method: 'POST', body: fd });
                                 const data = await res.json();
                                 if (data.success) {
+                                    if (!currentChatPartner) return; // ЗАЩИТА
                                     await fetchJSON('/api/messages', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ from: currentUser.id, to: currentChatPartner.id, text: '', voice: data.voiceUrl }) });
                                     await loadChatMessages();
                                     scrollToBottom();
@@ -3150,11 +3171,19 @@
         
         async function loadChatMessages() {
             if (!currentChatPartner) return;
+            const partnerId = currentChatPartner.id; // Запоминаем ID для защиты
+            
             const res = await fetchJSON(`/api/messages/${currentUser.id}`);
-            const messages = (res.messages || []).filter(m => (m.from_user === currentChatPartner.id && m.to_user === currentUser.id) || (m.from_user === currentUser.id && m.to_user === currentChatPartner.id));
+            
+            // ЗАЩИТА: Проверяем, не закрыл ли юзер чат, пока мы ждали ответ от сервера
+            if (!currentChatPartner || currentChatPartner.id !== partnerId) return;
+            
+            const messages = (res.messages || []).filter(m => (m.from_user === partnerId && m.to_user === currentUser.id) || (m.from_user === currentUser.id && m.to_user === partnerId));
             messages.sort((a,b) => new Date(a.created_at) - new Date(b.created_at));
+            
             const listDiv = document.getElementById('chatMessagesList');
             if (!listDiv) return;
+            
             let html = '';
             for (const m of messages) {
                 let voiceHtml = '';
@@ -3174,6 +3203,30 @@
                 const audio = container.querySelector('audio');
                 if (audio && !container.querySelector('.speed-btn')) addSpeedButtonToAudio(audio);
             });
+            scrollToBottom();
+        }
+
+        async function sendChatMessage() {
+            const input = document.getElementById('chatMessageInput');
+            const btn = document.getElementById('sendMsgBtn');
+            if (!input || !input.value.trim()) return;
+            if (!currentChatPartner) return; // ЗАЩИТА
+            
+            const text = input.value.trim();
+            input.value = '';
+            btn.disabled = true;
+            
+            const tempMsg = { id: Date.now().toString(), from: currentUser.id, to: currentChatPartner.id, text, created_at: new Date().toISOString() };
+            appendMessageToChat(tempMsg);
+            
+            try {
+                await fetchJSON('/api/messages', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ from: currentUser.id, to: currentChatPartner.id, text }) });
+                isChatsCacheValid = false;
+            } catch(e) {
+                showToast('Ошибка отправки', true);
+            } finally {
+                btn.disabled = false;
+            }
             scrollToBottom();
         }
         
@@ -3229,28 +3282,6 @@
             parent.insertBefore(contactDiv, parent.firstChild);
         }
         
-        async function sendChatMessage() {
-            const input = document.getElementById('chatMessageInput');
-            const btn = document.getElementById('sendMsgBtn');
-            if (!input || !input.value.trim()) return;
-            
-            const text = input.value.trim();
-            input.value = '';
-            btn.disabled = true;
-            
-            const tempMsg = { id: Date.now().toString(), from: currentUser.id, to: currentChatPartner.id, text, created_at: new Date().toISOString() };
-            appendMessageToChat(tempMsg);
-            
-            try {
-                await fetchJSON('/api/messages', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ from: currentUser.id, to: currentChatPartner.id, text }) });
-                isChatsCacheValid = false;
-            } catch(e) {
-                showToast('Ошибка отправки', true);
-            } finally {
-                btn.disabled = false;
-            }
-            scrollToBottom();
-        }
         
         function appendMessageToChat(msg) {
             const listDiv = document.getElementById('chatMessagesList');
