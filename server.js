@@ -650,15 +650,28 @@ app.put('/api/user/profile', authenticateToken, uploadMedia.single('avatar'), as
         res.json({ success: false });
     }
 });
+
 // ========== РАСПИСАНИЕ ==========
 app.get('/api/schedule/:psychologistId', authenticateToken, async (req, res) => {
     try {
         const slots = await pool.query(`SELECT date, time FROM time_slots WHERE psychologist_id=$1 AND status='free' ORDER BY date, time`, [req.params.psychologistId]);
         const schedule = {};
+        
+        // ИСПРАВЛЕНИЕ: Получаем текущую дату и время сервера для фильтрации
+        const now = new Date();
+        // Сдвигаем время на нужный часовой пояс, если требуется, или используем локальное время сервера
+        const todayStr = now.toISOString().split('T')[0];
+        const timeStr = now.toTimeString().substring(0, 5); // Формат "HH:MM"
+
         slots.rows.forEach(s => {
+            // Пропускаем слоты, которые уже физически прошли
+            if (s.date < todayStr) return;
+            if (s.date === todayStr && s.time < timeStr) return;
+
             if (!schedule[s.date]) schedule[s.date] = [];
             schedule[s.date].push(s.time);
         });
+        
         for (const date in schedule) schedule[date].sort();
         res.json({ success: true, schedule });
     } catch (err) {
