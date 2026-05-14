@@ -5106,7 +5106,8 @@
                 showToast('Не удалось загрузить данные клиента', true); 
                 return; 
             } 
-            window.currentClientIdInCall = clientId; 
+            // ИСПРАВЛЕНИЕ: Правильно задаем глобальную переменную для работы кнопок "+"
+            currentClientIdInCall = clientId; 
             renderUniversalClientCard(data); 
         }
         
@@ -5142,6 +5143,10 @@
                             <i class="fas fa-frown" style="margin-top: 3px;"></i> 
                             <div style="flex:1; word-break: break-word; white-space: pre-wrap;"><strong>Жалобы:</strong><br><span style="color:rgba(255,255,255,0.8);">${escapeHtml(profile?.complaints || '—')}</span></div>
                         </div>
+                        <div class="info-row" style="align-items:flex-start;">
+                            <i class="fas fa-bullseye" style="margin-top: 3px;"></i> 
+                            <div style="flex:1; word-break: break-word; white-space: pre-wrap;"><strong>Цели:</strong><br><span style="color:rgba(255,255,255,0.8);">${escapeHtml(profile?.goals || '—')}</span></div>
+                        </div>
                         
                         <hr style="margin: 16px 0; border-color: var(--border);">
                         
@@ -5150,10 +5155,11 @@
                             <button class="btn-sm btn-outline" style="padding: 4px 8px;" onclick="addHomeworkToClientInCall()"><i class="fas fa-plus"></i></button>
                         </div>
                         
-                        <div id="dossierHwList" style="margin-bottom: 16px; display: grid; gap: 8px; width: 100%;">
+                        <div id="clientHomeworksList_${modalId}" style="margin-bottom: 16px; display: grid; gap: 8px; width: 100%;">
                             ${homeworks.length ? homeworks.map(h => `
-                                <div style="display: grid; grid-template-columns: auto 1fr; gap: 12px; padding: 12px; background: rgba(255,255,255,0.04); border-radius: 12px; border: 1px solid rgba(255,255,255,0.07); width: 100%; box-sizing: border-box;">
-                                    <input type="checkbox" ${h.status === 'done' ? 'checked' : ''} disabled style="margin-top: 2px; width: 18px; height: 18px; accent-color: #8bca8b;">
+                                <div data-id="${h.id}" style="display: grid; grid-template-columns: auto 1fr; gap: 12px; padding: 12px; background: rgba(255,255,255,0.04); border-radius: 12px; border: 1px solid rgba(255,255,255,0.07); width: 100%; box-sizing: border-box;">
+                                    <!-- ИСПРАВЛЕНИЕ: Убрали disabled, добавили класс и data-id -->
+                                    <input type="checkbox" class="homework-cb-card" data-id="${h.id}" ${h.status === 'done' ? 'checked' : ''} style="margin-top: 2px; width: 18px; height: 18px; accent-color: #8bca8b; cursor: pointer;">
                                     <div style="min-width: 0; overflow: hidden;">
                                         <div style="white-space: pre-wrap; word-wrap: break-word; word-break: break-word; font-size: 13.5px; line-height: 1.4; color: #fff; margin: 0;">${escapeHtml(h.text)}</div>
                                         ${h.due_date ? `<div style="color: rgba(255,255,255,0.45); font-size: 11px; margin-top: 4px;">📅 до ${h.due_date.split('T')[0]}</div>` : ''}
@@ -5167,7 +5173,7 @@
                             <button class="btn-sm btn-outline" style="padding: 4px 8px;" onclick="openAddClientNoteModal('${client.id}', '${escapeHtml(client.fullName).replace(/'/g, "\\'")}')"><i class="fas fa-plus"></i></button>
                         </div>
                         
-                        <div id="dossierNotesList" style="margin-bottom: 16px;">
+                        <div id="clientNotesList_${modalId}" style="margin-bottom: 16px;">
                             ${notes.length ? notes.map(n => { 
                                 const attachmentRegex = /\[Прикреплен файл\]:\s*(https?:\/\/[^\s]+)/; 
                                 const match = n.note.match(attachmentRegex); 
@@ -5188,7 +5194,7 @@
                             <button class="btn-sm btn-outline" style="padding: 4px 8px;" onclick="openAddClientProgressModal('${client.id}')"><i class="fas fa-plus"></i></button>
                         </div>
                         
-                        <div id="dossierProgressList">
+                        <div id="clientProgressList_${modalId}">
                             ${progress.length ? progress.map(p => { 
                                 let title = `Состояние: ${p.value}/10`; 
                                 let notesHtml = p.notes || ''; 
@@ -5214,6 +5220,19 @@
             `; 
             document.body.insertAdjacentHTML('beforeend', html); 
             setTimeout(() => document.getElementById(modalId).classList.add('active'), 10); 
+
+            // ИСПРАВЛЕНИЕ: Оживляем чекбоксы! Вешаем обработчик, который отправляет статус на сервер
+            setTimeout(() => {
+                document.querySelectorAll(`#clientHomeworksList_${modalId} .homework-cb-card`).forEach(cb => {
+                    cb.onchange = async () => {
+                        const status = cb.checked ? 'done' : 'pending';
+                        await fetchJSON(`/api/homeworks/${cb.dataset.id}`, {
+                            method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status })
+                        });
+                        showToast(cb.checked ? 'Задание отмечено выполненным' : 'Статус обновлён');
+                    };
+                });
+            }, 100);
         }
 
         // ======================= ИНИЦИАЛИЗАЦИЯ =======================
