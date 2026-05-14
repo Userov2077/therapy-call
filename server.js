@@ -1960,18 +1960,6 @@ io.on('connection', (socket) => {
         }
     });
 
-                const room = activeRooms.get(socket.roomId);
-                if (room) {
-                    room.users.delete(socket.userId);
-                    if (socket.userType === 'psychologist') room.psychologist = null;
-                    else room.client = null;
-                }
-                socket.leave(socket.roomId);
-                socket.roomId = null; 
-            }
-        } catch (e) { console.error('end-call error:', e); }
-    });
-
     socket.on('disconnect', () => {
         try {
             if (socket.userId && userSockets.get(socket.userId) === socket.id) {
