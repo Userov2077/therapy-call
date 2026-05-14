@@ -3685,7 +3685,8 @@
             
             if (callStartTime && currentCallRoomId) { 
                 const duration = Math.floor((Date.now() - callStartTime) / 1000); 
-                fetch('/api/appointment/duration', { 
+                // ИСПРАВЛЕНИЕ: Используем authFetch вместо обычного fetch, чтобы передать токен и избежать ошибки 401
+                authFetch('/api/appointment/duration', { 
                     method: 'POST', 
                     headers: { 'Content-Type': 'application/json' }, 
                     body: JSON.stringify({ roomId: currentCallRoomId, duration }) 

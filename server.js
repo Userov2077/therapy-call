@@ -807,31 +807,82 @@ app.post('/api/appointment/confirm', authenticateToken, async (req, res) => {
     }
 });
 
+// Вспомогательная функция для гарантированного завершения сеанса и отправки отзыва
+async function processAppointmentCompletion(appointmentId) {
+    const aptRes = await pool.query('SELECT * FROM appointments WHERE id=$1', [appointmentId]);
+    if (aptRes.rows.length === 0) return false;
+    const apt = aptRes.rows[0];
+    
+    if (apt.status === 'completed') return true; // Уже завершено
+
+    await pool.query('UPDATE appointments SET status=$1 WHERE id=$2', ['completed', appointmentId]);
+    
+    const psychologist = await getUser(apt.psychologist_id);
+    const client = await getUser(apt.client_id);
+    
+    if (psychologist) {
+        const c = (psychologist.clients || []).find(c => c.appointmentId === appointmentId);
+        if (c) c.status = 'completed';
+        await updateUser(psychologist);
+    }
+    
+    if (client) {
+        const a = (client.appointments || []).find(a => a.id === appointmentId);
+        if (a) a.status = 'completed';
+        
+        // ГАРАНТИРОВАННОЕ СОЗДАНИЕ УВЕДОМЛЕНИЯ
+        const notif = { 
+            id: nanoid(12), 
+            type: 'request_review', 
+            title: 'Оцените сессию', 
+            message: `Как прошла сессия с ${psychologist ? psychologist.fullName : 'психологом'}? Пожалуйста, оставьте отзыв.`, 
+            appointmentId: apt.id, 
+            psychologistId: apt.psychologist_id, 
+            psychologistName: psychologist ? psychologist.fullName : 'Психолог', 
+            createdAt: new Date().toISOString() 
+        };
+        
+        if (!client.notifications) client.notifications = [];
+        // Проверяем, нет ли уже такого уведомления, чтобы не спамить
+        if (!client.notifications.some(n => n.type === 'request_review' && n.appointmentId === apt.id)) {
+            client.notifications.unshift(notif);
+            await updateUser(client);
+            
+            // Отправляем сокет напрямую по ID клиента
+            const clientSocketId = userSockets.get(apt.client_id);
+            if (clientSocketId) {
+                io.to(clientSocketId).emit('notification', notif);
+            } else {
+                io.to(apt.client_id).emit('notification', notif);
+            }
+        }
+    }
+    
+    // Рассылаем статус завершения обоим участникам
+    const psychSocketId = userSockets.get(apt.psychologist_id);
+    if (psychSocketId) io.to(psychSocketId).emit('appointment_completed', appointmentId);
+    else io.to(apt.psychologist_id).emit('appointment_completed', appointmentId);
+    
+    const clientSocketId = userSockets.get(apt.client_id);
+    if (clientSocketId) io.to(clientSocketId).emit('appointment_completed', appointmentId);
+    else io.to(apt.client_id).emit('appointment_completed', appointmentId);
+
+    return true;
+}
+
 app.post('/api/appointment/complete', authenticateToken, async (req, res) => {
     try {
         const { appointmentId } = req.body;
-        const aptRes = await pool.query('SELECT * FROM appointments WHERE id=$1', [appointmentId]);
+        const aptRes = await pool.query('SELECT psychologist_id, client_id FROM appointments WHERE id=$1', [appointmentId]);
         if (aptRes.rows.length === 0) return res.json({ success: false });
-        const apt = aptRes.rows[0];
-        // Проверяем, что текущий пользователь – либо психолог, либо клиент этой записи
-        if (req.user.userId !== apt.psychologist_id && req.user.userId !== apt.client_id) {
+        
+        // Проверяем права
+        if (req.user.userId !== aptRes.rows[0].psychologist_id && req.user.userId !== aptRes.rows[0].client_id) {
             return res.status(403).json({ success: false, error: 'Нет прав' });
         }
-        await pool.query('UPDATE appointments SET status=$1 WHERE id=$2', ['completed', appointmentId]);
-        const psychologist = await getUser(apt.psychologist_id);
-        const client = await getUser(apt.client_id);
-        if (psychologist) {
-            const c = (psychologist.clients || []).find(c => c.appointmentId === appointmentId);
-            if (c) c.status = 'completed';
-            await updateUser(psychologist);
-        }
-        if (client) {
-            const a = (client.appointments || []).find(a => a.id === appointmentId);
-            if (a) a.status = 'completed';
-            await updateUser(client);
-        }
-        io.to(apt.psychologist_id).emit('appointment_completed', appointmentId);
-        io.to(apt.client_id).emit('appointment_completed', appointmentId);
+        
+        // Вызываем единую функцию
+        await processAppointmentCompletion(appointmentId);
         res.json({ success: true });
     } catch (err) {
         console.error('Complete appointment error:', err);
@@ -1883,29 +1934,31 @@ io.on('connection', (socket) => {
         try {
             if (socket.roomId) {
                 socket.to(socket.roomId).emit('call-ended');
+                
                 try {
-                    const result = await pool.query('SELECT * FROM appointments WHERE room_id=$1', [socket.roomId]);
+                    const result = await pool.query('SELECT id, status FROM appointments WHERE room_id=$1', [socket.roomId]);
                     if (result.rows.length > 0) {
                         const apt = result.rows[0];
-                        if (apt && apt.status === 'confirmed') {
-                            await pool.query('UPDATE appointments SET status=$1 WHERE id=$2', ['completed', apt.id]);
-                            const psychologist = await getUser(apt.psychologist_id);
-                            const client = await getUser(apt.client_id);
-                            if (psychologist) {
-                                const c = (psychologist.clients || []).find(c => c.appointmentId === apt.id);
-                                if (c) c.status = 'completed';
-                                await updateUser(psychologist);
-                            }
-                            if (client) {
-                                const a = (client.appointments || []).find(a => a.id === apt.id);
-                                if (a) a.status = 'completed';
-                                await updateUser(client);
-                            }
-                            io.to(apt.psychologist_id).emit('appointment_completed', apt.id);
-                            io.to(apt.client_id).emit('appointment_completed', apt.id);
+                        if (apt.status === 'confirmed') {
+                            // Вызываем единую функцию
+                            await processAppointmentCompletion(apt.id);
                         }
                     }
                 } catch (err) { console.error('end-call DB error:', err); }
+
+                const room = activeRooms.get(socket.roomId);
+                if (room) {
+                    room.users.delete(socket.userId);
+                    if (socket.userType === 'psychologist') room.psychologist = null;
+                    else room.client = null;
+                }
+                socket.leave(socket.roomId);
+                socket.roomId = null; 
+            }
+        } catch (e) {
+            console.error('end-call error:', e);
+        }
+    });
 
                 const room = activeRooms.get(socket.roomId);
                 if (room) {
