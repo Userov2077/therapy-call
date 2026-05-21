@@ -2050,6 +2050,7 @@ app.use((err, req, res, next) => {
 });
 
 // ========== ЗАПУСК СЕРВЕРА ==========
+// ========== ЗАПУСК СЕРВЕРА ==========
 const PORT = process.env.PORT || 3000;
 
 async function startServer() {
@@ -2057,7 +2058,8 @@ async function startServer() {
         await initDatabase();
         console.log('✅ База данных инициализирована');
 
-        // Периодический пересчёт рейтинга (раз в сутки)
+        // ИСПРАВЛЕНИЕ: Жестко изолированный таймер пересчета рейтинга.
+        // Запускается ровно 1 раз в сутки (24 часа * 60 минут * 60 секунд * 1000 миллисекунд)
         setInterval(async () => {
             console.log('Running daily rating recalculation...');
             try {
@@ -2080,7 +2082,7 @@ async function startServer() {
     }
 }
 
-// Graceful Shutdown для Railway
+// Graceful Shutdown для Railway (Защита от обрывов транзакций при перезагрузке сервера)
 process.on('SIGTERM', () => {
     console.log('SIGTERM signal received: closing HTTP server');
     server.close(() => {
@@ -2103,4 +2105,5 @@ process.on('SIGINT', () => {
     });
 });
 
+// Запускаем сервер
 startServer();
