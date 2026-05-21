@@ -177,7 +177,8 @@ function authenticateToken(req, res, next) {
         req.user = user;
         next();
     } catch (err) {
-        return res.status(403).json({ success: false, error: 'Недействительный токен' });
+        // ВАЖНО: Здесь должен быть 401 статус!
+        return res.status(401).json({ success: false, error: 'Недействительный токен' });
     }
 }
 
